@@ -967,7 +967,10 @@ ui['texture-variant'].addEventListener('change', async () => {
   const load = state.load
   try {
     await stage?.setTextureVariant(Number(ui['texture-variant'].value))
-    if (load === state.load) renderColorSource()
+    if (load === state.load) {
+      renderColorSource()
+      if (!ui['manual-texture'].hidden) renderManualImages()
+    }
   } catch {
     if (load === state.load) {
       renderTextureVariants()

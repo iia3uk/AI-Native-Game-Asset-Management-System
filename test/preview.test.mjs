@@ -3,8 +3,8 @@ import { test } from 'node:test'
 import * as THREE from 'three'
 import { PLYLoader } from 'three/addons/loaders/PLYLoader.js'
 import { geometryBounds, hasTextureImage, PreviewParts } from '../public/parts.js'
-import { ModelStage, normalizeFbx, normalizeFbxVertexColors } from '../public/stage.js'
-import { companionTexture, copyTextureMapping, idSuffix, isDataMap, opacitySuffix,
+import { findColorTexture, ModelStage, normalizeFbx, normalizeFbxVertexColors } from '../public/stage.js'
+import { companionTexture, copyTextureMapping, idSuffix, isDataMap, isSingleChannelSignal, opacitySuffix,
   preferColoredImage, resemblesVertexMask } from '../public/textures.js'
 import { isCollisionFile, visualModelFor } from '../public/model-names.js'
 import { animatedTranslationRoot } from '../public/animation-motion.js'
@@ -281,4 +281,32 @@ test('vertex mask detection distinguishes black and separated channels from pain
   assert.equal(resemblesVertexMask(mask), true)
   assert.equal(resemblesVertexMask(painted), false)
   assert.equal(resemblesVertexMask(saturated), false)
+})
+
+test('numbered ore meshes resolve the ore atlas variants separately from crystal atlas variants', () => {
+  const image = (dir, name) => ({ ext: 'tga', name, path: 'Textures/' + dir + '/' + name,
+    url: '/files/Textures/' + dir + '/' + name })
+  const model = { path: 'Meshes/Ore/SM_G_Ore_05.fbx', url: '/files/Meshes/Ore/SM_G_Ore_05.fbx' }
+  const stoneA = image('Ore', 'T_G_Ore_A_D.tga')
+  const stoneB = image('Ore', 'T_G_Ore_B_D.tga')
+  const crystalA = image('Ore', 'T_G_OreCrystal_A_D.tga')
+  const crystalB = image('Ore', 'T_G_OreCrystal_B_D.tga')
+  const normal = image('Ore', 'T_G_Ore_N.tga')
+  const sources = [crystalA, stoneB, normal, crystalB, stoneA]
+
+  assert.deepEqual(findColorTexture('M_Ore', model, sources).variants, [stoneA, stoneB])
+  assert.deepEqual(findColorTexture('M_Ore_Crystal', model, sources).variants, [crystalA, crystalB])
+  assert.equal(companionTexture(stoneA, sources, /_n$/i, { sharedVariant: true }), normal)
+  assert.equal(companionTexture(crystalA, sources, /_n$/i, { sharedVariant: true }), undefined)
+
+  const root = image('Roots', 'T_G_Root_C_D.tga')
+  const unrelated = image('Furniture', root.name)
+  assert.equal(findColorTexture('M_Roots', model, [unrelated, root]).url, root.url)
+})
+
+test('single-channel vertex signals are distinct from multichannel paint', () => {
+  const redSignal = new THREE.Float32BufferAttribute([0, 0, 0, .8, 0, 0, 1, 0, 0], 3)
+  const multichannel = new THREE.Float32BufferAttribute([0, 0, 0, .8, 0, 0, .4, .7, .3], 3)
+  assert.equal(isSingleChannelSignal(redSignal), true)
+  assert.equal(isSingleChannelSignal(multichannel), false)
 })

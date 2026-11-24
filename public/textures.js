@@ -1,5 +1,5 @@
 export const colorSuffix = /[ _.-]+(?:base[ _-]?(?:colou?r|map)|albedo|alb|diffuse|diff|colou?r|bc|d)$/i
-const dataSuffix = /[ _.-]+(?:id|m|n|o|nrm|normal(?:[ _-]?(?:dx|gl|map))?|norm|spe|specular|rough(?:ness)?|metal(?:lic|ness)?|ao|occlusion|orm|arm|rma|mro|mask\d*|splat\d*|opacity|alpha|height|bump|displacement|emissive)$/i
+const dataSuffix = /[ _.-]+(?:id|m|n|o|r|e|nrm|normal(?:[ _-]?(?:dx|gl|map))?|norm|spe|specular|rough(?:ness)?|metal(?:lic|ness)?|ao|occlusion|orm|arm|rma|mro|mask\d*|splat\d*|opacity|alpha|height|bump|displacement|emissive)$/i
 export const opacitySuffix = /[ _.-]+(?:opacity|alpha|o)$/i
 export const idSuffix = /[ _.-]+(?:id|material[ _-]?id)$/i
 
@@ -8,9 +8,11 @@ export const isDataMap = file => dataSuffix.test(textureName(file))
 
 const textureDirectory = file => file.url.slice(0, file.url.lastIndexOf('/')).toLowerCase()
 
-export function companionTexture(color, images, suffix) {
+export function companionTexture(color, images, suffix, { sharedVariant = false } = {}) {
   if (!colorSuffix.test(textureName(color))) return undefined
-  const stem = textureName(color).replace(colorSuffix, '').toLowerCase()
+  const base = textureName(color).replace(colorSuffix, '').toLowerCase()
+  const stem = sharedVariant ? base.replace(/[ _.-]+[a-z\d]+$/i, '') : base
+  if (sharedVariant && stem === base) return undefined
   const directory = textureDirectory(color)
   const candidates = images.filter(file => {
     const name = textureName(file)
@@ -33,6 +35,17 @@ export function resemblesVertexMask(color) {
     else if (high > .4 && Math.min(r, g, b) < .005) separated++
   }
   return color.count > 0 && black / color.count >= .05 && separated / color.count >= .25
+}
+
+export function isSingleChannelSignal(color) {
+  const maxima = [0, 0, 0]
+  for (let index = 0; index < color.count; index++) {
+    maxima[0] = Math.max(maxima[0], color.getX(index))
+    maxima[1] = Math.max(maxima[1], color.getY(index))
+    maxima[2] = Math.max(maxima[2], color.getZ(index))
+  }
+  const [low, middle, high] = maxima.sort((a, b) => a - b)
+  return low < .005 && middle < .005 && high > .4
 }
 
 export function preferColoredImage(image, images) {

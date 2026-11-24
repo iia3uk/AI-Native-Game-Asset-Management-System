@@ -16,12 +16,14 @@ import { TDSLoader } from 'three/addons/loaders/TDSLoader.js'
 import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { geometryBounds, hasTextureImage, PreviewParts } from './parts.js'
-import { colorSuffix, companionTexture, copyTextureMapping, idSuffix, isDataMap,
+import { colorSuffix, companionTexture, copyTextureMapping, idSuffix, isDataMap, isSingleChannelSignal,
   opacitySuffix, preferColoredImage, resemblesVertexMask, textureName } from './textures.js'
 import { animatedTranslationRoot } from './animation-motion.js'
 
 const fallbackMaterial = () => new THREE.MeshStandardMaterial({ color: 0xc3cfb0, roughness: .78 })
 const textureUrls = new WeakMap()
+const fbxTextureRequests = new WeakMap()
+const missingColorMaps = new WeakMap()
 const textureUrl = texture => textureUrls.get(texture) ?? texture?.image?.src
 const frameDistance = (radius, fov, aspect) => {
   const halfVertical = THREE.MathUtils.degToRad(fov / 2)
@@ -34,6 +36,7 @@ function withFbxWrapping(Loader) {
     load(url, ...callbacks) {
       const texture = super.load(url, ...callbacks)
       textureUrls.set(texture, this.manager.resolveURL((this.path ?? '') + url))
+      fbxTextureRequests.set(texture, url.replaceAll('\\', '/').split('/').at(-1))
       return texture
     }
 
@@ -179,10 +182,10 @@ function closest(candidates, source) {
 function materialStem(name = '') {
   return name.toLowerCase().replace(/\.(?:fbx|obj|blend|gltf|glb)$/, '')
     .replace(/[ _.-]+lod[ _.-]?\d+(?:[ _.-]+material[ _.-]?\d+)?$/, '')
-    .replace(/^(?:mi|m|t|sm|sk)[_ -]+/, '').replace(/[^a-z\d]/g, '')
+    .replace(/^(?:mi|m|t|sm|sk)[_ -]+(?:g[_ -]+)?/, '').replace(/[^a-z\d]/g, '')
 }
 
-function findColorTexture(key, file, images) {
+export function findColorTexture(key, file, images) {
   const stem = materialStem(key)
   if (!stem || /^(?:default(?:material)?\d*|lambert\d*|material\d*|blinn\d*)$/.test(stem)) return
   const matches = suffix => images.filter(item => {
@@ -199,9 +202,11 @@ function findColorTexture(key, file, images) {
   for (const item of images) {
     const name = textureName(item)
     if (!colorSuffix.test(name)) continue
-    if (stem.length < 6 && materialStem(item.path.split('/').at(-2)) !== stem) continue
+    const folder = materialStem(item.path.split('/').at(-2))
+    if (stem.length < 6 && folder !== stem) continue
     const family = name.replace(colorSuffix, '').replace(/[ _.-]+[a-z\d]+$/i, '')
-    if (materialStem(family) !== stem) continue
+    const familyStem = materialStem(family)
+    if (familyStem !== stem && !(folder === stem && familyStem + 's' === stem)) continue
     const entries = byName.get(name.toLowerCase()) ?? []
     entries.push(item)
     byName.set(name.toLowerCase(), entries)
@@ -250,12 +255,21 @@ async function applyExternalTextures(model, file, files, unityMaterials, manager
     return texture
   }
   const imagesByUrl = new Map(images.map(image => [image.url, image]))
-  const isVertexMask = (material, uses, url) => {
+  const imageForUrl = url => url && imagesByUrl.get(new URL(url, location.origin).pathname)
+  const isVertexMask = (material, uses, url, variants = []) => {
     if (file.ext !== 'fbx' || !material.vertexColors || !url) return false
-    const color = imagesByUrl.get(new URL(url, location.origin).pathname)
-    if (!color || !companionTexture(color, images, idSuffix) || !companionTexture(color, images, opacitySuffix)) return false
+    const color = imageForUrl(url)
+    if (!color) return false
     const layers = [...uses].map(mesh => mesh.geometry.getAttribute('color')).filter(Boolean)
-    return layers.length > 0 && layers.every(resemblesVertexMask)
+    if (!layers.length) return false
+    if (companionTexture(color, images, idSuffix) && companionTexture(color, images, opacitySuffix)) {
+      return layers.every(resemblesVertexMask)
+    }
+    const shared = { sharedVariant: true }
+    return variants.length > 1 && variants.includes(color) &&
+      companionTexture(color, images, /[_ -]+(?:n|nrm|normal)$/i, shared) &&
+      companionTexture(color, images, /[_ -]+(?:r|roughness)$/i, shared) &&
+      layers.every(isSingleChannelSignal)
   }
   await Promise.all([...materialMeshes.keys()].map(async material => {
     const key = material.name.trim().toLowerCase()
@@ -269,17 +283,20 @@ async function applyExternalTextures(model, file, files, unityMaterials, manager
       (meshName ? findColorTexture(meshName, file, images) : undefined) ??
       (single ? findColorTexture(file.name.slice(0, -(file.ext.length + 1)), file, images) : undefined)
     if (hasTextureImage(material.map) && !explicit?.remap) {
-      if (isVertexMask(material, uses, textureUrl(material.map))) {
+      const url = textureUrl(material.map)
+      const variants = (file.previewAlbedo || (file.ext === 'fbx' && material.vertexColors)) && findByName()?.variants
+      if (isVertexMask(material, uses, url, variants || [])) {
         material.vertexColors = false
         material.needsUpdate = true
       }
-      if (!file.previewAlbedo) return
-      const variants = findByName()?.variants
       if (!variants || variants.length < 2) return
+      const authored = variants.indexOf(imageForUrl(url))
+      if (authored < 0 && !file.previewAlbedo) return
       const saved = file.previewTextureNames ?? []
       const matches = variants.filter(item => saved.includes(item.name.toLowerCase()))
-      const files = matches.length === 1 ? variants : [{ name: 'Исходная (FBX)' }, ...variants]
-      const index = matches.length === 1 ? variants.indexOf(matches[0]) : 0
+      const resolved = authored >= 0 ? authored : matches.length === 1 ? variants.indexOf(matches[0]) : -1
+      const files = resolved >= 0 ? variants : [{ name: 'Исходная (FBX)' }, ...variants]
+      const index = Math.max(0, resolved)
       const original = material.map
       replacedTextures.add(original)
       variantGroups.push({ material, files, index, loadTexture, original, originalIndex: index })
@@ -291,7 +308,12 @@ async function applyExternalTextures(model, file, files, unityMaterials, manager
     const binding = unityBinding ?? findByName()
     if (!binding) return
     try {
-      const texture = await loadTexture(binding.url)
+      const missing = missingColorMaps.get(material)?.toLowerCase().replace(/\.[^.]+$/, '')
+      const variants = binding.variants ?? []
+      const preferred = variants.findIndex(image => textureName(image).replace(colorSuffix, '').toLowerCase() === missing)
+      const defaultIndex = Math.max(0, preferred)
+      const colorUrl = variants[defaultIndex]?.url ?? binding.url
+      const texture = await loadTexture(colorUrl)
       texture.colorSpace = THREE.SRGBColorSpace
       if (file.previewFormat === 'glb' || ['glb', 'gltf'].includes(file.ext)) texture.flipY = false
       texture.wrapS = texture.wrapT = THREE.RepeatWrapping
@@ -301,7 +323,7 @@ async function applyExternalTextures(model, file, files, unityMaterials, manager
       material.map = texture
       material.color?.setHex(0xffffff)
       // Unity shaders can use vertex colors as masks. The preview only has the flat albedo map.
-      if ((unityBinding && file.ext === 'fbx') || isVertexMask(material, uses, binding.url)) material.vertexColors = false
+      if ((unityBinding && file.ext === 'fbx') || isVertexMask(material, uses, colorUrl, variants)) material.vertexColors = false
       if (binding.alphaUrl && !hasTextureImage(material.alphaMap)) {
         const alpha = await loadTexture(binding.alphaUrl).catch(() => null)
         if (alpha) {
@@ -317,7 +339,7 @@ async function applyExternalTextures(model, file, files, unityMaterials, manager
       }
       texture.needsUpdate = true
       material.needsUpdate = true
-      if (binding.variants?.length > 1) variantGroups.push({ material, files: binding.variants, loadTexture, index: 0 })
+      if (variants.length > 1) variantGroups.push({ material, files: variants, loadTexture, index: defaultIndex })
     } catch { /* keep the original material when its external texture cannot be decoded */ }
   }))
   for (const texture of replacedTextures) model.userData.replacedTextures.add(texture)
@@ -350,6 +372,7 @@ export function normalizeFbx(model) {
     }
     for (const [key, texture] of Object.entries(material)) {
       if (!texture?.isTexture || hasTextureImage(texture)) continue
+      if (key === 'map' && fbxTextureRequests.has(texture)) missingColorMaps.set(material, fbxTextureRequests.get(texture))
       replaced.add(texture)
       material[key] = null
     }
