@@ -21,6 +21,11 @@ import { colorSuffix, copyTextureMapping, isDataMap, preferColoredImage, texture
 const fallbackMaterial = () => new THREE.MeshStandardMaterial({ color: 0xc3cfb0, roughness: .78 })
 const textureUrls = new WeakMap()
 const textureUrl = texture => textureUrls.get(texture) ?? texture?.image?.src
+const frameDistance = (radius, fov, aspect) => {
+  const halfVertical = THREE.MathUtils.degToRad(fov / 2)
+  const halfAngle = Math.atan(Math.tan(halfVertical) * Math.min(1, aspect))
+  return radius / Math.sin(halfAngle) * 1.22
+}
 
 function withFbxWrapping(Loader) {
   return class extends Loader {
@@ -490,7 +495,16 @@ export class ModelStage {
     const width = this.element.clientWidth
     const height = this.element.clientHeight
     if (!width || !height) return
-    this.camera.aspect = width / height
+    const aspect = width / height
+    if (this.bounds && aspect !== this.camera.aspect) {
+      const radius = Math.max(this.bounds.getBoundingSphere(new THREE.Sphere()).radius, .002)
+      const distance = frameDistance(radius, this.camera.fov, aspect)
+      const previous = frameDistance(radius, this.camera.fov, this.camera.aspect)
+      const target = this.controls.target
+      this.camera.position.sub(target).multiplyScalar(distance / previous).add(target)
+      this.updateFramingLimits(radius, distance)
+    }
+    this.camera.aspect = aspect
     this.camera.updateProjectionMatrix()
     this.renderer.setSize(width, height, false)
   }
@@ -798,18 +812,20 @@ export class ModelStage {
     if (!this.bounds) return
     const sphere = this.bounds.getBoundingSphere(new THREE.Sphere())
     const radius = Math.max(sphere.radius, .002)
-    const halfVertical = THREE.MathUtils.degToRad(this.camera.fov / 2)
-    const halfHorizontal = Math.atan(Math.tan(halfVertical) * this.camera.aspect)
-    const distance = radius / Math.sin(Math.min(halfVertical, halfHorizontal)) * 1.22
+    const distance = frameDistance(radius, this.camera.fov, this.camera.aspect)
     this.camera.position.copy(sphere.center).addScaledVector(new THREE.Vector3(1.15, .68, 1.45).normalize(), distance)
+    this.updateFramingLimits(radius, distance)
+    this.camera.updateProjectionMatrix()
+    this.controls.target.copy(sphere.center)
+    this.controls.update()
+  }
+
+  updateFramingLimits(radius, distance) {
     this.camera.near = Math.max(.00002, radius / 500)
     const maxDistance = Math.max(radius * 35, distance * 2)
     this.camera.far = Math.max(radius * 180, maxDistance + radius * 4)
-    this.camera.updateProjectionMatrix()
-    this.controls.target.copy(sphere.center)
     this.controls.minDistance = radius * .1
     this.controls.maxDistance = maxDistance
-    this.controls.update()
   }
 
   zoom(inward) {

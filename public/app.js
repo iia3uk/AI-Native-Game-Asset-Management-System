@@ -1,5 +1,6 @@
 import { ModelStage, convertedImages, decodedImageUrl } from './stage.js'
 import { isDataMap } from './textures.js'
+import { isCollisionFile, visualModelFor } from './model-names.js'
 import { ModelThumbnails } from './thumbnails.js'
 
 const $ = id => document.getElementById(id)
@@ -223,8 +224,10 @@ function modelResources(folder, files) {
 async function thumbnailInput(pack, category, candidateIds) {
   const data = await fetchPack(pack)
   const folder = localFolders.get(pack.folderKey)
-  const models = data.files.filter(file => file.kind === 'model' &&
+  let models = data.files.filter(file => file.kind === 'model' &&
     (!category || modelCategory(pack, file) === category) && (!candidateIds || candidateIds.includes(file.id)))
+  const visual = models.filter(file => !isCollisionFile(file) && (file.preview || file.convertible))
+  if (visual.length) models = visual
   const eligible = models.filter(file => file.preview)
   const byId = new Map(eligible.map(file => [file.id, file]))
   const candidates = (pack.previewFiles ?? []).map(id => byId.get(id)).filter(Boolean)
@@ -311,8 +314,10 @@ function renderPacks() {
 function renderFiles(revealSelection = false) {
   const query = normalize(ui['file-search'].value)
   const pack = state.active
+  const hideColliders = state.kind === 'model' && !state.candidates &&
+    pack?.files.some(file => file.kind === 'model' && !isCollisionFile(file) && eligibleFile(pack, file))
   const files = !pack ? [] : pack.files.filter(file => (state.kind === 'all' || state.kind === file.kind) &&
-    eligibleFile(pack, file) &&
+    eligibleFile(pack, file) && (!hideColliders || !isCollisionFile(file)) &&
     (!query || normalize(file.displayPath).includes(query)))
   if (revealSelection && state.file) {
     const index = files.findIndex(file => file.id === state.file.id)
@@ -331,7 +336,8 @@ function renderFiles(revealSelection = false) {
     if (file.id === focused) nextFocus = button
     button.setAttribute('aria-current', String(state.file?.id === file.id))
     if (state.file?.id === file.id) selected = button
-    button.append(label('span', 'file-name', file.name), label('span', 'file-type', file.ext.toUpperCase()))
+    button.append(label('span', 'file-name', file.name),
+      label('span', 'file-type', isCollisionFile(file) ? 'Коллизия' : file.ext.toUpperCase()))
     const status = state.marks[markKey(pack.id, file.id)]?.status
     if (status) button.append(label('span', 'file-mark', { candidate: '✓', later: '◷', excluded: '×' }[status]))
     fragment.append(button)
@@ -459,6 +465,8 @@ function renderColorSource() {
   ].filter(Boolean)
   ui['color-source'].hidden = !sources.length
   ui['color-source'].textContent = 'Материалы · ' + sources.join(' · ')
+  ui['color-source'].title = colors.missing.join('\n')
+  if (colors.missing.length) ui['color-source'].textContent += ' · Исходные карты недоступны: ' + colors.missing.join(', ')
 }
 
 function renderTextureVariants() {
@@ -493,6 +501,19 @@ async function selectFile(file) {
   ui.notice.textContent = ''
   ui['selected-name'].textContent = file?.name ?? 'Выберите файл'
   ui['selected-name'].title = file?.displayPath ?? ''
+  if (isCollisionFile(file)) {
+    const visual = visualModelFor(file, state.active.files)
+    if (visual) {
+      const open = label('button', 'control collision-link', 'Открыть модель')
+      open.type = 'button'
+      open.title = visual.name
+      open.addEventListener('click', () => {
+        state.kind = 'model'
+        void selectFile(visual)
+      })
+      ui['selected-name'].append(document.createElement('br'), open)
+    }
+  }
   modelCategoryControls()
   ui.note.value = currentMark()?.note ?? ''
   ui['stage-label'].hidden = !file
@@ -577,6 +598,7 @@ async function selectFile(file) {
     }
     renderColorSource()
     const stats = result.skeletonOnly ? ['Скелет', counted(result.boneCount, 'кость', 'кости', 'костей')] : []
+    if (isCollisionFile(file)) stats.push('Коллизионная геометрия')
     if (result.meshes) stats.push(counted(result.meshes, 'меш', 'меша', 'мешей'),
       counted(result.triangles, 'треугольник', 'треугольника', 'треугольников'))
     if (result.points) stats.push(counted(result.points, 'точка', 'точки', 'точек'))
@@ -632,9 +654,12 @@ async function selectPack(id, fileId) {
     showLicense(pack)
     renderPacks()
     const eligible = pack.files.filter(item => eligibleFile(pack, item))
-    const file = eligible.find(item => item.id === fileId) ?? eligible.find(item => item.id === pack.defaultFile) ?? eligible[0]
+    const preferred = eligible.find(item => item.id === pack.defaultFile)
+    const file = eligible.find(item => item.id === fileId) ??
+      (preferred && !isCollisionFile(preferred) ? preferred : undefined) ??
+      eligible.find(item => item.kind === 'model' && !isCollisionFile(item)) ?? preferred ?? eligible[0]
     state.kind = ui.category.value ? 'model' :
-      !state.candidates && file && ['model', 'image'].includes(file.kind) ? file.kind : 'all'
+      !state.candidates && file && !isCollisionFile(file) && ['model', 'image'].includes(file.kind) ? file.kind : 'all'
     await selectFile(file ?? null)
   } catch (error) {
     if (request === state.packLoad) {

@@ -119,6 +119,7 @@ select { appearance: none; padding: 0 27px 0 10px; }
 .review, .files-section { border-bottom: 1px solid var(--line); }
 .section-label { color: #d5dfd0; font-size: 14px; font-weight: 720; margin-bottom: 12px; }
 .selected-name { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; margin-bottom: 12px; }
+.collision-link { margin-top: 6px; }
 .model-category-tools { margin-bottom: 9px; }
 .model-category-tools label { display: block; margin: 0 0 5px; font-size: 13px; color: var(--muted); }
 .model-category-row { display: flex; gap: 5px; }

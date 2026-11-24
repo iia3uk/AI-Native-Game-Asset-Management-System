@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { isCollisionName } from './model-names.js'
 
 export function hasTextureImage(texture) {
   const image = texture?.image
@@ -21,8 +22,6 @@ function usedSlots(mesh, materials) {
   return [...new Set(mesh.geometry.groups.filter(group => group.count >= 3).map(group => group.materialIndex))]
     .filter(index => materials[index]?.visible)
 }
-
-const collisionName = /^(?:UCX|UBX|USP|UCP|MCDCX)_|[_ -]ConvexHulls?$/i
 
 function lodGroup(mesh) {
   const pattern = /^(.*?)[ _-]lod[ _-]?(\d+)(?:[ _-]material[ _-]?\d+)?$/i
@@ -59,7 +58,7 @@ export class PreviewParts {
       if (!slots.length) return
       const lod = lodGroup(mesh)
       if (lod) closestLods.set(lod.group, Math.min(lod.level, closestLods.get(lod.group) ?? Infinity))
-      const collision = collisionName.test(mesh.name) || collisionName.test(mesh.parent?.name ?? '')
+      const collision = isCollisionName(mesh.name) || isCollisionName(mesh.parent?.name ?? '')
       const part = { mesh, original: mesh.material, materials, slots, mask: mesh.layers.mask, lod, collision }
       this.meshes.push(part)
       const name = mesh.name || mesh.geometry.name || `Объект ${this.meshes.length}`
@@ -135,18 +134,21 @@ export class PreviewParts {
   colorSummary() {
     const { part: selected, slot } = this.selection ?? {}
     const counts = { maps: 0, vertices: 0, flat: 0 }
+    const missing = new Set()
     const seen = new Map()
     for (const { mesh, materials, slots } of selected ? [selected] : this.meshes.filter(part => part.defaultVisible)) {
       for (const index of slot === undefined ? slots : [slot]) {
         const material = materials[index]
         const type = hasTextureImage(material.map) ? 'maps' : material.vertexColors && mesh.geometry.hasAttribute('color') ? 'vertices' : 'flat'
+        const filename = material.userData.viewerMissingColorTexture
+        if (typeof filename === 'string' && filename) missing.add(filename)
         if (!seen.has(material)) seen.set(material, new Set())
         const types = seen.get(material)
         if (!types.has(type)) counts[type]++
         types.add(type)
       }
     }
-    return counts
+    return { ...counts, missing: [...missing] }
   }
 
   dispose() {

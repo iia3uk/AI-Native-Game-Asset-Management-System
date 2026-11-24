@@ -3,8 +3,9 @@ import { test } from 'node:test'
 import * as THREE from 'three'
 import { PLYLoader } from 'three/addons/loaders/PLYLoader.js'
 import { geometryBounds, hasTextureImage, PreviewParts } from '../public/parts.js'
-import { normalizeFbx, normalizeFbxVertexColors } from '../public/stage.js'
+import { ModelStage, normalizeFbx, normalizeFbxVertexColors } from '../public/stage.js'
 import { copyTextureMapping, isDataMap, preferColoredImage } from '../public/textures.js'
+import { isCollisionFile, visualModelFor } from '../public/model-names.js'
 
 function fbxMesh(material) {
   const geometry = new THREE.BoxGeometry()
@@ -151,4 +152,39 @@ test('a texture replacement keeps the authored UV channel and transform', () => 
   assert.equal(replacement.matrixAutoUpdate, false)
   assert.ok(original.matrix.equals(replacement.matrix))
   assert.ok(original.repeat.equals(replacement.repeat))
+})
+
+test('standalone collision files link only to an unambiguous render model', () => {
+  const fbx = (name, displayPath = name) => ({ kind: 'model', ext: 'fbx', name, displayPath })
+  const collider = fbx('UCX_SM_TownHall.fbx')
+  const hall = fbx('SM_TownHall.fbx')
+  const tower = fbx('SM_TownHall_Tower.fbx')
+  assert.equal(isCollisionFile(collider), true)
+  assert.equal(isCollisionFile(fbx('shape.fbx', 'Meshes/Colliders/shape.fbx')), true)
+  assert.equal(isCollisionFile(hall), false)
+  assert.equal(visualModelFor(collider, [hall, tower, collider]), hall)
+  assert.equal(visualModelFor(collider, [hall, { ...hall }, tower, collider]), undefined)
+})
+
+test('resizing a framed long scene keeps the bounds in a narrower viewport', () => {
+  const stage = Object.create(ModelStage.prototype)
+  stage.camera = new THREE.PerspectiveCamera(38, 1.7)
+  stage.element = { clientWidth: 380, clientHeight: 580 }
+  stage.renderer = { setSize() {} }
+  stage.controls = {
+    target: new THREE.Vector3(),
+    update() { stage.camera.lookAt(this.target) },
+  }
+  stage.bounds = new THREE.Box3(new THREE.Vector3(-49, 0, -6), new THREE.Vector3(49, 14, 6))
+  stage.fit()
+  const previous = stage.camera.position.distanceTo(stage.controls.target)
+
+  stage.resize()
+  stage.camera.updateMatrixWorld()
+
+  assert.ok(stage.camera.position.distanceTo(stage.controls.target) > previous)
+  for (const x of [-49, 49]) for (const y of [0, 14]) for (const z of [-6, 6]) {
+    const point = new THREE.Vector3(x, y, z).project(stage.camera)
+    assert.ok(Math.abs(point.x) < 1 && Math.abs(point.y) < 1)
+  }
 })
