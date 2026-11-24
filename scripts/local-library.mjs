@@ -5,7 +5,7 @@ import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { browserImages, browserModels, formatOrder, imageFormats, modelFormats, previewCandidates, supportFiles } from './formats.mjs'
+import { blenderModels, browserImages, browserModels, formatOrder, imageFormats, modelFormats, previewCandidates, supportFiles } from './formats.mjs'
 import { connectUnityMaterials } from './unity-materials.mjs'
 
 const runFile = promisify(execFile)
@@ -78,7 +78,7 @@ export async function scanFolder(path) {
       id: hash(path), name: filename, path, displayPath: path, ext, kind, size, url,
       preview: browserModels.has(ext) || browserImages.has(ext) ? url : null,
     }
-    if (ext === 'blend') file.convertible = true
+    if (blenderModels.has(ext)) file.convertible = true
     files.set(path, file)
     fileIds.set(file.id, file)
     const folder = path.includes('/') ? path.split('/')[0] : ''
@@ -127,17 +127,19 @@ async function blenderCommands() {
   return process.platform === 'darwin' ? ['blender', '/Applications/Blender.app/Contents/MacOS/Blender'] : ['blender']
 }
 
-async function convertBlend(library, file) {
+async function convertWithBlender(library, file) {
   const source = await realpath(resolve(library.root, file.path))
-  if (!inside(library.root, source) || !(await stat(source)).isFile()) throw new Error('Исходный Blender-файл недоступен.')
+  if (!inside(library.root, source) || !(await stat(source)).isFile()) throw new Error('Исходный файл недоступен.')
   cacheDirectory ??= mkdtemp(join(tmpdir(), 'asset-viewer-'))
   const target = join(await cacheDirectory, library.id + '-' + file.id + '.glb')
   const partial = target + '.partial.glb'
   const commands = await blenderCommands()
   for (const executable of commands) {
     try {
-      await runFile(executable, ['--background', '--factory-startup', '--disable-autoexec', source, '--python-exit-code', '1',
-        '--python', exportScript, '--', partial, library.root], { timeout: 500_000, windowsHide: true, maxBuffer: 2 * 1024 ** 2 })
+      const input = file.ext === 'blend' ? [source] : []
+      await runFile(executable, ['--background', '--factory-startup', '--disable-autoexec', ...input, '--python-exit-code', '1',
+        '--python', exportScript, '--', partial, library.root, ...(input.length ? [] : [source])],
+      { timeout: 500_000, windowsHide: true, maxBuffer: 2 * 1024 ** 2 })
       await rename(partial, target)
       return target
     } catch (error) {
@@ -146,12 +148,12 @@ async function convertBlend(library, file) {
       throw new Error('Blender не смог подготовить GLB-предпросмотр этого файла.')
     }
   }
-  throw new Error('Для предпросмотра .blend нужен Blender в PATH или путь в ASSET_VIEWER_BLENDER.')
+  throw new Error('Для предпросмотра этого формата нужен Blender в PATH или путь в ASSET_VIEWER_BLENDER.')
 }
 
 export async function blenderPreview(library, file) {
   if (!library.previews.has(file.id)) {
-    const operation = convertBlend(library, file).catch(error => {
+    const operation = convertWithBlender(library, file).catch(error => {
       library.previews.delete(file.id)
       throw error
     })

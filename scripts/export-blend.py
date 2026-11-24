@@ -11,6 +11,16 @@ import bpy
 args = sys.argv[sys.argv.index("--") + 1:]
 output = Path(args[0])
 asset_root = Path(args[1]).resolve()
+source = Path(args[2]).resolve() if len(args) > 2 else Path(bpy.data.filepath)
+if len(args) > 2:
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    if source.suffix.lower() == ".abc":
+        status = bpy.ops.wm.alembic_import(filepath=str(source), as_background_job=False)
+    else:
+        status = bpy.ops.wm.usd_import(filepath=str(source), import_cameras=False, import_lights=False,
+                                        import_textures_mode="IMPORT_PACK")
+    if "FINISHED" not in status or not bpy.context.scene.objects:
+        raise ValueError("Blender could not import the scene")
 
 # Redirect links to files provided with the pack and ignore references outside it.
 local_images = {}
@@ -18,7 +28,7 @@ for file in asset_root.rglob("*"):
     if file.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".tga", ".exr", ".tif", ".tiff", ".bmp"} and not file.is_symlink() and file.is_file() and file.resolve().is_relative_to(asset_root):
         local_images.setdefault(file.name.casefold(), []).append(file)
 
-source_dir = Path(bpy.data.filepath).parent
+source_dir = source.parent
 original_image_names = {}
 for image in bpy.data.images:
     if image.source not in {"FILE", "TILED", "SEQUENCE"} or image.packed_file or not image.filepath:

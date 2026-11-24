@@ -1,4 +1,4 @@
-import { ModelStage, convertedImages, decodedImageUrl } from './stage.js'
+import { ModelStage, convertedImages, decodedImages, decodedImageUrl } from './stage.js'
 import { isDataMap } from './textures.js'
 import { isCollisionFile, visualModelFor } from './model-names.js'
 import { ModelThumbnails } from './thumbnails.js'
@@ -531,7 +531,7 @@ async function selectFile(file) {
   renderFiles(true)
   renderDecision()
   if (!file) return status(state.folder ? 'В папке нет подходящих файлов.' : 'В этом наборе нет выбранного файла.')
-  if (localTextures(file)) {
+  if (file.kind === 'image' && (file.preview || decodedImages.has(file.ext))) {
     let preview = file.preview
     if (!preview) {
       status('Загружаю текстуру…')
@@ -539,10 +539,11 @@ async function selectFile(file) {
         const url = await decodedImageUrl(file)
         if (load !== state.load) { URL.revokeObjectURL(url); return }
         preview = imageObjectUrl = url
-      } catch {
+      } catch (error) {
         if (load === state.load) {
           state.previewFailed = true
-          status('Не удалось открыть изображение. Исходник доступен справа.')
+          const detail = /^[А-ЯЁ]/u.test(error?.message) ? error.message + '.' : 'Не удалось открыть изображение.'
+          status(detail + ' Исходник доступен справа.')
         }
         return
       }

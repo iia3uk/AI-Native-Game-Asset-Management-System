@@ -19,6 +19,7 @@ const library = await realpath(resolve(project, process.env.FAB_ASSETS_ROOT || '
   .catch(error => { if (error.code !== 'ENOENT') throw error; return null })
 const publicPath = resolve(project, 'public')
 const three = resolve(project, 'node_modules/three')
+const rhino = resolve(project, 'node_modules/rhino3dm')
 const indexPath = library && resolve(library, 'Viewer')
 const reviewPath = indexPath && resolve(indexPath, 'selections.json')
 const port = Number(process.env.ASSET_VIEWER_PORT || 8177)
@@ -31,6 +32,7 @@ const mime = {
   '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.glb': 'model/gltf-binary',
   '.gltf': 'model/gltf+json', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
   '.webp': 'image/webp', '.bmp': 'image/bmp', '.avif': 'image/avif', '.wasm': 'application/wasm', '.ico': 'image/x-icon',
+  '.apng': 'image/apng', '.jpe': 'image/jpeg', '.jfif': 'image/jpeg', '.svg': 'image/svg+xml',
 }
 let reviewWrites = Promise.resolve()
 let viewFiles
@@ -179,6 +181,9 @@ async function sendFile(request, response, file, asset = false) {
   const safeAssetType = asset && ['.html', '.css', '.js', '.mjs', '.wasm'].includes(extension)
   const headers = { 'Content-Type': safeAssetType ? 'application/octet-stream' : (mime[extension] ?? 'application/octet-stream'),
     'Cache-Control': asset ? 'private, max-age=120' : 'no-cache', 'Last-Modified': file.modified, 'Accept-Ranges': 'bytes' }
+  if (asset && extension === '.svg') {
+    headers['Content-Security-Policy'] = "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'"
+  }
   const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.range ?? '')
   let start = 0
   let end = file.size - 1
@@ -250,6 +255,16 @@ const server = createServer(async (request, response) => {
       await sendFile(request, response, await safeFile(library, path.slice(7)), true)
     } else if (path.startsWith('/vendor/three/')) {
       await sendFile(request, response, await safeFile(three, path.slice(14)))
+    } else if (path === '/vendor/rhino3dm/worker.js') {
+      const { Rhino3dmWorker } = await import('three/addons/loaders/3DMLoader.js')
+      response.writeHead(200, {
+        'Content-Type': 'text/javascript; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-eval'; connect-src 'self'",
+      }).end(request.method === 'HEAD' ? undefined :
+        `importScripts('/vendor/rhino3dm/rhino3dm.js');\n(${Rhino3dmWorker.toString()})();\n`)
+    } else if (path === '/vendor/rhino3dm/rhino3dm.js' || path === '/vendor/rhino3dm/rhino3dm.wasm') {
+      await sendFile(request, response, await safeFile(rhino, path.slice(17)))
     } else if (path.startsWith('/local-files/')) {
       const [, , id, ...pieces] = path.split('/')
       const folder = folders.get(id)

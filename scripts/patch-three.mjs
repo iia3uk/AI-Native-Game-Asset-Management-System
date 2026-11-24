@@ -18,7 +18,12 @@ const ply = [
   ['geometry.computeBoundingSphere();',
     'geometry.userData.hasPlyFaces = buffer.indices.length > 0;\n\t\t\tgeometry.computeBoundingSphere();'],
 ]
-for (const [name, patches] of [['FBXLoader.js', fbx], ['PLYLoader.js', ply]]) {
+const vtk = [
+  ['new Uint8Array( data, 0, 250 )', 'new Uint8Array( data, 0, Math.min( data.byteLength, 250 ) )'],
+  ["meta[ 2 ].includes( 'ASCII' )", "meta[ 2 ]?.includes( 'ASCII' )"],
+]
+const rhino = [['export { Rhino3dmLoader };', 'export { Rhino3dmLoader, Rhino3dmWorker };']]
+for (const [name, patches] of [['FBXLoader.js', fbx], ['PLYLoader.js', ply], ['VTKLoader.js', vtk], ['3DMLoader.js', rhino]]) {
   const loader = new URL('../node_modules/three/examples/jsm/loaders/' + name, import.meta.url)
   const original = await readFile(loader, 'utf8')
   let source = original

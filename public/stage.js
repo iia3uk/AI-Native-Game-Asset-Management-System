@@ -19,6 +19,8 @@ import { geometryBounds, hasTextureImage, PreviewParts } from './parts.js'
 import { colorSuffix, companionTexture, copyTextureMapping, idSuffix, isDataMap, isSingleChannelSignal,
   opacitySuffix, preferColoredImage, resemblesVertexMask, textureName } from './textures.js'
 import { animatedTranslationRoot } from './animation-motion.js'
+import { geometryModel, loadExtraModel } from './extra-models.js'
+import { compressedImageUrl, compressedImages } from './compressed-preview.js'
 
 const fallbackMaterial = () => new THREE.MeshStandardMaterial({ color: 0xc3cfb0, roughness: .78 })
 const textureUrls = new WeakMap()
@@ -55,16 +57,46 @@ class ViewerTiffLoader extends TIFFLoader {
 }
 const FbxTiffLoader = withFbxWrapping(ViewerTiffLoader)
 export const convertedImages = new Set(['tga', 'tif', 'tiff'])
+export const decodedImages = new Set([...convertedImages, ...compressedImages, 'hdr', 'exr'])
 
 export async function decodedImageUrl(file) {
-  const loader = file.ext === 'tga' ? new TGALoader() : new TIFFLoader()
+  if (compressedImages.has(file.ext)) return compressedImageUrl(file)
+  let loader
+  if (file.ext === 'hdr') {
+    const { HDRLoader } = await import('three/addons/loaders/HDRLoader.js')
+    loader = new HDRLoader().setDataType(THREE.FloatType)
+  } else if (file.ext === 'exr') {
+    const { EXRLoader } = await import('three/addons/loaders/EXRLoader.js')
+    loader = new EXRLoader().setDataType(THREE.FloatType)
+  } else {
+    loader = file.ext === 'tga' ? new TGALoader() : new TIFFLoader()
+  }
   const texture = await loader.loadAsync(file.url)
   try {
     const { data, width, height } = texture.image
     const canvas = document.createElement('canvas')
     canvas.width = width
     canvas.height = height
-    const pixels = new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength)
+    let pixels
+    if (data instanceof Float32Array) {
+      pixels = new Uint8ClampedArray(width * height * 4)
+      const channels = data.length / (width * height)
+      const srgb = value => {
+        const linear = Number.isFinite(value) ? Math.max(0, value) : 0
+        const tone = linear / (1 + linear)
+        return 255 * (tone <= .0031308 ? 12.92 * tone : 1.055 * tone ** (1 / 2.4) - .055)
+      }
+      for (let index = 0; index < width * height; index++) {
+        const row = Math.floor(index / width)
+        const sourceRow = texture.flipY ? row : height - row - 1
+        const source = (sourceRow * width + index % width) * channels
+        const target = index * 4
+        for (let chan = 0; chan < 3; chan++) pixels[target + chan] = srgb(data[source + (channels < 3 ? 0 : chan)])
+        pixels[target + 3] = channels === 4 ? data[source + 3] * 255 : 255
+      }
+    } else {
+      pixels = new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength)
+    }
     canvas.getContext('2d').putImageData(new ImageData(pixels, width, height), 0, 0)
     const image = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
     if (!image) throw new Error('Не удалось подготовить изображение')
@@ -145,7 +177,8 @@ function resolveResources(file, files) {
     if (input.startsWith('data:') || input.startsWith('blob:')) return input
     try {
       const url = new URL(input.replaceAll('\\', '/'), location.origin)
-      if (url.origin === location.origin && (url.pathname === file.preview || url.pathname.startsWith('/vendor/three/'))) {
+      if (url.origin === location.origin && (url.pathname === file.preview ||
+          url.pathname.startsWith('/vendor/three/') || url.pathname.startsWith('/vendor/rhino3dm/'))) {
         return url.pathname + url.search
       }
       return findResource(input)?.url ?? '/missing-resource'
@@ -315,7 +348,7 @@ async function applyExternalTextures(model, file, files, unityMaterials, manager
       const colorUrl = variants[defaultIndex]?.url ?? binding.url
       const texture = await loadTexture(colorUrl)
       texture.colorSpace = THREE.SRGBColorSpace
-      if (file.previewFormat === 'glb' || ['glb', 'gltf'].includes(file.ext)) texture.flipY = false
+      if (file.previewFormat === 'glb' || ['glb', 'gltf', 'vrm'].includes(file.ext)) texture.flipY = false
       texture.wrapS = texture.wrapT = THREE.RepeatWrapping
       if (binding.scale?.every(Number.isFinite)) texture.repeat.fromArray(binding.scale)
       if (binding.offset?.every(Number.isFinite)) texture.offset.fromArray(binding.offset)
@@ -592,7 +625,7 @@ export class ModelStage {
     let model
     let animations = []
     let variantGroups = []
-    const type = file.previewFormat ?? file.ext
+    const type = file.previewFormat ?? (file.ext === 'vrm' ? 'glb' : file.ext)
     const local = file.url.startsWith('/local-files/')
     try {
       if (type === 'gltf' || type === 'glb') {
@@ -624,20 +657,11 @@ export class ModelStage {
       } else if (type === 'stl' || type === 'ply') {
         const loader = type === 'stl' ? new STLLoader(manager) : new PLYLoader(manager)
         const geometry = await loader.loadAsync(file.preview)
-        const vertexColors = geometry.hasAttribute('color')
-        if (type === 'ply' && geometry.userData.hasPlyFaces === false) {
-          const material = new THREE.PointsMaterial({ vertexColors, color: vertexColors ? 0xffffff : 0xc3cfb0,
-            size: 2, sizeAttenuation: false })
-          model = new THREE.Points(geometry, material)
-        } else {
-          if (!geometry.getAttribute('normal')) geometry.computeVertexNormals()
-          const material = fallbackMaterial()
-          material.vertexColors = vertexColors
-          if (vertexColors) material.color.setHex(0xffffff)
-          model = new THREE.Mesh(geometry, material)
-        }
+        model = geometryModel(geometry, type === 'ply' && geometry.userData.hasPlyFaces === false)
       } else {
-        throw new Error('Для этого формата нужно отдельное приложение')
+        const loaded = await loadExtraModel(type, file.preview, manager)
+        model = loaded.model
+        animations = loaded.animations ?? model.animations ?? []
       }
       await settled()
       model.userData.replacedTextures = new Set()
