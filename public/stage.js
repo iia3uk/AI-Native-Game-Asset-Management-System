@@ -15,12 +15,19 @@ import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js'
 import { TDSLoader } from 'three/addons/loaders/TDSLoader.js'
 import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
-import { PreviewParts } from './parts.js'
+import { geometryBounds, hasTextureImage, PreviewParts } from './parts.js'
 
 const fallbackMaterial = () => new THREE.MeshStandardMaterial({ color: 0xc3cfb0, roughness: .78 })
+const textureUrls = new WeakMap()
 
 function withFbxWrapping(Loader) {
   return class extends Loader {
+    load(url, ...callbacks) {
+      const texture = super.load(url, ...callbacks)
+      textureUrls.set(texture, this.manager.resolveURL((this.path ?? '') + url))
+      return texture
+    }
+
     _applyTexData(texture, data) {
       // FBXLoader sets the authored wrapping on the texture before its pixels arrive.
       super._applyTexData(texture, { ...data, wrapS: texture.wrapS, wrapT: texture.wrapT })
@@ -59,19 +66,27 @@ function dispose(object) {
   const geometry = new Set()
   const materials = new Set()
   const textures = new Set()
+  const skeletons = new Set()
   object.traverse(item => {
     for (const texture of item.userData.replacedTextures ?? []) textures.add(texture)
     if (item.geometry) geometry.add(item.geometry)
+    if (item.skeleton) skeletons.add(item.skeleton)
     for (const material of Array.isArray(item.material) ? item.material : item.material ? [item.material] : []) {
+      if (!material) continue
       materials.add(material)
       for (const value of Object.values(material)) if (value?.isTexture) textures.add(value)
     }
   })
-  for (const item of [...geometry, ...materials, ...textures]) item.dispose()
+  for (const item of [...geometry, ...materials, ...textures, ...skeletons]) item.dispose()
+  if (typeof ImageBitmap !== 'undefined') {
+    const bitmaps = new Set([...textures].map(texture => texture.image).filter(image => image instanceof ImageBitmap))
+    for (const bitmap of bitmaps) bitmap.close()
+  }
 }
 
 function resolveResources(file, files) {
   const manager = new THREE.LoadingManager()
+  const objectUrls = new Set()
   let pending, finish
   manager.onStart = () => { pending ??= new Promise(resolve => { finish = resolve }) }
   manager.onLoad = () => { finish?.(); pending = finish = null }
@@ -106,7 +121,7 @@ function resolveResources(file, files) {
     }
     const basename = input.split('/').at(-1)
     for (const key of [basename, url.pathname.split('/').at(-1)]) {
-      let name = key
+      let name = key ?? ''
       try { name = decodeURIComponent(key) } catch { /* filenames may contain a literal percent sign */ }
       const candidates = names.get(name.toLowerCase())
       if (candidates?.length) return file.url.startsWith('/local-files/') ? closest(candidates, file) :
@@ -114,6 +129,7 @@ function resolveResources(file, files) {
     }
   }
   manager.setURLModifier(input => {
+    if (input.startsWith('blob:')) objectUrls.add(input)
     if (input.startsWith('data:') || input.startsWith('blob:')) return input
     try {
       const url = new URL(input.replaceAll('\\', '/'), location.origin)
@@ -123,11 +139,22 @@ function resolveResources(file, files) {
       return findResource(input)?.url ?? '/missing-resource'
     } catch { return '/missing-resource' }
   })
-  return { manager, findResource, settled: () => pending }
+  const release = async () => {
+    await pending
+    for (const url of objectUrls) URL.revokeObjectURL(url)
+    objectUrls.clear()
+  }
+  return { manager, findResource, settled: () => pending, release }
 }
 
 function closest(candidates, source) {
   if (candidates.length < 2) return candidates[0]
+  const root = source.url.startsWith('/local-files/') && source.url.split('/', 3)[2]
+  if (root) {
+    const ownFolder = candidates.filter(file => file.url?.startsWith('/local-files/' + root + '/'))
+    if (ownFolder.length < 2) return ownFolder[0]
+    candidates = ownFolder
+  }
   const directory = file => file.path.toLowerCase().split('/').slice(0, -1)
   const parent = directory(source)
   const ranked = candidates.map(file => {
@@ -190,6 +217,7 @@ async function applyExternalTextures(model, file, files, unityMaterials, manager
     if (!mesh.isMesh || !mesh.geometry.hasAttribute('uv') || !mesh.geometry.attributes.position?.count) return
     meshes.push(mesh)
     for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      if (!material || !('map' in material)) continue
       if (!materialMeshes.has(material)) materialMeshes.set(material, new Set())
       materialMeshes.get(material).add(mesh)
     }
@@ -202,7 +230,7 @@ async function applyExternalTextures(model, file, files, unityMaterials, manager
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
     if (materials.length === prefab.slots.length) {
       materials.forEach((material, index) => {
-        if (prefab.slots[index] && materialMeshes.get(material).size === 1) prefabTextures.set(material, prefab.slots[index])
+        if (prefab.slots[index] && materialMeshes.get(material)?.size === 1) prefabTextures.set(material, prefab.slots[index])
       })
     }
   }
@@ -217,8 +245,7 @@ async function applyExternalTextures(model, file, files, unityMaterials, manager
     const findByName = () => findColorTexture(key, file, images) ??
       (meshName ? findColorTexture(meshName, file, images) : undefined) ??
       (single ? findColorTexture(file.name.slice(0, -(file.ext.length + 1)), file, images) : undefined)
-    const image = material.map?.image
-    if ((image?.width > 1 || image?.height > 1) && !explicit?.remap) {
+    if (hasTextureImage(material.map) && !explicit?.remap) {
       if (!file.previewAlbedo) return
       const variants = findByName()?.variants
       if (!variants || variants.length < 2) return
@@ -233,7 +260,8 @@ async function applyExternalTextures(model, file, files, unityMaterials, manager
     }
     const getNamed = name => Object.hasOwn(unityMaterials, name) ? unityMaterials[name] : []
     const named = closest(getNamed(key), file) ?? (key.startsWith('mi_') ? closest(getNamed('m_' + key.slice(3)), file) : null)
-    const binding = explicit ?? prefabTextures.get(material) ?? named ?? findByName()
+    const unityBinding = explicit ?? prefabTextures.get(material) ?? named
+    const binding = unityBinding ?? findByName()
     if (!binding) return
     try {
       const texture = await loadTexture(binding.url)
@@ -245,20 +273,89 @@ async function applyExternalTextures(model, file, files, unityMaterials, manager
       if (material.map) replacedTextures.add(material.map)
       material.map = texture
       material.color?.setHex(0xffffff)
-      if (binding.alphaUrl && !material.alphaMap?.image) {
+      // Unity shaders can use vertex colors as masks. The preview only has the flat albedo map.
+      if (unityBinding && file.ext === 'fbx') material.vertexColors = false
+      if (binding.alphaUrl && !hasTextureImage(material.alphaMap)) {
         const alpha = await loadTexture(binding.alphaUrl).catch(() => null)
         if (alpha) {
+          alpha.flipY = texture.flipY
+          alpha.wrapS = texture.wrapS
+          alpha.wrapT = texture.wrapT
+          alpha.repeat.copy(texture.repeat)
+          alpha.offset.copy(texture.offset)
+          alpha.needsUpdate = true
           if (material.alphaMap) replacedTextures.add(material.alphaMap)
           material.alphaMap = alpha
         }
       }
-      if (Number.isFinite(binding.alphaTest) && (!binding.alphaUrl || material.alphaMap)) material.alphaTest = binding.alphaTest
+      if (Number.isFinite(binding.alphaTest) && (!binding.alphaUrl || hasTextureImage(material.alphaMap))) {
+        material.alphaTest = binding.alphaTest
+        if (material.opacity === 1 && binding.alphaTest > 0) material.transparent = false
+      }
+      texture.needsUpdate = true
       material.needsUpdate = true
       if (binding.variants?.length > 1) variantGroups.push({ material, files: binding.variants, loadTexture, index: 0 })
     } catch { /* keep the original material when its external texture cannot be decoded */ }
   }))
-  model.userData.replacedTextures = replacedTextures
+  for (const texture of replacedTextures) model.userData.replacedTextures.add(texture)
   return variantGroups
+}
+
+export function normalizeFbx(model) {
+  const materials = new Set()
+  model.traverse(mesh => {
+    if (!mesh.isMesh) return
+    const position = mesh.geometry.getAttribute('position')
+    if (!position?.count) return
+    if (!mesh.geometry.hasAttribute('normal')) mesh.geometry.computeVertexNormals()
+    if (Array.isArray(mesh.material) && !mesh.geometry.groups.length) {
+      // An FBX can list several materials without assigning any polygon groups.
+      const index = mesh.material.findIndex(Boolean)
+      if (index < 0) mesh.material = fallbackMaterial()
+      else mesh.geometry.addGroup(0, mesh.geometry.index?.count ?? position.count, index)
+    }
+    for (const material of [mesh.material].flat()) if (material) materials.add(material)
+  })
+  const replaced = model.userData.replacedTextures ??= new Set()
+  const source = texture => textureUrls.get(texture) ?? texture?.image?.src
+  for (const material of materials) {
+    const { map, alphaMap } = material
+    if (alphaMap && map && (alphaMap === map || (source(map) && source(map) === source(alphaMap)))) {
+      // FBX may connect the same RGBA image to diffuse and transparency.
+      // Three already reads its alpha from map. alphaMap would multiply by green.
+      replaced.add(alphaMap)
+      material.alphaMap = null
+    }
+    for (const [key, texture] of Object.entries(material)) {
+      if (!texture?.isTexture || hasTextureImage(texture)) continue
+      replaced.add(texture)
+      material[key] = null
+    }
+    material.needsUpdate = true
+  }
+}
+
+export function normalizeFbxVertexColors(model) {
+  model.traverse(mesh => {
+    if (!mesh.isMesh) return
+    const materials = [mesh.material].flat().filter(material => material?.vertexColors)
+    if (!materials.length) return
+    const { geometry } = mesh
+    const color = geometry.getAttribute('color')
+    if (!color?.count) {
+      // FBX materials can be shared by meshes with and without a vertex color layer.
+      const count = geometry.getAttribute('position')?.count ?? 0
+      if (count) geometry.setAttribute('color', new THREE.Uint8BufferAttribute(new Uint8Array(count * 3).fill(255), 3, true))
+      return
+    }
+    if (!materials.some(material => hasTextureImage(material.map))) return
+    for (let index = 0; index < color.count; index++) {
+      if (color.getX(index) !== 0 || color.getY(index) !== 0 || color.getZ(index) !== 0) return
+    }
+    // Use a neutral multiplier for an unused black mask, preserving any vertex alpha.
+    for (let index = 0; index < color.count; index++) color.setXYZ(index, 1, 1, 1)
+    color.needsUpdate = true
+  })
 }
 
 function normalizePreviewMaterials(model, file) {
@@ -266,11 +363,10 @@ function normalizePreviewMaterials(model, file) {
   const materials = new Set()
   model.traverse(mesh => {
     if (!mesh.isMesh || !mesh.geometry.hasAttribute('uv')) return
-    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) materials.add(material)
+    for (const material of [mesh.material].flat()) if (material) materials.add(material)
   })
   for (const material of materials) {
-    const image = material.map?.image
-    if (!(image?.width > 1 || image?.height > 1)) continue
+    if (!hasTextureImage(material.map)) continue
     if (file.previewAlbedo) material.color?.setHex(0xffffff)
     if (file.previewVertexMask) material.vertexColors = false
     if (file.previewAlphaCutout) {
@@ -287,14 +383,16 @@ async function loadObj(file, manager, findResource) {
   const base = new URL(file.preview, location.origin)
   const references = [...source.matchAll(/^[ \t]*mtllib[ \t]+([^\r\n]+)/gm)].map(([, value]) => value.trim())
   const materialFiles = new Set()
+  const findMaterial = name => {
+    const resource = findResource(name.replace(/^["']|["']$/g, ''), base)
+    if (resource?.ext === 'mtl') materialFiles.add(resource.url)
+    return resource?.ext === 'mtl'
+  }
   for (const name of references) {
-    const resource = findResource(name, base)
-    if (resource?.ext === 'mtl') materialFiles.add(resource.url)
+    if (findMaterial(name)) continue
+    for (const part of name.match(/"[^"]+"|'[^']+'|\S+/g) ?? []) findMaterial(part)
   }
-  if (!materialFiles.size) {
-    const resource = findResource(file.name.replace(/\.obj$/i, '.mtl'), base)
-    if (resource?.ext === 'mtl') materialFiles.add(resource.url)
-  }
+  if (!materialFiles.size) findMaterial(file.name.replace(/\.obj$/i, '.mtl'))
   const loaded = await Promise.allSettled([...materialFiles].map(url => new MTLLoader(manager).loadAsync(url)))
   const creators = loaded.filter(result => result.status === 'fulfilled').map(result => result.value)
   if (creators.length) loader.setMaterials({
@@ -307,12 +405,13 @@ async function applyGltfTexture(model, binding, manager) {
   const materials = new Set()
   model.traverse(mesh => {
     if (!mesh.isMesh || !mesh.geometry.hasAttribute('uv')) return
-    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
-      if (!material.map?.image) materials.add(material)
+    for (const material of [mesh.material].flat()) {
+      if (material && 'map' in material && !hasTextureImage(material.map)) materials.add(material)
     }
   })
   if (!materials.size) return
-  const texture = await new THREE.TextureLoader(manager).loadAsync(binding.url).catch(() => null)
+  const texture = await (manager.getHandler(binding.url) ?? new THREE.TextureLoader(manager))
+    .loadAsync(binding.url).catch(() => null)
   if (!texture) return
   texture.flipY = false
   texture.colorSpace = THREE.SRGBColorSpace
@@ -321,6 +420,7 @@ async function applyGltfTexture(model, binding, manager) {
     texture.minFilter = THREE.NearestFilter
     texture.generateMipmaps = false
   }
+  texture.needsUpdate = true
   for (const material of materials) {
     material.map = texture
     material.color?.setHex(0xffffff)
@@ -426,67 +526,96 @@ export class ModelStage {
   async load(file, files, unityMaterials = {}) {
     this.resetModel()
     const request = ++this.request
-    const { manager, findResource, settled } = resolveResources(file, files)
+    const { manager, findResource, settled, release } = resolveResources(file, files)
     let model
     let animations = []
     let variantGroups = []
     const type = file.previewFormat ?? file.ext
     const local = file.url.startsWith('/local-files/')
-    if (type === 'gltf' || type === 'glb') {
-      const draco = new DRACOLoader(manager)
-      draco.setDecoderPath('/vendor/three/examples/jsm/libs/draco/gltf/')
-      const ktx2 = new KTX2Loader(manager).setTranscoderPath('/vendor/three/examples/jsm/libs/basis/').detectSupport(this.renderer)
-      const loader = new GLTFLoader(manager).setDRACOLoader(draco).setMeshoptDecoder(MeshoptDecoder).setKTX2Loader(ktx2)
-      try {
-        const loaded = await loader.loadAsync(file.preview)
-        model = loaded.scene
-        animations = loaded.animations
-        if (file.previewTexture && request === this.request) await applyGltfTexture(model, file.previewTexture, manager)
-      } finally {
-        draco.dispose()
-        ktx2.dispose()
-      }
-    } else if (type === 'fbx') {
-      model = await new FBXLoader(manager).loadAsync(file.preview)
-      animations = model.animations
-      model.traverse(item => {
-        if (item.isMesh && item.geometry.hasAttribute('position') && !item.geometry.hasAttribute('normal')) {
-          item.geometry.computeVertexNormals()
+    try {
+      if (type === 'gltf' || type === 'glb') {
+        const draco = new DRACOLoader(manager)
+        draco.setDecoderPath('/vendor/three/examples/jsm/libs/draco/gltf/')
+        const ktx2 = new KTX2Loader(manager).setTranscoderPath('/vendor/three/examples/jsm/libs/basis/').detectSupport(this.renderer)
+        const loader = new GLTFLoader(manager).setDRACOLoader(draco).setMeshoptDecoder(MeshoptDecoder).setKTX2Loader(ktx2)
+        try {
+          const loaded = await loader.loadAsync(file.preview)
+          model = loaded.scene
+          animations = loaded.animations
+          if (file.previewTexture && request === this.request) await applyGltfTexture(model, file.previewTexture, manager)
+        } finally {
+          draco.dispose()
+          ktx2.dispose()
         }
-      })
-    } else if (type === 'obj') {
-      model = await loadObj(file, manager, findResource)
-    } else if (type === 'dae') {
-      const loaded = await new ColladaLoader(manager).loadAsync(file.preview)
-      model = loaded.scene
-      animations = model.animations ?? []
-    } else if (type === '3ds' || type === '3mf') {
-      const loader = type === '3ds' ? new TDSLoader(manager) : new ThreeMFLoader(manager)
-      model = await loader.loadAsync(file.preview)
-    } else if (type === 'stl' || type === 'ply') {
-      const loader = type === 'stl' ? new STLLoader(manager) : new PLYLoader(manager)
-      const geometry = await loader.loadAsync(file.preview)
-      if (!geometry.getAttribute('normal')) geometry.computeVertexNormals()
-      const material = fallbackMaterial()
-      material.vertexColors = geometry.hasAttribute('color')
-      if (material.vertexColors) material.color.setHex(0xffffff)
-      model = new THREE.Mesh(geometry, material)
-    } else {
-      throw new Error('Для этого формата нужно отдельное приложение')
-    }
-    if ((type === 'fbx' || local) && files.some(item => item.kind === 'image')) {
+      } else if (type === 'fbx') {
+        model = await new FBXLoader(manager).loadAsync(file.preview)
+        animations = model.animations
+      } else if (type === 'obj') {
+        model = await loadObj(file, manager, findResource)
+      } else if (type === 'dae') {
+        const loaded = await new ColladaLoader(manager).loadAsync(file.preview)
+        model = loaded.scene
+        animations = model.animations ?? []
+      } else if (type === '3ds' || type === '3mf') {
+        const loader = type === '3ds' ? new TDSLoader(manager) : new ThreeMFLoader(manager)
+        model = await loader.loadAsync(file.preview)
+      } else if (type === 'stl' || type === 'ply') {
+        const loader = type === 'stl' ? new STLLoader(manager) : new PLYLoader(manager)
+        const geometry = await loader.loadAsync(file.preview)
+        const vertexColors = geometry.hasAttribute('color')
+        if (type === 'ply' && geometry.userData.hasPlyFaces === false) {
+          const material = new THREE.PointsMaterial({ vertexColors, color: vertexColors ? 0xffffff : 0xc3cfb0,
+            size: 2, sizeAttenuation: false })
+          model = new THREE.Points(geometry, material)
+        } else {
+          if (!geometry.getAttribute('normal')) geometry.computeVertexNormals()
+          const material = fallbackMaterial()
+          material.vertexColors = vertexColors
+          if (vertexColors) material.color.setHex(0xffffff)
+          model = new THREE.Mesh(geometry, material)
+        }
+      } else {
+        throw new Error('Для этого формата нужно отдельное приложение')
+      }
       await settled()
+      model.userData.replacedTextures = new Set()
       if (request === this.request) {
-        variantGroups = await applyExternalTextures(model, file, files, unityMaterials, manager)
+        if (type === 'fbx') normalizeFbx(model)
+        if ((type === 'fbx' || local) && files.some(item => item.kind === 'image')) {
+          variantGroups = await applyExternalTextures(model, file, files, unityMaterials, manager)
+        }
+        if (type === 'fbx') normalizeFbxVertexColors(model)
         normalizePreviewMaterials(model, file)
       }
+    } catch (error) {
+      if (model) dispose(model)
+      throw error
+    } finally {
+      await release()
     }
     if (request !== this.request) {
       dispose(model)
       return null
     }
     model.updateMatrixWorld(true)
-    const box = new THREE.Box3().setFromObject(model)
+    const parts = new PreviewParts(model)
+    const box = new THREE.Box3()
+    let points = 0
+    let lines = 0
+    for (const { mesh, defaultVisible } of parts.meshes) {
+      if (!defaultVisible || !this.camera.layers.test(mesh.layers)) continue
+      const bounds = geometryBounds(mesh)
+      if (bounds) box.union(bounds)
+    }
+    model.traverseVisible(object => {
+      if ((!object.isPoints && !object.isLine) || !object.geometry.getAttribute('position')?.count ||
+          ![object.material].flat().some(material => material?.visible) || !this.camera.layers.test(object.layers)) return
+      const bounds = geometryBounds(object)
+      if (!bounds) return
+      box.union(bounds)
+      if (object.isPoints) points += object.geometry.getAttribute('position').count
+      if (object.isLine) lines++
+    })
     const skeletonOnly = box.isEmpty()
     let boneCount = 0
     if (skeletonOnly) {
@@ -494,11 +623,12 @@ export class ModelStage {
       model.traverse(item => {
         if (!item.isBone) return
         item.getWorldPosition(position)
-        box.expandByPoint(position)
+        if ([...position].every(Number.isFinite)) box.expandByPoint(position)
         boneCount++
       })
     }
     if (box.isEmpty()) {
+      parts.dispose()
       dispose(model)
       return { empty: true, clips: animations, meshes: 0, triangles: 0 }
     }
@@ -520,7 +650,7 @@ export class ModelStage {
       model.traverse(mesh => {
         if (!mesh.isMesh || !mesh.geometry.hasAttribute('uv')) return
         for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
-          if ('map' in material) materials.add(material)
+          if (material && 'map' in material) materials.add(material)
         }
       })
       this.manualMaterials = [...materials]
@@ -530,8 +660,8 @@ export class ModelStage {
       }
       this.manualFlipY = type !== 'gltf' && type !== 'glb'
     }
-    this.sceneBounds = this.bounds = skeletonOnly ? box.clone().translate(container.position) : new THREE.Box3().setFromObject(container)
-    this.parts = new PreviewParts(model)
+    this.sceneBounds = this.bounds = box.clone().translate(container.position)
+    this.parts = parts
     this.parts.apply(this.lighting === 'unlit')
     this.clips = animations ?? []
     this.mixer = this.clips.length ? new THREE.AnimationMixer(model) : null
@@ -541,12 +671,12 @@ export class ModelStage {
     this.fit()
     let meshes = 0
     let triangles = 0
-    model.traverse(item => {
-      if (!item.isMesh) return
+    for (const { mesh, defaultVisible } of parts.meshes) {
+      if (!defaultVisible) continue
       meshes++
-      triangles += (item.geometry.index?.count ?? item.geometry.attributes.position?.count ?? 0) / 3
-    })
-    return { meshes, triangles: Math.round(triangles), clips: this.clips, skeletonOnly, boneCount, empty: false,
+      triangles += (mesh.geometry.index?.count ?? mesh.geometry.attributes.position.count) / 3
+    }
+    return { meshes, triangles: Math.round(triangles), points, lines, clips: this.clips, skeletonOnly, boneCount, empty: false,
       parts: this.parts.choices.map(item => item.name) }
   }
 
@@ -669,11 +799,12 @@ export class ModelStage {
     const distance = radius / Math.sin(Math.min(halfVertical, halfHorizontal)) * 1.22
     this.camera.position.copy(sphere.center).addScaledVector(new THREE.Vector3(1.15, .68, 1.45).normalize(), distance)
     this.camera.near = Math.max(.00002, radius / 500)
-    this.camera.far = radius * 180
+    const maxDistance = Math.max(radius * 35, distance * 2)
+    this.camera.far = Math.max(radius * 180, maxDistance + radius * 4)
     this.camera.updateProjectionMatrix()
     this.controls.target.copy(sphere.center)
     this.controls.minDistance = radius * .1
-    this.controls.maxDistance = radius * 35
+    this.controls.maxDistance = maxDistance
     this.controls.update()
   }
 
@@ -686,7 +817,7 @@ export class ModelStage {
   wireframe(active) {
     for (const { materials } of this.parts?.meshes ?? []) {
       for (const material of materials) {
-        if ('wireframe' in material) material.wireframe = active
+        if (material && 'wireframe' in material) material.wireframe = active
       }
     }
     this.parts?.apply(this.lighting === 'unlit')

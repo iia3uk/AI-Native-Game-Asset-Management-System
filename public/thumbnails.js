@@ -32,8 +32,8 @@ export class ModelThumbnails {
     if (!src) return
     const image = document.createElement('img')
     image.alt = ''
-    image.src = src
     image.addEventListener('load', () => { if (target.isConnected) target.replaceChildren(image) }, { once: true })
+    image.src = src
   }
 
   queue(target, job) {
@@ -52,10 +52,12 @@ export class ModelThumbnails {
     try {
       for (const [key, job] of this.pending) {
         if (!job.targets.some(target => target.isConnected)) { this.pending.delete(key); continue }
-        let image = null
+        let image
         try { image = await this.render(await job.load()) } catch { /* the card can use its supplied fallback image */ }
-        this.cache.set(key, image)
-        if (this.cache.size > 256) this.cache.delete(this.cache.keys().next().value)
+        if (image !== undefined) {
+          this.cache.set(key, image)
+          if (this.cache.size > 256) this.cache.delete(this.cache.keys().next().value)
+        }
         this.pending.delete(key)
         for (const target of job.targets) if (target.isConnected) this.paint(target, image ?? job.fallback)
       }
@@ -64,7 +66,7 @@ export class ModelThumbnails {
     }
   }
 
-  async render({ files, resources, unityMaterials }) {
+  async render({ files, resources, unityMaterials, prepare }) {
     if (!files.length) return null
     if (!this.stage) {
       this.stage = new ModelStage(document.createElement('div'))
@@ -79,7 +81,7 @@ export class ModelThumbnails {
     }
     for (const file of files) {
       try {
-        const result = await this.stage.load(file, resources, unityMaterials)
+        const result = await this.stage.load(await prepare(file), resources, unityMaterials)
         if (!result || result.empty || result.skeletonOnly) continue
         this.stage.renderer.render(this.stage.scene, this.stage.camera)
         return this.stage.renderer.domElement.toDataURL('image/jpeg', .82)

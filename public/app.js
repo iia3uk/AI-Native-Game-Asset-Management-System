@@ -27,7 +27,9 @@ const categories = {
   Trees: 'Деревья', Vegetation: 'Растительность', VFX: 'Эффекты', Villages: 'Поселения',
   Local: 'Папка',
 }
-const state = { packs: [], marks: {}, active: null, file: null, candidates: false, kind: 'model', limit: 65, load: 0, folder: null }
+const filePageSize = 65
+const state = { packs: [], marks: {}, active: null, file: null, candidates: false, kind: 'model',
+  limit: filePageSize, load: 0, packLoad: 0, folder: null }
 const fab = { packs: [], marks: {}, selection: null }
 const localFolders = new Map()
 const foldersStorage = 'eldermere.folders.v1'
@@ -100,6 +102,8 @@ const packRequests = new Map()
 const folderCategory = pack => pack.folderKey ? classification.roots[pack.folderKey] ?? noCategory : pack.category ?? noCategory
 const modelCategory = (pack, file) => classification.models[markKey(pack.id, file.id)] ?? folderCategory(pack)
 const categoryMatches = (pack, file) => !ui.category.value || (file.kind === 'model' && modelCategory(pack, file) === ui.category.value)
+const eligibleFile = (pack, file) => categoryMatches(pack, file) &&
+  (!state.candidates || state.marks[markKey(pack.id, file.id)]?.status === 'candidate')
 
 function modelsInCategory(pack) {
   const selected = ui.category.value
@@ -189,26 +193,32 @@ async function fetchPack(pack) {
   return packRequests.get(url)
 }
 
-async function thumbnailInput(pack, category) {
+async function ensurePreview(file, folder) {
+  if (!file.convertible || file.preview || !folder) return file
+  const { preview } = await json(`/api/folder/${folder.id}/blend/${file.id}`, post({}))
+  return { ...file, preview, previewFormat: 'glb' }
+}
+
+function modelResources(folder, files) {
+  if (!folder) return files
+  const otherImages = [...localFolders.values()].filter(other => other.key !== folder.key).flatMap(other => other.images)
+  return otherImages.length ? folder.resources.concat(otherImages) : folder.resources
+}
+
+async function thumbnailInput(pack, category, candidateIds) {
   const data = await fetchPack(pack)
   const folder = localFolders.get(pack.folderKey)
   const models = data.files.filter(file => file.kind === 'model' &&
-    (!category || modelCategory(pack, file) === category))
+    (!category || modelCategory(pack, file) === category) && (!candidateIds || candidateIds.includes(file.id)))
   const eligible = models.filter(file => file.preview)
   const byId = new Map(eligible.map(file => [file.id, file]))
   const candidates = (pack.previewFiles ?? []).map(id => byId.get(id)).filter(Boolean)
-  if (!candidates.length) candidates.push(...eligible.sort((a, b) => a.size - b.size).slice(0, 4))
-  if (!candidates.length && folder) {
-    const blend = models.filter(file => file.convertible).sort((a, b) => a.size - b.size)[0]
-    if (blend) {
-      const { preview } = await json(`/api/folder/${folder.id}/blend/${blend.id}`, post({}))
-      blend.preview = preview
-      blend.previewFormat = 'glb'
-      candidates.push(blend)
-    }
-  }
-  return { files: candidates, resources: folder?.resources ?? data.files,
-    unityMaterials: data.unityMaterials }
+  const sorted = eligible.filter(file => !candidates.includes(file)).sort((a, b) => a.size - b.size)
+  candidates.push(...sorted.slice(0, 4 - candidates.length))
+  if (folder) candidates.push(...models.filter(file => file.convertible && !file.preview)
+    .sort((a, b) => a.size - b.size).slice(0, 4))
+  return { files: candidates, resources: modelResources(folder, data.files),
+    unityMaterials: data.unityMaterials, prepare: file => ensurePreview(file, folder) }
 }
 
 function updateTabs() {
@@ -227,56 +237,85 @@ function renderPacks() {
   thumbnails.clearObserved()
   const query = normalize(ui.search.value)
   const selectedCategory = ui.category.value
-  const candidates = chosen()
-  const packCounts = new Map()
-  for (const candidate of candidates) {
-    const key = candidate.packId ?? candidate.fabId
-    packCounts.set(key, (packCounts.get(key) ?? 0) + 1)
+  const scroll = ui['pack-list'].scrollTop
+  const focused = ui['pack-list'].contains(document.activeElement) ? document.activeElement.dataset.pack : null
+  const roots = [...localFolders.values()].map(folder => folder.id).join(',')
+  const packsById = new Map(state.packs.map(pack => [pack.id, pack]))
+  const candidateFiles = new Map()
+  for (const [key, candidate] of Object.entries(state.marks)) {
+    if (candidate.status !== 'candidate') continue
+    const id = candidate.packId ?? candidate.fabId
+    const pack = packsById.get(id)
+    if (!pack) continue
+    const fileId = key.slice(id.length + 1)
+    const file = state.active?.id === id && state.active.files.find(file => file.id === fileId)
+    if (selectedCategory && (file ? !categoryMatches(pack, file) :
+      (pack.modelIds && !pack.modelIds.includes(fileId)) ||
+      (classification.models[key] ?? folderCategory(pack)) !== selectedCategory)) continue
+    if (!candidateFiles.has(id)) candidateFiles.set(id, [])
+    candidateFiles.get(id).push(fileId)
   }
-  const visible = state.packs.filter(pack => (!state.candidates || packCounts.has(pack.id)) &&
+  const visible = state.packs.filter(pack => (!state.candidates || candidateFiles.has(pack.id)) &&
     (!selectedCategory || modelsInCategory(pack) > 0) &&
     (!query || normalize([pack.title, pack.author, categoryLabel(pack.category), ...pack.formats].join(' ')).includes(query)))
   const fragment = document.createDocumentFragment()
+  let nextFocus
   for (const pack of visible) {
     const button = label('button', 'pack')
     button.dataset.pack = pack.id
+    if (pack.id === focused) nextFocus = button
     if (pack.folderKey) button.title = localFolders.get(pack.folderKey)?.root + ' / ' + pack.localPath
     button.setAttribute('aria-current', String(pack.id === state.active?.id))
     const icon = label('span', 'pack-icon')
     icon.textContent = pack.models ? '3D' : 'IMG'
     if (pack.models) {
-      const key = [pack.id, selectedCategory, localFolders.get(pack.folderKey)?.id ?? '', selectedCategory ? categoryRevision : 0].join(':')
-      thumbnails.observe(icon, key, () => thumbnailInput(pack, selectedCategory), pack.previewImage)
+      const candidateIds = state.candidates ? candidateFiles.get(pack.id) : null
+      const key = [pack.id, selectedCategory, pack.folderKey ? roots : '', selectedCategory ? categoryRevision : 0,
+        candidateIds ? [...candidateIds].sort().join(',') : ''].join(':')
+      const fallback = selectedCategory || state.candidates ? null : pack.previewImage
+      thumbnails.observe(icon, key, () => thumbnailInput(pack, selectedCategory, candidateIds), fallback)
     } else if (pack.previewImage) thumbnails.paint(icon, pack.previewImage)
     const text = label('span', 'pack-text')
     text.append(label('span', 'pack-title', pack.title), label('span', 'pack-meta', state.folder
       ? localFolders.get(pack.folderKey)?.name + ' · ' + counts(modelsInCategory(pack)) + ' 3D'
       : categoryLabel(selectedCategory || pack.category) + ' · ' + counts(modelsInCategory(pack)) + ' 3D'))
     button.append(icon, text)
-    if (packCounts.has(pack.id)) button.append(label('span', 'pack-count', counts(packCounts.get(pack.id))))
+    if (candidateFiles.has(pack.id)) button.append(label('span', 'pack-count', counts(candidateFiles.get(pack.id).length)))
     fragment.append(button)
   }
   if (!visible.length) fragment.append(label('p', 'list-empty', state.candidates ? 'Подходящих отметок пока нет.' :
     state.folder ? 'Подходящие файлы не найдены.' : 'Наборы не найдены.'))
   ui['pack-list'].replaceChildren(fragment)
+  ui['pack-list'].scrollTop = scroll
+  nextFocus?.focus({ preventScroll: true })
   ui['result-count'].textContent = counts(visible.length) + ' из ' + counts(state.packs.length)
   updateTabs()
   return visible
 }
 
-function renderFiles() {
+function renderFiles(revealSelection = false) {
   const query = normalize(ui['file-search'].value)
   const pack = state.active
   const files = !pack ? [] : pack.files.filter(file => (state.kind === 'all' || state.kind === file.kind) &&
-    categoryMatches(pack, file) &&
-    (!state.candidates || state.marks[markKey(pack.id, file.id)]?.status === 'candidate') &&
+    eligibleFile(pack, file) &&
     (!query || normalize(file.displayPath).includes(query)))
+  if (revealSelection && state.file) {
+    const index = files.findIndex(file => file.id === state.file.id)
+    if (index >= state.limit) state.limit = Math.ceil((index + 1) / filePageSize) * filePageSize
+  }
+  const list = ui['file-list']
+  const scroll = list.scrollTop
+  const focused = list.contains(document.activeElement) ? document.activeElement.dataset.file : null
   const fragment = document.createDocumentFragment()
+  let nextFocus
+  let selected
   for (const file of files.slice(0, state.limit)) {
     const button = label('button', 'file')
     button.title = file.displayPath + (file.kind === 'model' ? ' · ' + categoryLabel(modelCategory(pack, file)) : '')
     button.dataset.file = file.id
+    if (file.id === focused) nextFocus = button
     button.setAttribute('aria-current', String(state.file?.id === file.id))
+    if (state.file?.id === file.id) selected = button
     button.append(label('span', 'file-name', file.name), label('span', 'file-type', file.ext.toUpperCase()))
     const status = state.marks[markKey(pack.id, file.id)]?.status
     if (status) button.append(label('span', 'file-mark', { candidate: '✓', later: '◷', excluded: '×' }[status]))
@@ -288,7 +327,15 @@ function renderFiles() {
     more.dataset.more = 'true'
     fragment.append(more)
   }
-  ui['file-list'].replaceChildren(fragment)
+  list.replaceChildren(fragment)
+  list.scrollTop = scroll
+  nextFocus?.focus({ preventScroll: true })
+  if (revealSelection && selected) {
+    const viewport = list.getBoundingClientRect()
+    const item = selected.getBoundingClientRect()
+    if (item.top < viewport.top) list.scrollTop += item.top - viewport.top
+    else if (item.bottom > viewport.bottom) list.scrollTop += item.bottom - viewport.bottom
+  }
   updateTabs()
 }
 
@@ -402,8 +449,10 @@ function renderTextureVariants() {
 }
 
 async function selectFile(file) {
+  state.packLoad++
   const load = ++state.load
   state.file = file
+  state.previewFailed = false
   rememberLocation()
   stage?.clear()
   ui['stage-image'].hidden = true
@@ -435,7 +484,7 @@ async function selectFile(file) {
   ui.rotate.disabled = ui.wireframe.disabled = true
   for (const button of [ui.rotate, ui.wireframe, ui.play]) pressed(button, false)
   ui.play.textContent = 'Пуск'
-  renderFiles()
+  renderFiles(true)
   renderDecision()
   if (!file) return status(state.folder ? 'В папке нет подходящих файлов.' : 'В этом наборе нет выбранного файла.')
   if (localTextures(file)) {
@@ -447,7 +496,10 @@ async function selectFile(file) {
         if (load !== state.load) { URL.revokeObjectURL(url); return }
         preview = imageObjectUrl = url
       } catch {
-        if (load === state.load) status('Не удалось открыть изображение. Исходник доступен справа.')
+        if (load === state.load) {
+          state.previewFailed = true
+          status('Не удалось открыть изображение. Исходник доступен справа.')
+        }
         return
       }
     }
@@ -456,7 +508,11 @@ async function selectFile(file) {
     image.alt = file.name
     image.hidden = false
     image.onload = () => { if (load === state.load) enableZoom(true) }
-    image.onerror = () => { if (load === state.load) status('Изображение не открылось. Исходник доступен справа.') }
+    image.onerror = () => {
+      if (load !== state.load) return
+      state.previewFailed = true
+      status('Изображение не открылось. Исходник доступен справа.')
+    }
     image.src = preview
     return
   }
@@ -465,20 +521,24 @@ async function selectFile(file) {
       'Для этого файла нет браузерного предпросмотра. Исходник доступен справа.')
   }
   try {
+    let preview = file
     if (file.convertible && !file.preview) {
       status('Blender готовит предпросмотр…')
-      let result
-      try { result = await json(`/api/folder/${state.folder.id}/blend/${file.id}`, post({})) }
-      catch (error) { if (load === state.load) status(error.message); return }
+      try { preview = await ensurePreview(file, state.folder) }
+      catch (error) {
+        if (load === state.load) {
+          state.previewFailed = true
+          status(error.message)
+        }
+        return
+      }
       if (load !== state.load) return
-      file.preview = result.preview
-      file.previewFormat = 'glb'
     }
     ui['stage-canvas'].hidden = false
     stage ??= new ModelStage(ui['stage-canvas'])
     stage.resize()
     status('Загружаю модель…')
-    const result = await stage.load(file, state.folder?.resources ?? state.active.files, state.active.unityMaterials)
+    const result = await stage.load(preview, modelResources(state.folder, state.active.files), state.active.unityMaterials)
     if (load !== state.load || !result) return
     if (result.empty) return status('В файле нет видимой геометрии. Исходник доступен справа.')
     const manual = await restoreManualTextures(file)
@@ -494,11 +554,13 @@ async function selectFile(file) {
       ui['part-tools'].hidden = false
     }
     renderColorSource()
-    ui['model-stats'].textContent = (result.skeletonOnly
-      ? 'Скелет · ' + counted(result.boneCount, 'кость', 'кости', 'костей')
-      : counted(result.meshes, 'меш', 'меша', 'мешей') + ' · ' +
-        counted(result.triangles, 'треугольник', 'треугольника', 'треугольников')) +
-      (result.clips.length ? ' · ' + counted(result.clips.length, 'анимация', 'анимации', 'анимаций') : '')
+    const stats = result.skeletonOnly ? ['Скелет', counted(result.boneCount, 'кость', 'кости', 'костей')] : []
+    if (result.meshes) stats.push(counted(result.meshes, 'меш', 'меша', 'мешей'),
+      counted(result.triangles, 'треугольник', 'треугольника', 'треугольников'))
+    if (result.points) stats.push(counted(result.points, 'точка', 'точки', 'точек'))
+    if (result.lines) stats.push(counted(result.lines, 'объект с линиями', 'объекта с линиями', 'объектов с линиями'))
+    if (result.clips.length) stats.push(counted(result.clips.length, 'анимация', 'анимации', 'анимаций'))
+    ui['model-stats'].textContent = stats.join(' · ')
     renderTextureVariants()
     if (manual) {
       ui['manual-material'].replaceChildren(...stage.manualMaterials.map((material, index) =>
@@ -517,20 +579,21 @@ async function selectFile(file) {
     }
   } catch (error) {
     if (load !== state.load) return
+    state.previewFailed = true
     console.error(error)
     status('3D-предпросмотр недоступен. Исходник можно открыть из локальной папки.')
   }
 }
 
 async function selectPack(id, fileId) {
-  if (state.active?.id === id && !fileId && !state.candidates) return
-  const request = ++state.load
+  const request = ++state.packLoad
+  if (state.active?.id === id && !fileId && state.file && eligibleFile(state.active, state.file)) return
   try {
     const summary = state.packs.find(pack => pack.id === id)
     const folder = summary?.folderKey && localFolders.get(summary.folderKey)
     if (!summary) return
     const raw = await fetchPack(summary)
-    if (request !== state.load) return
+    if (request !== state.packLoad) return
     const pack = { ...raw, ...summary, files: raw.files }
     if (folder) {
       state.folder = folder
@@ -538,21 +601,24 @@ async function selectPack(id, fileId) {
       ui['folder-root'].title = folder.root
     }
     state.active = pack
-    state.limit = 65
+    state.limit = filePageSize
+    ui['file-list'].scrollTop = 0
     ui['file-search'].value = ''
     ui['pack-category'].textContent = categoryLabel(pack.category)
     ui['pack-title'].textContent = pack.title
     ui['pack-author'].textContent = [pack.author, pack.models ? '3D-файлы: ' + counts(pack.models) : null].filter(Boolean).join(' · ')
     showLicense(pack)
     renderPacks()
-    const eligible = pack.files.filter(item => categoryMatches(pack, item) &&
-      (!state.candidates || state.marks[markKey(pack.id, item.id)]?.status === 'candidate'))
+    const eligible = pack.files.filter(item => eligibleFile(pack, item))
     const file = eligible.find(item => item.id === fileId) ?? eligible.find(item => item.id === pack.defaultFile) ?? eligible[0]
     state.kind = ui.category.value ? 'model' :
       !state.candidates && file && ['model', 'image'].includes(file.kind) ? file.kind : 'all'
     await selectFile(file ?? null)
   } catch (error) {
-    if (request === state.load) status(error.message)
+    if (request === state.packLoad) {
+      if (state.file) ui.notice.textContent = error.message
+      else status(error.message)
+    }
   }
 }
 
@@ -580,8 +646,11 @@ async function saveReview(statusValue) {
       state.marks = fab.marks
     }
     if (state.file && key === markKey(state.active.id, state.file.id)) ui.notice.textContent = 'Сохранено локально'
-    renderPacks()
-    renderFiles()
+    if (state.candidates) refreshCategoryResults()
+    else {
+      renderPacks()
+      renderFiles()
+    }
   } catch (error) {
     ui.notice.textContent = error.message
   } finally {
@@ -598,7 +667,7 @@ async function activateCatalog(folder, selection = {}) {
   state.marks = folder ? localMarks() : fab.marks
   state.candidates = false
   state.active = null
-  await selectFile(null)
+  void selectFile(null)
   ui.search.value = ''
   ui.search.placeholder = folder ? 'Название папки или формат' : 'Название или автор'
   ui['library-title'].textContent = folder ? 'Папки' : 'Наборы'
@@ -773,20 +842,26 @@ ui['manual-apply'].addEventListener('click', async () => {
 
 ui.search.addEventListener('input', renderPacks)
 function refreshCategoryResults() {
+  state.packLoad++
   if (ui.category.value) state.kind = 'model'
   const packs = renderPacks()
   renderFiles()
   if (state.active && packs.some(pack => pack.id === state.active.id)) {
-    if (!ui.category.value || (state.file && categoryMatches(state.active, state.file))) return
-    const file = state.active.files.find(file => categoryMatches(state.active, file) &&
-      (!state.candidates || state.marks[markKey(state.active.id, file.id)]?.status === 'candidate'))
+    if (state.file && eligibleFile(state.active, state.file)) return
+    const file = state.active.files.find(file => eligibleFile(state.active, file))
     if (file) { void selectFile(file); return }
   }
   if (packs.length && packs[0].id !== state.active?.id) void selectPack(packs[0].id)
-  else if (!packs.length) {
+  else {
     state.active = null
     void selectFile(null)
-    status('В этой категории пока нет моделей.')
+    ui['pack-category'].textContent = ''
+    ui['pack-title'].textContent = state.candidates ? 'Кандидаты' : 'Библиотека ассетов'
+    ui['pack-author'].textContent = ''
+    ui.license.textContent = ''
+    ui.license.title = ''
+    ui['fab-link'].hidden = true
+    status(state.candidates ? 'В этой подборке пока нет кандидатов.' : 'В этой категории пока нет моделей.')
   }
 }
 ui.category.addEventListener('change', refreshCategoryResults)
@@ -796,36 +871,30 @@ ui['pack-list'].addEventListener('click', event => {
 })
 ui['all-packs'].addEventListener('click', () => {
   state.candidates = false
-  renderPacks()
-  renderFiles()
+  refreshCategoryResults()
 })
 ui['candidate-packs'].addEventListener('click', () => {
   state.candidates = true
   state.kind = ui.category.value ? 'model' : 'all'
-  const packs = renderPacks()
-  if (packs.length && currentMark()?.status !== 'candidate') {
-    void selectPack(packs.find(pack => pack.id === state.active?.id)?.id ?? packs[0].id)
-  } else renderFiles()
+  refreshCategoryResults()
 })
 ui['file-tabs'].addEventListener('click', event => {
   const kind = event.target.closest('[data-kind]')?.dataset.kind
   if (!kind) return
   state.kind = kind
-  state.limit = 65
+  state.limit = filePageSize
   renderFiles()
 })
-ui['file-search'].addEventListener('input', () => { state.limit = 65; renderFiles() })
+ui['file-search'].addEventListener('input', () => { state.limit = filePageSize; renderFiles() })
 ui['file-list'].addEventListener('click', event => {
   if (event.target.closest('[data-more]')) {
-    const scroll = ui['file-list'].scrollTop
-    state.limit += 65
+    state.limit += filePageSize
     renderFiles()
-    ui['file-list'].scrollTop = scroll
     return
   }
   const id = event.target.closest('[data-file]')?.dataset.file
   const file = state.active?.files.find(item => item.id === id)
-  if (file && file.id !== state.file?.id) void selectFile(file)
+  if (file && (file.id !== state.file?.id || state.previewFailed)) void selectFile(file)
 })
 ui.decision.addEventListener('click', event => {
   const status = event.target.closest('[data-status]')?.dataset.status
@@ -851,7 +920,7 @@ ui['texture-variant'].addEventListener('change', async () => {
     if (load === state.load) renderColorSource()
   } catch {
     if (load === state.load) {
-      ui['texture-variant'].value = String(stage.variant.index)
+      renderTextureVariants()
       ui.notice.textContent = 'Текстура не открылась'
     }
   }

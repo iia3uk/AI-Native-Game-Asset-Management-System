@@ -37,8 +37,11 @@ async function safeFile(base, subpath) {
   if (!inside(base, path)) return null
   const actual = await realpath(path).catch(() => null)
   if (!actual || !inside(base, actual)) return null
-  const info = await stat(actual)
-  return info.isFile() ? { path: actual, size: info.size, modified: info.mtime.toUTCString() } : null
+  const info = await stat(actual).catch(error => {
+    if (['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM'].includes(error.code)) return null
+    throw error
+  })
+  return info?.isFile() ? { path: actual, size: info.size, modified: info.mtime.toUTCString() } : null
 }
 
 function json(response, code, body) {
@@ -207,8 +210,13 @@ const server = createServer(async (request, response) => {
       json(response, 403, { error: 'Доступ только с локального компьютера' })
       return
     }
-    const url = new URL(request.url, origin)
-    const path = decodeURIComponent(url.pathname)
+    let path
+    try {
+      path = decodeURIComponent(new URL(request.url, origin).pathname)
+    } catch {
+      json(response, 400, { error: 'Некорректный путь запроса' })
+      return
+    }
     if (request.method === 'POST' && path === '/api/review') {
       await changeReview(request, response)
       return

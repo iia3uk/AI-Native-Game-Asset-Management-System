@@ -1,11 +1,31 @@
 import { readFile, writeFile } from 'node:fs/promises'
 
-// Some FBX exporters leave the normal layer header without a normal array.
-const loader = new URL('../node_modules/three/examples/jsm/loaders/FBXLoader.js', import.meta.url)
-const original = 'if ( geoNode.LayerElementNormal ) {'
-const guarded = 'if ( geoNode.LayerElementNormal?.[ 0 ]?.Normals?.a?.length ) {'
-const source = await readFile(loader, 'utf8')
-if (!source.includes(guarded)) {
-  if (!source.includes(original)) throw new Error('Review the FBX normal-layer guard for this version of three.js')
-  await writeFile(loader, source.replace(original, guarded), 'utf8')
+const fbx = [
+  // Some exporters leave the normal layer header without a normal array.
+  ['if ( geoNode.LayerElementNormal ) {', 'if ( geoNode.LayerElementNormal?.[ 0 ]?.Normals?.a?.length ) {'],
+  // AllSame can refer to a material other than the first one in the list.
+  ['this.addMorphTargets( geo, geoNode, morphTargets, preTransform );',
+    `if ( geoInfo.material?.mappingType === 'AllSame' && buffers.vertex.length ) {
+
+\t\t\tgeo.addGroup( 0, buffers.vertex.length / 3, geoInfo.material.buffer[ 0 ] ?? 0 );
+
+\t\t}
+
+\t\tthis.addMorphTargets( geo, geoNode, morphTargets, preTransform );`],
+]
+const ply = [
+  // Per-face UVs can turn a triangle mesh into non-indexed geometry.
+  ['geometry.computeBoundingSphere();',
+    'geometry.userData.hasPlyFaces = buffer.indices.length > 0;\n\t\t\tgeometry.computeBoundingSphere();'],
+]
+for (const [name, patches] of [['FBXLoader.js', fbx], ['PLYLoader.js', ply]]) {
+  const loader = new URL('../node_modules/three/examples/jsm/loaders/' + name, import.meta.url)
+  const original = await readFile(loader, 'utf8')
+  let source = original
+  for (const [before, after] of patches) {
+    if (source.includes(after)) continue
+    if (!source.includes(before)) throw new Error('Review the ' + name + ' patches for this version of three.js')
+    source = source.replace(before, after)
+  }
+  if (source !== original) await writeFile(loader, source, 'utf8')
 }

@@ -1,15 +1,28 @@
 import * as THREE from 'three'
 
-const hasMap = material => {
-  const image = material.map?.image
-  return image?.width > 1 || image?.height > 1
+export function hasTextureImage(texture) {
+  const image = texture?.image
+  if (texture?.isDataTexture && !image?.data?.length) return false
+  if (Array.isArray(image)) return image.some(face => face?.width > 0 && face?.height > 0)
+  return image?.width > 0 && image?.height > 0
+}
+
+export function geometryBounds(object) {
+  const source = object.boundingBox === undefined ? object.geometry : object
+  if (!source.boundingBox || object.isSkinnedMesh) source.computeBoundingBox()
+  const box = source.boundingBox
+  if (!box || box.isEmpty() || ![...box.min, ...box.max].every(Number.isFinite)) return null
+  const world = box.clone().applyMatrix4(object.matrixWorld)
+  return [...world.min, ...world.max].every(Number.isFinite) ? world : null
 }
 
 function usedSlots(mesh, materials) {
-  if (!Array.isArray(mesh.material)) return [0]
+  if (!Array.isArray(mesh.material)) return materials[0]?.visible ? [0] : []
   return [...new Set(mesh.geometry.groups.filter(group => group.count >= 3).map(group => group.materialIndex))]
     .filter(index => materials[index]?.visible)
 }
+
+const collisionName = /^(?:UCX|UBX|USP|UCP|MCDCX)_|[_ -]ConvexHulls?$/i
 
 function lodGroup(mesh) {
   const pattern = /^(.*?)[ _-]lod[ _-]?(\d+)(?:[ _-]material[ _-]?\d+)?$/i
@@ -43,10 +56,11 @@ export class PreviewParts {
       if (!mesh.isMesh || !mesh.geometry.getAttribute('position')?.count || !mesh.material) return
       const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
       const slots = usedSlots(mesh, materials)
-      if (!slots.length || !materials.some(material => material.visible)) return
+      if (!slots.length) return
       const lod = lodGroup(mesh)
       if (lod) closestLods.set(lod.group, Math.min(lod.level, closestLods.get(lod.group) ?? Infinity))
-      const part = { mesh, original: mesh.material, materials, slots, mask: mesh.layers.mask, lod }
+      const collision = collisionName.test(mesh.name) || collisionName.test(mesh.parent?.name ?? '')
+      const part = { mesh, original: mesh.material, materials, slots, mask: mesh.layers.mask, lod, collision }
       this.meshes.push(part)
       const name = mesh.name || mesh.geometry.name || `Объект ${this.meshes.length}`
       this.choices.push({ part, name })
@@ -57,7 +71,10 @@ export class PreviewParts {
         }
       }
     })
-    for (const part of this.meshes) part.defaultVisible = !part.lod || part.lod.level === closestLods.get(part.lod.group)
+    const hasRenderMesh = this.meshes.some(part => !part.collision)
+    for (const part of this.meshes) {
+      part.defaultVisible = !(hasRenderMesh && part.collision) && (!part.lod || part.lod.level === closestLods.get(part.lod.group))
+    }
   }
 
   apply(unlit) {
@@ -72,7 +89,7 @@ export class PreviewParts {
         continue
       }
       const mapped = materials.map((source, index) => {
-        if (!source.visible || (slot !== undefined && index !== slot)) return this.hiddenMaterial
+        if (!source?.visible || (slot !== undefined && index !== slot)) return this.hiddenMaterial
         if (!unlit) return source
         if (!this.unlit.has(source)) this.unlit.set(source, unlitMaterial(source))
         const material = this.unlit.get(source)
@@ -102,18 +119,14 @@ export class PreviewParts {
     const { part: { mesh }, slot } = this.selection
     const geometry = mesh.geometry
     mesh.updateWorldMatrix(true, false)
-    if (slot === undefined || mesh.isInstancedMesh) {
-      const source = mesh.boundingBox === undefined ? geometry : mesh
-      if (!source.boundingBox || mesh.isSkinnedMesh) source.computeBoundingBox()
-      return source.boundingBox.clone().applyMatrix4(mesh.matrixWorld)
-    }
+    if (slot === undefined || mesh.isInstancedMesh) return geometryBounds(mesh)
     const box = new THREE.Box3()
     const point = new THREE.Vector3()
     const limit = geometry.index?.count ?? geometry.attributes.position.count
     for (const group of geometry.groups.filter(group => group.materialIndex === slot)) {
       for (let index = group.start; index < Math.min(limit, group.start + group.count); index++) {
         mesh.getVertexPosition(geometry.index?.getX(index) ?? index, point).applyMatrix4(mesh.matrixWorld)
-        box.expandByPoint(point)
+        if ([...point].every(Number.isFinite)) box.expandByPoint(point)
       }
     }
     return box
@@ -126,7 +139,7 @@ export class PreviewParts {
     for (const { mesh, materials, slots } of selected ? [selected] : this.meshes.filter(part => part.defaultVisible)) {
       for (const index of slot === undefined ? slots : [slot]) {
         const material = materials[index]
-        const type = hasMap(material) ? 'maps' : material.vertexColors && mesh.geometry.hasAttribute('color') ? 'vertices' : 'flat'
+        const type = hasTextureImage(material.map) ? 'maps' : material.vertexColors && mesh.geometry.hasAttribute('color') ? 'vertices' : 'flat'
         if (!seen.has(material)) seen.set(material, new Set())
         const types = seen.get(material)
         if (!types.has(type)) counts[type]++
