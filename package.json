@@ -1,5 +1,5 @@
 {
-  "name": "eldermere-asset-viewer",
+  "name": "asset-viewer",
   "private": true,
   "type": "module",
   "scripts": {

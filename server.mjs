@@ -9,14 +9,19 @@ import { parseArgs } from 'node:util'
 import { blenderPreview, browseFolder, inside, scanFolder } from './scripts/local-library.mjs'
 
 const project = fileURLToPath(new URL('.', import.meta.url))
+try {
+  process.loadEnvFile(resolve(project, '.env'))
+} catch (error) {
+  if (error.code !== 'ENOENT') throw error
+}
 const { values } = parseArgs({ options: { folder: { type: 'string' } } })
-const library = await realpath(resolve(process.env.FAB_ASSETS_ROOT || resolve(project, '../ELDERMERE_ASSETS')))
+const library = await realpath(resolve(project, process.env.FAB_ASSETS_ROOT || '../FAB_ASSETS'))
   .catch(error => { if (error.code !== 'ENOENT') throw error; return null })
 const publicPath = resolve(project, 'public')
 const three = resolve(project, 'node_modules/three')
 const indexPath = library && resolve(library, 'Viewer')
 const reviewPath = indexPath && resolve(indexPath, 'selections.json')
-const port = Number(process.env.ELDERMERE_VIEWER_PORT || 8177)
+const port = Number(process.env.ASSET_VIEWER_PORT || 8177)
 const origin = 'http://127.0.0.1:' + port
 const identifier = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i
 const fileIdentifier = /^[a-f\d]{24}$/
@@ -263,4 +268,4 @@ const server = createServer(async (request, response) => {
     console.error(error.message)
   }
 })
-server.listen(port, '127.0.0.1', () => console.log(`ELDERMERE Asset Viewer · ${origin}`))
+server.listen(port, '127.0.0.1', () => console.log(`Asset Viewer · ${origin}`))

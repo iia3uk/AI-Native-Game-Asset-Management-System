@@ -17,6 +17,7 @@ import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { geometryBounds, hasTextureImage, PreviewParts } from './parts.js'
 import { colorSuffix, copyTextureMapping, isDataMap, preferColoredImage, textureName } from './textures.js'
+import { animatedTranslationRoot } from './animation-motion.js'
 
 const fallbackMaterial = () => new THREE.MeshStandardMaterial({ color: 0xc3cfb0, roughness: .78 })
 const textureUrls = new WeakMap()
@@ -476,6 +477,9 @@ export class ModelStage {
     this.grid.material.opacity = .36
     this.scene.add(this.grid)
     this.request = 0
+    this.inPlace = true
+    this.motionOrigin = new THREE.Vector3()
+    this.motionSample = new THREE.Vector3()
     this.frameTime = performance.now()
     this.observer = new ResizeObserver(() => this.resize())
     this.observer.observe(element)
@@ -484,7 +488,7 @@ export class ModelStage {
       const elapsed = Math.min(.1, Math.max(0, (time - this.frameTime) / 1000))
       this.frameTime = time
       if (!this.element.hidden) {
-        this.mixer?.update(elapsed)
+        this.updateAnimation(elapsed)
         this.controls.update(elapsed)
         this.renderer.render(this.scene, this.camera)
       }
@@ -534,6 +538,7 @@ export class ModelStage {
       dispose(this.root)
     }
     this.root = this.model = this.mixer = this.active = this.bounds = null
+    this.motionAnchor = this.animationOffset = null
     this.variantGroups = []
     this.variantLoad = null
     this.clips = []
@@ -685,6 +690,11 @@ export class ModelStage {
     this.parts.apply(this.lighting === 'unlit')
     this.clips = animations ?? []
     this.mixer = this.clips.length ? new THREE.AnimationMixer(model) : null
+    this.animationOffset = this.mixer ? container.position.clone() : null
+    if (this.mixer) model.traverse(node => {
+      // Skinned vertices can leave their rest bounds during a clip.
+      if (node.isSkinnedMesh) node.frustumCulled = false
+    })
     const size = this.bounds.getSize(new THREE.Vector3())
     this.grid.scale.setScalar(Math.max(.015, Math.max(size.x, size.y, size.z) / 3.5))
     this.grid.position.y = -Math.max(.0002, size.length() * .0002)
@@ -844,15 +854,35 @@ export class ModelStage {
   }
 
   play(index) {
-    if (!this.mixer || !this.clips[index]) return false
-    if (this.active?.getClip() === this.clips[index] && this.active.paused) {
+    const clip = this.clips[index]
+    if (!this.mixer || !clip) return false
+    if (this.active?.getClip() === clip && this.active.paused) {
       this.active.paused = false
     } else {
       this.mixer.stopAllAction()
-      this.active = this.mixer.clipAction(this.clips[index])
+      this.root.position.copy(this.animationOffset)
+      this.motionAnchor = animatedTranslationRoot(this.model, clip)
+      this.motionAnchor?.getWorldPosition(this.motionOrigin)
+      this.active = this.mixer.clipAction(clip)
       this.active.reset().play()
+      this.updateAnimation(0)
     }
     return true
+  }
+
+  updateAnimation(elapsed) {
+    this.mixer?.update(elapsed)
+    if (!this.inPlace || !this.motionAnchor) return
+    this.motionAnchor.getWorldPosition(this.motionSample)
+    // Move only the preview container. The clip still controls height and rotation.
+    this.root.position.x += this.motionOrigin.x - this.motionSample.x
+    this.root.position.z += this.motionOrigin.z - this.motionSample.z
+  }
+
+  setInPlace(enabled) {
+    this.inPlace = enabled
+    if (enabled) this.updateAnimation(0)
+    else if (this.animationOffset) this.root.position.copy(this.animationOffset)
   }
 
   pause() {

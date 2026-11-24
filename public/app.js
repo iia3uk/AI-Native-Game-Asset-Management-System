@@ -2,12 +2,13 @@ import { ModelStage, convertedImages, decodedImageUrl } from './stage.js'
 import { isDataMap } from './textures.js'
 import { isCollisionFile, visualModelFor } from './model-names.js'
 import { ModelThumbnails } from './thumbnails.js'
+import { storageNamespace, storedValue } from './viewer-storage.js'
 
 const $ = id => document.getElementById(id)
 const ui = Object.fromEntries([
   'all-packs', 'candidate-packs', 'candidate-count', 'library-stats', 'search', 'category', 'result-count', 'pack-list',
   'pack-category', 'pack-title', 'pack-author', 'stage-canvas', 'stage-image', 'stage-empty', 'stage-label',
-  'fit', 'zoom-in', 'zoom-out', 'rotate', 'wireframe', 'texture-tools', 'texture-variant', 'animation-tools', 'animation', 'play', 'model-stats',
+  'fit', 'zoom-in', 'zoom-out', 'rotate', 'wireframe', 'texture-tools', 'texture-variant', 'animation-tools', 'animation', 'animation-in-place', 'play', 'model-stats',
   'view-options', 'lighting', 'part-tools', 'preview-part', 'color-source',
   'selected-name', 'decision', 'note', 'save-note', 'notice', 'file-tabs', 'file-search', 'file-list',
   'license', 'fab-link', 'source-link',
@@ -34,8 +35,8 @@ const state = { packs: [], marks: {}, active: null, file: null, candidates: fals
   limit: filePageSize, load: 0, packLoad: 0, folder: null }
 const fab = { packs: [], marks: {}, selection: null }
 const localFolders = new Map()
-const foldersStorage = 'eldermere.folders.v1'
-const classificationStorage = 'eldermere.classification.v1'
+const foldersStorage = storageNamespace + '.folders.v1'
+const classificationStorage = storageNamespace + '.classification.v1'
 const newCategory = '__new_category__'
 const noCategory = '__no_category__'
 let localSelection
@@ -46,17 +47,17 @@ let imageZoom = 1
 let imageObjectUrl
 let openingFolder = false
 const localTextures = file => file.kind === 'image' && (file.preview || convertedImages.has(file.ext))
-const storageKey = (folder, kind) => `eldermere.${kind}.${folder.key}`
+const storageKey = (folder, kind) => `${storageNamespace}.${kind}.${folder.key}`
 const post = value => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) })
 
 function readLocal(folder, kind) {
-  try { return JSON.parse(localStorage.getItem(storageKey(folder, kind)) ?? '{}') ?? {} }
+  try { return JSON.parse(storedValue(localStorage, storageKey(folder, kind)) ?? '{}') ?? {} }
   catch { return {} }
 }
 
 function savedFolders() {
   try {
-    const saved = JSON.parse(localStorage.getItem(foldersStorage) ?? '[]')
+    const saved = JSON.parse(storedValue(localStorage, foldersStorage) ?? '[]')
     return Array.isArray(saved) ? saved.filter(item => typeof item?.root === 'string' && typeof item.id === 'string') : []
   } catch { return [] }
 }
@@ -107,7 +108,7 @@ function manualTextureScope() {
 
 function loadClassification() {
   try {
-    const data = JSON.parse(localStorage.getItem(classificationStorage) ?? '{}')
+    const data = JSON.parse(storedValue(localStorage, classificationStorage) ?? '{}')
     return { names: data.names ?? {}, roots: data.roots ?? {}, models: data.models ?? {} }
   } catch { return { names: {}, roots: {}, models: {} } }
 }
@@ -579,6 +580,7 @@ async function selectFile(file) {
     }
     ui['stage-canvas'].hidden = false
     stage ??= new ModelStage(ui['stage-canvas'])
+    stage.setInPlace(ui['animation-in-place'].checked)
     stage.resize()
     status('Загружаю модель…')
     const result = await stage.load(preview, modelResources(state.folder, state.active.files), state.active.unityMaterials)
@@ -730,8 +732,7 @@ async function activateCatalog(folder, selection = {}) {
     : counts(state.packs.length) + ' наборов · ' + counts(total) + ' 3D-файлов'
   renderPacks()
   const first = state.packs.find(pack => pack.id === selection.pack) ??
-    (folder ? state.packs.find(pack => pack.folderKey === folder.key) : undefined) ??
-    (folder ? undefined : state.packs.find(pack => pack.id === '43468395-d701-48e3-a3f3-53c3e2282938')) ?? state.packs[0]
+    (folder ? state.packs.find(pack => pack.folderKey === folder.key) : undefined) ?? state.packs[0]
   if (first?.id) await selectPack(first.id, selection.file)
   else {
     ui['pack-category'].textContent = folder ? 'Локальная папка' : 'Обзор'
@@ -997,6 +998,7 @@ ui.play.addEventListener('click', () => {
 ui.animation.addEventListener('change', () => {
   if (ui.play.getAttribute('aria-pressed') === 'true') stage?.play(Number(ui.animation.value))
 })
+ui['animation-in-place'].addEventListener('change', () => stage?.setInPlace(ui['animation-in-place'].checked))
 
 try {
   const query = new URLSearchParams(location.search)

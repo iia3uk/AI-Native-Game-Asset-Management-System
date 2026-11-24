@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Локальный 3D-каталог ассетов ELDERMERE">
-  <title>ELDERMERE · Ассеты</title>
+  <meta name="description" content="Локальный каталог 3D-ассетов">
+  <title>Asset Viewer</title>
   <link rel="stylesheet" href="/styles.css">
   <script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
   <script type="module" src="/app.js"></script>
@@ -13,7 +13,7 @@
   <header class="topbar">
     <div class="brand">
       <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
-      <div><div class="brand-name">ELDERMERE</div><div class="brand-caption">Библиотека ассетов</div></div>
+      <div><div class="brand-name">Asset Viewer</div><div class="brand-caption">Библиотека ассетов</div></div>
     </div>
     <nav class="topnav" aria-label="Источники ассетов">
       <button id="fab-mode" class="tab-button" aria-pressed="true">Fab</button>
@@ -44,7 +44,7 @@
     <section class="inspection" aria-label="Просмотр ассета">
       <div class="inspection-head">
         <p id="pack-category" class="eyebrow">Обзор</p>
-        <h2 id="pack-title">Библиотека ELDERMERE</h2>
+        <h2 id="pack-title">Библиотека ассетов</h2>
         <p id="pack-author" class="byline"></p>
       </div>
       <div class="stage" id="stage">
@@ -69,6 +69,7 @@
         <div class="animation-tools" id="animation-tools" hidden>
           <div class="select-wrap"><select id="animation" aria-label="Анимация"></select></div>
           <button id="play" class="control" aria-pressed="false">Пуск</button>
+          <label class="animation-mode"><input type="checkbox" id="animation-in-place" checked> На месте</label>
         </div>
       </div>
       <div class="view-options" id="view-options" hidden>

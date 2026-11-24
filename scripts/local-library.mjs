@@ -114,9 +114,7 @@ export async function scanFolder(path) {
 }
 
 async function blenderCommands() {
-  if (process.env.ASSET_VIEWER_BLENDER || process.env.ELDERMERE_BLENDER) {
-    return [process.env.ASSET_VIEWER_BLENDER || process.env.ELDERMERE_BLENDER]
-  }
+  if (process.env.ASSET_VIEWER_BLENDER) return [process.env.ASSET_VIEWER_BLENDER]
   if (process.platform === 'win32') {
     const install = process.env.ProgramFiles ?? 'C:/Program Files'
     const steam = process.env['ProgramFiles(x86)'] ?? 'C:/Program Files (x86)'
@@ -132,7 +130,7 @@ async function blenderCommands() {
 async function convertBlend(library, file) {
   const source = await realpath(resolve(library.root, file.path))
   if (!inside(library.root, source) || !(await stat(source)).isFile()) throw new Error('Исходный Blender-файл недоступен.')
-  cacheDirectory ??= mkdtemp(join(tmpdir(), 'eldermere-viewer-'))
+  cacheDirectory ??= mkdtemp(join(tmpdir(), 'asset-viewer-'))
   const target = join(await cacheDirectory, library.id + '-' + file.id + '.glb')
   const partial = target + '.partial.glb'
   const commands = await blenderCommands()

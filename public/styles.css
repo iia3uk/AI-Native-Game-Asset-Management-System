@@ -105,8 +105,10 @@ select { appearance: none; padding: 0 27px 0 10px; }
 .control[aria-pressed=true] { color: var(--accent); border-color: #79925f; background: #2a3626; }
 .texture-tools { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); }
 .texture-tools select { height: 33px; max-width: 160px; }
-.animation-tools { display: flex; align-items: center; gap: 7px; margin-left: auto; max-width: 100%; }
+.animation-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-left: auto; max-width: 100%; }
 .animation-tools select { max-width: min(26vw, 230px); height: 33px; }
+.animation-mode { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.animation-mode input { accent-color: var(--accent); }
 .view-options, .part-tools { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .view-options { flex-wrap: wrap; padding-bottom: 9px; font-size: 13px; color: var(--muted); }
 .view-options select { appearance: auto; width: auto; min-width: 0; height: 32px; padding: 0 8px; }

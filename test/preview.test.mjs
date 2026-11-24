@@ -6,6 +6,8 @@ import { geometryBounds, hasTextureImage, PreviewParts } from '../public/parts.j
 import { ModelStage, normalizeFbx, normalizeFbxVertexColors } from '../public/stage.js'
 import { copyTextureMapping, isDataMap, preferColoredImage } from '../public/textures.js'
 import { isCollisionFile, visualModelFor } from '../public/model-names.js'
+import { animatedTranslationRoot } from '../public/animation-motion.js'
+import { storedValue } from '../public/viewer-storage.js'
 
 function fbxMesh(material) {
   const geometry = new THREE.BoxGeometry()
@@ -187,4 +189,61 @@ test('resizing a framed long scene keeps the bounds in a narrower viewport', () 
     const point = new THREE.Vector3(x, y, z).project(stage.camera)
     assert.ok(Math.abs(point.x) < 1 && Math.abs(point.y) < 1)
   }
+})
+
+test('in-place animation removes horizontal drift and retains height, rotation and pause', () => {
+  const stage = Object.create(ModelStage.prototype)
+  const model = new THREE.Group()
+  const container = new THREE.Group()
+  const hips = new THREE.Group()
+  hips.name = 'Hips'
+  hips.add(new THREE.Bone(), new THREE.Bone())
+  container.position.set(3, 0, 2)
+  container.add(model)
+  model.add(hips)
+  const rotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2)
+  const clip = new THREE.AnimationClip('Walk', 2, [
+    new THREE.VectorKeyframeTrack('Hips.position', [0, 1, 2], [0, 0, 0, 20, 4, -12, 40, 8, -24]),
+    new THREE.QuaternionKeyframeTrack('Hips.quaternion', [0, 1, 2], [0, 0, 0, 1, ...rotation, ...rotation]),
+  ])
+
+  Object.assign(stage, { model, root: container, clips: [clip], mixer: new THREE.AnimationMixer(model),
+    inPlace: true, animationOffset: container.position.clone(), motionOrigin: new THREE.Vector3(),
+    motionSample: new THREE.Vector3() })
+  assert.equal(stage.play(0), true)
+  stage.updateAnimation(1)
+  const world = () => hips.getWorldPosition(new THREE.Vector3()).toArray()
+  assert.deepEqual(world(), [3, 4, 2])
+  assert.ok(hips.quaternion.angleTo(rotation) < .001)
+  stage.pause()
+  stage.updateAnimation(.25)
+  assert.deepEqual(world(), [3, 4, 2])
+  stage.setInPlace(false)
+  assert.deepEqual(world(), [23, 4, -10])
+  stage.setInPlace(true)
+  assert.deepEqual(world(), [3, 4, 2])
+  stage.play(0)
+  stage.updateAnimation(.25)
+  assert.deepEqual(world(), [3, 5, 2])
+})
+
+test('moving one part of a scene does not shift the whole preview', () => {
+  const model = new THREE.Group()
+  const door = new THREE.Mesh()
+  door.name = 'Door'
+  model.add(door, new THREE.Mesh())
+  const clip = new THREE.AnimationClip('Open', 1,
+    [new THREE.VectorKeyframeTrack('Door.position', [0, 1], [0, 0, 0, 1, 0, 0])])
+  assert.equal(animatedTranslationRoot(model, clip), null)
+})
+
+test('browser settings migrate to the new namespace without replacing current settings', () => {
+  const storage = {
+    'prior.folders.v1': '[1]',
+    getItem(key) { return this[key] ?? null },
+    setItem(key, value) { this[key] = value },
+  }
+  assert.equal(storedValue(storage, 'asset-viewer.folders.v1'), '[1]')
+  storage['prior.folders.v1'] = '[2]'
+  assert.equal(storedValue(storage, 'asset-viewer.folders.v1'), '[1]')
 })
