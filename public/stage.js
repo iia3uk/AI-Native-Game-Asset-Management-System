@@ -16,7 +16,8 @@ import { TDSLoader } from 'three/addons/loaders/TDSLoader.js'
 import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { geometryBounds, hasTextureImage, PreviewParts } from './parts.js'
-import { colorSuffix, copyTextureMapping, isDataMap, preferColoredImage, textureName } from './textures.js'
+import { colorSuffix, companionTexture, copyTextureMapping, idSuffix, isDataMap,
+  opacitySuffix, preferColoredImage, resemblesVertexMask, textureName } from './textures.js'
 import { animatedTranslationRoot } from './animation-motion.js'
 
 const fallbackMaterial = () => new THREE.MeshStandardMaterial({ color: 0xc3cfb0, roughness: .78 })
@@ -182,7 +183,6 @@ function materialStem(name = '') {
 }
 
 function findColorTexture(key, file, images) {
-  const opacity = /[ _.-]+(?:opacity|alpha|o)$/i
   const stem = materialStem(key)
   if (!stem || /^(?:default(?:material)?\d*|lambert\d*|material\d*|blinn\d*)$/.test(stem)) return
   const matches = suffix => images.filter(item => {
@@ -192,7 +192,7 @@ function findColorTexture(key, file, images) {
   const chooseColor = candidates => closest([...new Set(candidates.map(item => preferColoredImage(item, images)))], file)
   const color = chooseColor(matches(colorSuffix))
   if (color) {
-    const alpha = closest(matches(opacity), file)
+    const alpha = companionTexture(color, images, opacitySuffix) ?? closest(matches(opacitySuffix), file)
     return { url: color.url, alphaUrl: alpha?.url, alphaTest: alpha ? .5 : undefined }
   }
   const byName = new Map()
@@ -249,6 +249,14 @@ async function applyExternalTextures(model, file, files, unityMaterials, manager
     textureUrls.set(texture, url)
     return texture
   }
+  const imagesByUrl = new Map(images.map(image => [image.url, image]))
+  const isVertexMask = (material, uses, url) => {
+    if (file.ext !== 'fbx' || !material.vertexColors || !url) return false
+    const color = imagesByUrl.get(new URL(url, location.origin).pathname)
+    if (!color || !companionTexture(color, images, idSuffix) || !companionTexture(color, images, opacitySuffix)) return false
+    const layers = [...uses].map(mesh => mesh.geometry.getAttribute('color')).filter(Boolean)
+    return layers.length > 0 && layers.every(resemblesVertexMask)
+  }
   await Promise.all([...materialMeshes.keys()].map(async material => {
     const key = material.name.trim().toLowerCase()
     const explicit = Object.hasOwn(bindings, key) ? bindings[key] : null
@@ -261,6 +269,10 @@ async function applyExternalTextures(model, file, files, unityMaterials, manager
       (meshName ? findColorTexture(meshName, file, images) : undefined) ??
       (single ? findColorTexture(file.name.slice(0, -(file.ext.length + 1)), file, images) : undefined)
     if (hasTextureImage(material.map) && !explicit?.remap) {
+      if (isVertexMask(material, uses, textureUrl(material.map))) {
+        material.vertexColors = false
+        material.needsUpdate = true
+      }
       if (!file.previewAlbedo) return
       const variants = findByName()?.variants
       if (!variants || variants.length < 2) return
@@ -289,7 +301,7 @@ async function applyExternalTextures(model, file, files, unityMaterials, manager
       material.map = texture
       material.color?.setHex(0xffffff)
       // Unity shaders can use vertex colors as masks. The preview only has the flat albedo map.
-      if (unityBinding && file.ext === 'fbx') material.vertexColors = false
+      if ((unityBinding && file.ext === 'fbx') || isVertexMask(material, uses, binding.url)) material.vertexColors = false
       if (binding.alphaUrl && !hasTextureImage(material.alphaMap)) {
         const alpha = await loadTexture(binding.alphaUrl).catch(() => null)
         if (alpha) {

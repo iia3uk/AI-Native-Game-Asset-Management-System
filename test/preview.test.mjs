@@ -4,7 +4,8 @@ import * as THREE from 'three'
 import { PLYLoader } from 'three/addons/loaders/PLYLoader.js'
 import { geometryBounds, hasTextureImage, PreviewParts } from '../public/parts.js'
 import { ModelStage, normalizeFbx, normalizeFbxVertexColors } from '../public/stage.js'
-import { copyTextureMapping, isDataMap, preferColoredImage } from '../public/textures.js'
+import { companionTexture, copyTextureMapping, idSuffix, isDataMap, opacitySuffix,
+  preferColoredImage, resemblesVertexMask } from '../public/textures.js'
 import { isCollisionFile, visualModelFor } from '../public/model-names.js'
 import { animatedTranslationRoot } from '../public/animation-motion.js'
 import { storedValue } from '../public/viewer-storage.js'
@@ -246,4 +247,38 @@ test('browser settings migrate to the new namespace without replacing current se
   assert.equal(storedValue(storage, 'asset-viewer.folders.v1'), '[1]')
   storage['prior.folders.v1'] = '[2]'
   assert.equal(storedValue(storage, 'asset-viewer.folders.v1'), '[1]')
+})
+
+test('opacity and ID maps pair with the same color atlas without borrowing a different asset', () => {
+  const image = (dir, name) => ({ name, ext: 'png', url: dir + '/' + name })
+  const root = '/local-files/root/Textures/Oak'
+  const albedo = image(root + '/Colored', 'T_Oak01_D.png')
+  const opacity = image(root, 'T_Oak01_O.png')
+  const id = image(root, 'T_Oak01_ID.png')
+  const wrongTree = image(root, 'T_Oak02_O.png')
+  const wrongFolder = image('/local-files/other/Textures/Oak', opacity.name)
+  const sources = [opacity, id, wrongTree, wrongFolder]
+
+  assert.equal(companionTexture(albedo, sources, opacitySuffix), opacity)
+  assert.equal(companionTexture(albedo, sources, idSuffix), id)
+  assert.equal(companionTexture(albedo, [wrongTree, wrongFolder], opacitySuffix), undefined)
+  for (const name of ['T_Oak01_O.png', 'T_Oak01_ID.png', 'T_Oak01_M.png', 'T_Oak01_N.png']) {
+    assert.equal(isDataMap(image(root, name)), true)
+  }
+  assert.equal(isDataMap(albedo), false)
+})
+
+test('vertex mask detection distinguishes black and separated channels from painted gradients', () => {
+  const mask = new THREE.Float32BufferAttribute([
+    0, 0, 0, .8, .9, 0, .6, 1, 0, 0, .7, .5,
+  ], 3)
+  const painted = new THREE.Float32BufferAttribute([
+    0, 0, 0, .5, .38, .25, .6, .34, .22, .8, .41, .18,
+  ], 3)
+  const saturated = new THREE.Float32BufferAttribute([
+    .8, .2, 0, .9, .1, 0, .7, .3, 0, .8, .2, 0,
+  ], 3)
+  assert.equal(resemblesVertexMask(mask), true)
+  assert.equal(resemblesVertexMask(painted), false)
+  assert.equal(resemblesVertexMask(saturated), false)
 })
