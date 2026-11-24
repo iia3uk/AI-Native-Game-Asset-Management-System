@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Локальный 3D-каталог ассетов ELDERMERE">
+  <title>ELDERMERE · Ассеты</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div><div class="brand-name">ELDERMERE</div><div class="brand-caption">Библиотека ассетов</div></div>
+    </div>
+    <nav class="topnav" aria-label="Источники ассетов">
+      <button id="fab-mode" class="tab-button" aria-pressed="true">Fab</button>
+      <button id="open-folder" class="tab-button" aria-pressed="false">Локальные папки</button>
+    </nav>
+    <div id="library-stats" class="top-stats" aria-live="polite">Проверка каталога…</div>
+  </header>
+  <main class="workspace">
+    <aside class="library" aria-label="Наборы">
+      <div class="library-tools">
+        <h1 id="library-title">Наборы</h1>
+        <div id="folder-tools" class="folder-tools" hidden>
+          <p id="folder-root"></p>
+          <button id="add-folder" type="button" class="control" aria-haspopup="dialog">Добавить папку</button>
+          <button id="rescan-folder" type="button" class="control">Пересканировать</button>
+          <button id="remove-folder" type="button" class="control">Убрать из каталога</button>
+        </div>
+        <div class="source-filters" aria-label="Разделы каталога">
+          <button id="all-packs" class="control" aria-pressed="true">Каталог</button>
+          <button id="candidate-packs" class="control" aria-pressed="false">Кандидаты <span id="candidate-count">0</span></button>
+        </div>
+        <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Название или автор" aria-label="Поиск в каталоге" autocomplete="off"></label>
+        <div class="select-wrap" id="category-wrap"><select id="category" aria-label="Категория"><option value="">Все категории</option></select></div>
+        <div id="result-count" class="result-count" aria-live="polite"></div>
+      </div>
+      <div class="pack-list" id="pack-list" aria-label="Результаты поиска"></div>
+    </aside>
+    <section class="inspection" aria-label="Просмотр ассета">
+      <div class="inspection-head">
+        <p id="pack-category" class="eyebrow">Обзор</p>
+        <h2 id="pack-title">Библиотека ELDERMERE</h2>
+        <p id="pack-author" class="byline"></p>
+      </div>
+      <div class="stage" id="stage">
+        <div id="stage-canvas" class="stage-canvas"></div>
+        <img id="stage-image" class="asset-image" alt="" hidden>
+        <div id="stage-empty" class="stage-empty" aria-live="polite"><span>Открываю локальный каталог…</span></div>
+        <div id="stage-label" class="stage-label" hidden></div>
+        <div class="stage-axis" aria-hidden="true">Y<span>·</span> X<span>·</span> Z</div>
+      </div>
+      <div class="stage-tools">
+        <div class="zoom-tools" role="group" aria-label="Масштаб">
+          <button id="zoom-out" class="control zoom-control" aria-label="Отдалить" title="Отдалить" disabled>−</button>
+          <button id="zoom-in" class="control zoom-control" aria-label="Приблизить" title="Приблизить" disabled>+</button>
+        </div>
+        <button id="fit" class="control" disabled>В кадр</button>
+        <button id="rotate" class="control" aria-pressed="false" disabled>Вращение</button>
+        <button id="wireframe" class="control" aria-pressed="false" disabled>Сетка</button>
+        <div class="select-wrap texture-tools" id="texture-tools" hidden>
+          <label for="texture-variant">Текстура</label>
+          <select id="texture-variant"></select>
+        </div>
+        <div class="animation-tools" id="animation-tools" hidden>
+          <div class="select-wrap"><select id="animation" aria-label="Анимация"></select></div>
+          <button id="play" class="control" aria-pressed="false">Пуск</button>
+        </div>
+      </div>
+      <div class="view-options" id="view-options" hidden>
+        <label for="lighting">Освещение</label>
+        <select id="lighting">
+          <option value="studio">Студийное</option>
+          <option value="bright">Яркое</option>
+          <option value="unlit">Цвет без света</option>
+        </select>
+        <div class="part-tools" id="part-tools" hidden>
+          <label for="preview-part">Часть</label>
+          <select id="preview-part"></select>
+        </div>
+      </div>
+      <div class="inspection-foot"><span id="model-stats"></span><span class="orbit-hint">Мышь — поворот · Колесо — масштаб</span></div>
+      <p id="color-source" class="color-source" aria-live="polite" hidden></p>
+    </section>
+    <aside class="details" aria-label="Детали и отбор">
+      <section class="review">
+        <div class="section-label">Отбор для игры</div>
+        <div id="selected-name" class="selected-name">Выберите файл</div>
+        <div id="model-category-tools" class="model-category-tools" hidden>
+          <label for="model-category">Категория модели</label>
+          <div class="model-category-row">
+            <div class="select-wrap"><select id="model-category"></select></div>
+            <button id="save-model-category" type="button" class="control">Сохранить</button>
+          </div>
+          <input id="new-model-category" aria-label="Название новой категории модели" type="text" maxlength="60" placeholder="Название категории" hidden>
+          <p id="model-category-status" class="notice" aria-live="polite"></p>
+        </div>
+        <div class="decision" id="decision" aria-label="Решение по файлу">
+          <button data-status="candidate" aria-pressed="false" disabled>Подходит</button>
+          <button data-status="later" aria-pressed="false" disabled>Позже</button>
+          <button data-status="excluded" aria-pressed="false" disabled>Исключить</button>
+        </div>
+        <label for="note" class="note-label">Заметка</label>
+        <textarea id="note" rows="2" maxlength="1200" placeholder="Например, подходит для стартовой деревни" disabled></textarea>
+        <button id="save-note" class="save-note" disabled>Сохранить заметку</button>
+        <p id="notice" class="notice" aria-live="polite"></p>
+      </section>
+      <section class="files-section">
+        <div class="section-label">Файлы набора</div>
+        <div class="file-tabs" id="file-tabs" aria-label="Тип файлов">
+          <button data-kind="model" aria-pressed="true">Модели</button>
+          <button data-kind="image" aria-pressed="false">Текстуры</button>
+          <button data-kind="all" aria-pressed="false">Все</button>
+        </div>
+        <label class="file-search"><input id="file-search" type="search" placeholder="Имя файла" aria-label="Поиск файла в наборе"></label>
+        <div id="file-list" class="file-list"></div>
+      </section>
+      <section class="licensing">
+        <div class="section-label">Источник и лицензия</div>
+        <p id="license"></p>
+        <a id="fab-link" target="_blank" rel="noreferrer" hidden>Карточка на Fab</a>
+        <a id="source-link" download hidden>Локальный исходник</a>
+      </section>
+      <details id="manual-texture" class="manual-texture" hidden>
+        <summary>Цветовая текстура</summary>
+        <label for="manual-material">Материал</label>
+        <div class="select-wrap"><select id="manual-material"></select></div>
+        <label for="manual-search">Поиск текстуры</label>
+        <input id="manual-search" type="search" placeholder="Имя или путь" autocomplete="off">
+        <label for="manual-image">Карта цвета</label>
+        <div class="select-wrap"><select id="manual-image"></select></div>
+        <button id="manual-apply" type="button" class="control">Применить</button>
+        <p id="manual-status" class="notice" aria-live="polite"></p>
+      </details>
+    </aside>
+  </main>
+  <dialog id="folder-dialog" class="folder-dialog" aria-labelledby="folder-heading">
+    <form id="folder-form">
+      <h2 id="folder-heading">Открыть папку ассетов</h2>
+      <label for="folder-path">Путь к папке</label>
+      <div class="folder-path-row">
+        <input id="folder-path" type="text" spellcheck="false" autocomplete="off" required>
+        <button id="folder-pick" type="button" class="control">Обзор…</button>
+      </div>
+      <div id="folder-browser" class="folder-browser" aria-label="Вложенные папки" hidden></div>
+      <label for="folder-category">Категория моделей в папке</label>
+      <div class="select-wrap"><select id="folder-category"></select></div>
+      <input id="new-folder-category" aria-label="Название новой категории папки" type="text" maxlength="60" placeholder="Название категории" hidden>
+      <p id="folder-status" class="notice" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button id="folder-cancel" type="button" class="control">Закрыть</button>
+        <button id="folder-submit" type="submit" class="control primary-control">Открыть</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

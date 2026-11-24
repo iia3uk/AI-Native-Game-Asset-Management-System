@@ -1,0 +1,710 @@
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js'
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js'
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js'
+import { MTLLoader } from 'three/addons/loaders/MTLLoader.js'
+import { STLLoader } from 'three/addons/loaders/STLLoader.js'
+import { PLYLoader } from 'three/addons/loaders/PLYLoader.js'
+import { TGALoader } from 'three/addons/loaders/TGALoader.js'
+import { TIFFLoader } from 'three/addons/loaders/TIFFLoader.js'
+import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js'
+import { TDSLoader } from 'three/addons/loaders/TDSLoader.js'
+import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+import { PreviewParts } from './parts.js'
+
+const fallbackMaterial = () => new THREE.MeshStandardMaterial({ color: 0xc3cfb0, roughness: .78 })
+
+function withFbxWrapping(Loader) {
+  return class extends Loader {
+    _applyTexData(texture, data) {
+      // FBXLoader sets the authored wrapping on the texture before its pixels arrive.
+      super._applyTexData(texture, { ...data, wrapS: texture.wrapS, wrapT: texture.wrapT })
+    }
+  }
+}
+
+const FbxTgaLoader = withFbxWrapping(TGALoader)
+class ViewerTiffLoader extends TIFFLoader {
+  parse(buffer) {
+    return { ...super.parse(buffer), generateMipmaps: true }
+  }
+}
+const FbxTiffLoader = withFbxWrapping(ViewerTiffLoader)
+export const convertedImages = new Set(['tga', 'tif', 'tiff'])
+
+export async function decodedImageUrl(file) {
+  const loader = file.ext === 'tga' ? new TGALoader() : new TIFFLoader()
+  const texture = await loader.loadAsync(file.url)
+  try {
+    const { data, width, height } = texture.image
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const pixels = new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength)
+    canvas.getContext('2d').putImageData(new ImageData(pixels, width, height), 0, 0)
+    const image = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+    if (!image) throw new Error('Не удалось подготовить изображение')
+    return URL.createObjectURL(image)
+  } finally {
+    texture.dispose()
+  }
+}
+
+function dispose(object) {
+  const geometry = new Set()
+  const materials = new Set()
+  const textures = new Set()
+  object.traverse(item => {
+    for (const texture of item.userData.replacedTextures ?? []) textures.add(texture)
+    if (item.geometry) geometry.add(item.geometry)
+    for (const material of Array.isArray(item.material) ? item.material : item.material ? [item.material] : []) {
+      materials.add(material)
+      for (const value of Object.values(material)) if (value?.isTexture) textures.add(value)
+    }
+  })
+  for (const item of [...geometry, ...materials, ...textures]) item.dispose()
+}
+
+function resolveResources(file, files) {
+  const manager = new THREE.LoadingManager()
+  let pending, finish
+  manager.onStart = () => { pending ??= new Promise(resolve => { finish = resolve }) }
+  manager.onLoad = () => { finish?.(); pending = finish = null }
+  const tga = file.ext === 'fbx' ? new FbxTgaLoader(manager) : new TGALoader(manager)
+  manager.addHandler(/\.tga(?:$|\?)/i, tga)
+  const tiff = file.ext === 'fbx' ? new FbxTiffLoader(manager) : new ViewerTiffLoader(manager)
+  manager.addHandler(/\.tiff?(?:$|\?)/i, tiff)
+  const resources = new Map(files.map(item => [item.url, item]))
+  const lowerUrls = new Map()
+  const names = new Map()
+  for (const item of files) {
+    const key = item.url.toLowerCase()
+    lowerUrls.set(key, lowerUrls.has(key) ? null : item)
+    const name = item.name.toLowerCase()
+    if (!names.has(name)) names.set(name, [])
+    names.get(name).push(item)
+  }
+  const filePath = file.path.toLowerCase().split('/')
+  const rank = candidate => {
+    const path = candidate.path.toLowerCase().split('/')
+    let score = 0
+    while (score < filePath.length && filePath[score] === path[score]) score++
+    return score
+  }
+  const findResource = (reference, base = location.origin) => {
+    const input = reference.replaceAll('\\', '/')
+    let url
+    try { url = new URL(input, base) } catch { return undefined }
+    if (url.origin === location.origin) {
+      const exact = resources.get(url.pathname) ?? lowerUrls.get(url.pathname.toLowerCase())
+      if (exact) return exact
+    }
+    const basename = input.split('/').at(-1)
+    for (const key of [basename, url.pathname.split('/').at(-1)]) {
+      let name = key
+      try { name = decodeURIComponent(key) } catch { /* filenames may contain a literal percent sign */ }
+      const candidates = names.get(name.toLowerCase())
+      if (candidates?.length) return file.url.startsWith('/local-files/') ? closest(candidates, file) :
+        [...candidates].sort((a, b) => rank(b) - rank(a))[0]
+    }
+  }
+  manager.setURLModifier(input => {
+    if (input.startsWith('data:') || input.startsWith('blob:')) return input
+    try {
+      const url = new URL(input.replaceAll('\\', '/'), location.origin)
+      if (url.origin === location.origin && (url.pathname === file.preview || url.pathname.startsWith('/vendor/three/'))) {
+        return url.pathname + url.search
+      }
+      return findResource(input)?.url ?? '/missing-resource'
+    } catch { return '/missing-resource' }
+  })
+  return { manager, findResource, settled: () => pending }
+}
+
+function closest(candidates, source) {
+  if (candidates.length < 2) return candidates[0]
+  const directory = file => file.path.toLowerCase().split('/').slice(0, -1)
+  const parent = directory(source)
+  const ranked = candidates.map(file => {
+    const parts = directory(file)
+    let shared = 0
+    while (shared < parent.length && parts[shared] === parent[shared]) shared++
+    return { file, shared, distance: parent.length + parts.length - 2 * shared }
+  }).sort((a, b) => b.shared - a.shared || a.distance - b.distance)
+  const [best, next] = ranked
+  if (best.shared > next.shared || best.distance < next.distance) return best.file
+}
+
+function materialStem(name) {
+  return name.toLowerCase().replace(/^(?:mi|m|t)[_ -]+/, '').replace(/[^a-z\d]/g, '')
+}
+
+function findColorTexture(key, file, images) {
+  const colors = /[ _.-]+(?:base[ _-]?(?:color|map)|albedo|diffuse|color|bc|d)$/i
+  const opacity = /[ _.-]+(?:opacity|o)$/i
+  const stem = materialStem(key)
+  if (!stem || /^(?:default|lambert\d*|material\d*|blinn\d*)$/.test(stem)) return
+  const matches = suffix => closest(images.filter(item => {
+    const name = item.name.slice(0, -(item.ext.length + 1))
+    return suffix.test(name) && materialStem(name.replace(suffix, '')) === stem
+  }), file)
+  const color = matches(colors)
+  if (color) {
+    const alpha = matches(opacity)
+    return { url: color.url, alphaUrl: alpha?.url, alphaTest: alpha ? .5 : undefined }
+  }
+  const byName = new Map()
+  for (const item of images) {
+    const name = item.name.slice(0, -(item.ext.length + 1))
+    if (!colors.test(name)) continue
+    if (stem.length < 6 && materialStem(item.path.split('/').at(-2)) !== stem) continue
+    const family = name.replace(colors, '').replace(/[ _.-]+[a-z\d]+$/i, '')
+    if (materialStem(family) !== stem) continue
+    const entries = byName.get(name.toLowerCase()) ?? []
+    entries.push(item)
+    byName.set(name.toLowerCase(), entries)
+  }
+  const variants = [...byName.values()].map(entries => closest(entries, file)).filter(Boolean)
+    .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }))
+  if (variants.length) return { url: variants[0].url, variants }
+  if (file.url.startsWith('/local-files/')) {
+    const plain = closest(images.filter(item => materialStem(item.name.slice(0, -(item.ext.length + 1))) === stem), file)
+    if (plain) return { url: plain.url }
+  }
+}
+
+async function applyExternalTextures(model, file, files, unityMaterials, manager) {
+  const bindings = file.materialTextures ?? {}
+  const images = files.filter(item => item.kind === 'image' && (item.preview || convertedImages.has(item.ext)) &&
+    !item.path.includes('/.unity-previews/'))
+  const meshes = []
+  const materialMeshes = new Map()
+  const replacedTextures = new Set()
+  const variantGroups = []
+  model.traverseVisible(mesh => {
+    if (!mesh.isMesh || !mesh.geometry.hasAttribute('uv') || !mesh.geometry.attributes.position?.count) return
+    meshes.push(mesh)
+    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      if (!materialMeshes.has(material)) materialMeshes.set(material, new Set())
+      materialMeshes.get(material).add(mesh)
+    }
+  })
+  const prefab = file.prefabTextures
+  const prefabMeshes = prefab?.mesh ? meshes.filter(mesh => mesh.name === prefab.mesh) : meshes
+  const prefabTextures = new Map()
+  if (prefab && prefabMeshes.length === 1) {
+    const [mesh] = prefabMeshes
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+    if (materials.length === prefab.slots.length) {
+      materials.forEach((material, index) => {
+        if (prefab.slots[index] && materialMeshes.get(material).size === 1) prefabTextures.set(material, prefab.slots[index])
+      })
+    }
+  }
+  const loadTexture = url => (manager.getHandler(url) ?? new THREE.TextureLoader(manager)).loadAsync(url)
+  await Promise.all([...materialMeshes.keys()].map(async material => {
+    const key = material.name.trim().toLowerCase()
+    const explicit = Object.hasOwn(bindings, key) ? bindings[key] : null
+    const uses = materialMeshes.get(material)
+    const [owner] = uses
+    const meshName = uses.size === 1 && !Array.isArray(owner.material) ? owner.name : ''
+    const single = materialMeshes.size === 1 && file.url.startsWith('/local-files/')
+    const findByName = () => findColorTexture(key, file, images) ??
+      (meshName ? findColorTexture(meshName, file, images) : undefined) ??
+      (single ? findColorTexture(file.name.slice(0, -(file.ext.length + 1)), file, images) : undefined)
+    const image = material.map?.image
+    if ((image?.width > 1 || image?.height > 1) && !explicit?.remap) {
+      if (!file.previewAlbedo) return
+      const variants = findByName()?.variants
+      if (!variants || variants.length < 2) return
+      const saved = file.previewTextureNames ?? []
+      const matches = variants.filter(item => saved.includes(item.name.toLowerCase()))
+      const files = matches.length === 1 ? variants : [{ name: 'Исходная (FBX)' }, ...variants]
+      const index = matches.length === 1 ? variants.indexOf(matches[0]) : 0
+      const original = material.map
+      replacedTextures.add(original)
+      variantGroups.push({ material, files, index, loadTexture, original, originalIndex: index })
+      return
+    }
+    const getNamed = name => Object.hasOwn(unityMaterials, name) ? unityMaterials[name] : []
+    const named = closest(getNamed(key), file) ?? (key.startsWith('mi_') ? closest(getNamed('m_' + key.slice(3)), file) : null)
+    const binding = explicit ?? prefabTextures.get(material) ?? named ?? findByName()
+    if (!binding) return
+    try {
+      const texture = await loadTexture(binding.url)
+      texture.colorSpace = THREE.SRGBColorSpace
+      if (file.previewFormat === 'glb' || ['glb', 'gltf'].includes(file.ext)) texture.flipY = false
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+      if (binding.scale?.every(Number.isFinite)) texture.repeat.fromArray(binding.scale)
+      if (binding.offset?.every(Number.isFinite)) texture.offset.fromArray(binding.offset)
+      if (material.map) replacedTextures.add(material.map)
+      material.map = texture
+      material.color?.setHex(0xffffff)
+      if (binding.alphaUrl && !material.alphaMap?.image) {
+        const alpha = await loadTexture(binding.alphaUrl).catch(() => null)
+        if (alpha) {
+          if (material.alphaMap) replacedTextures.add(material.alphaMap)
+          material.alphaMap = alpha
+        }
+      }
+      if (Number.isFinite(binding.alphaTest) && (!binding.alphaUrl || material.alphaMap)) material.alphaTest = binding.alphaTest
+      material.needsUpdate = true
+      if (binding.variants?.length > 1) variantGroups.push({ material, files: binding.variants, loadTexture, index: 0 })
+    } catch { /* keep the original material when its external texture cannot be decoded */ }
+  }))
+  model.userData.replacedTextures = replacedTextures
+  return variantGroups
+}
+
+function normalizePreviewMaterials(model, file) {
+  if (!file.previewAlbedo && !file.previewVertexMask && !file.previewAlphaCutout) return
+  const materials = new Set()
+  model.traverse(mesh => {
+    if (!mesh.isMesh || !mesh.geometry.hasAttribute('uv')) return
+    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) materials.add(material)
+  })
+  for (const material of materials) {
+    const image = material.map?.image
+    if (!(image?.width > 1 || image?.height > 1)) continue
+    if (file.previewAlbedo) material.color?.setHex(0xffffff)
+    if (file.previewVertexMask) material.vertexColors = false
+    if (file.previewAlphaCutout) {
+      material.alphaTest = .5
+      material.side = THREE.DoubleSide
+    }
+    material.needsUpdate = true
+  }
+}
+
+async function loadObj(file, manager, findResource) {
+  const loader = new OBJLoader(manager)
+  const source = await new THREE.FileLoader(manager).loadAsync(file.preview)
+  const base = new URL(file.preview, location.origin)
+  const references = [...source.matchAll(/^[ \t]*mtllib[ \t]+([^\r\n]+)/gm)].map(([, value]) => value.trim())
+  const materialFiles = new Set()
+  for (const name of references) {
+    const resource = findResource(name, base)
+    if (resource?.ext === 'mtl') materialFiles.add(resource.url)
+  }
+  if (!materialFiles.size) {
+    const resource = findResource(file.name.replace(/\.obj$/i, '.mtl'), base)
+    if (resource?.ext === 'mtl') materialFiles.add(resource.url)
+  }
+  const loaded = await Promise.allSettled([...materialFiles].map(url => new MTLLoader(manager).loadAsync(url)))
+  const creators = loaded.filter(result => result.status === 'fulfilled').map(result => result.value)
+  if (creators.length) loader.setMaterials({
+    create: name => creators.find(creator => Object.hasOwn(creator.materialsInfo, name))?.create(name),
+  })
+  return loader.parse(source)
+}
+
+async function applyGltfTexture(model, binding, manager) {
+  const materials = new Set()
+  model.traverse(mesh => {
+    if (!mesh.isMesh || !mesh.geometry.hasAttribute('uv')) return
+    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      if (!material.map?.image) materials.add(material)
+    }
+  })
+  if (!materials.size) return
+  const texture = await new THREE.TextureLoader(manager).loadAsync(binding.url).catch(() => null)
+  if (!texture) return
+  texture.flipY = false
+  texture.colorSpace = THREE.SRGBColorSpace
+  if (binding.palette) {
+    texture.magFilter = THREE.NearestFilter
+    texture.minFilter = THREE.NearestFilter
+    texture.generateMipmaps = false
+  }
+  for (const material of materials) {
+    material.map = texture
+    material.color?.setHex(0xffffff)
+    if (binding.palette && 'metalness' in material) material.metalness = 0
+    material.needsUpdate = true
+  }
+}
+
+export class ModelStage {
+  constructor(element) {
+    this.element = element
+    this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+    this.renderer.setClearColor(0x000000, 0)
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping
+    this.renderer.toneMappingExposure = 1.18
+    this.renderer.domElement.tabIndex = 0
+    this.renderer.domElement.setAttribute('aria-label', 'Интерактивная 3D-модель')
+    element.append(this.renderer.domElement)
+    this.scene = new THREE.Scene()
+    this.camera = new THREE.PerspectiveCamera(38, 1, .01, 1500)
+    this.camera.position.set(3.1, 2.4, 3.65)
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement)
+    this.controls.enableDamping = true
+    this.controls.autoRotateSpeed = 1.35
+    this.ambient = new THREE.HemisphereLight(0xffffff, 0x8f8f8f)
+    this.key = new THREE.DirectionalLight(0xffffff)
+    this.key.position.set(4, 8, 5)
+    this.rim = new THREE.DirectionalLight(0xffffff)
+    this.rim.position.set(-4, 5, -2)
+    this.scene.add(this.ambient, this.key, this.rim)
+    const pmrem = new THREE.PMREMGenerator(this.renderer)
+    const room = new RoomEnvironment()
+    this.scene.environment = pmrem.fromScene(room, .04, .1, 100, { size: 128 }).texture
+    room.dispose()
+    pmrem.dispose()
+    this.setLighting('studio')
+    this.grid = new THREE.GridHelper(20, 30, 0x789273, 0x526c53)
+    this.grid.material.transparent = true
+    this.grid.material.opacity = .36
+    this.scene.add(this.grid)
+    this.request = 0
+    this.frameTime = performance.now()
+    this.observer = new ResizeObserver(() => this.resize())
+    this.observer.observe(element)
+    this.resize()
+    this.renderer.setAnimationLoop(time => {
+      const elapsed = Math.min(.1, Math.max(0, (time - this.frameTime) / 1000))
+      this.frameTime = time
+      if (!this.element.hidden) {
+        this.mixer?.update(elapsed)
+        this.controls.update(elapsed)
+        this.renderer.render(this.scene, this.camera)
+      }
+    })
+  }
+
+  resize() {
+    const width = this.element.clientWidth
+    const height = this.element.clientHeight
+    if (!width || !height) return
+    this.camera.aspect = width / height
+    this.camera.updateProjectionMatrix()
+    this.renderer.setSize(width, height, false)
+  }
+
+  resetModel() {
+    for (const [material, override] of this.colorOverrides ?? []) {
+      override.texture?.dispose()
+      material.map = override.originalMap
+      material.color?.copy(override.originalColor)
+      material.vertexColors = override.vertexColors
+    }
+    this.colorOverrides = new Map()
+    this.manualMaterials = []
+    this.manualTextureLoader = null
+    this.parts?.dispose()
+    this.parts = null
+    this.sceneBounds = null
+    if (this.skeleton) {
+      this.scene.remove(this.skeleton)
+      this.skeleton.dispose()
+      this.skeleton = null
+    }
+    if (this.root) {
+      this.scene.remove(this.root)
+      this.mixer?.stopAllAction()
+      if (this.model) this.mixer?.uncacheRoot(this.model)
+      dispose(this.root)
+    }
+    this.root = this.model = this.mixer = this.active = this.bounds = null
+    this.variantGroups = []
+    this.variantLoad = null
+    this.clips = []
+    this.controls.autoRotate = false
+  }
+
+  clear() {
+    this.request++
+    this.resetModel()
+  }
+
+  async load(file, files, unityMaterials = {}) {
+    this.resetModel()
+    const request = ++this.request
+    const { manager, findResource, settled } = resolveResources(file, files)
+    let model
+    let animations = []
+    let variantGroups = []
+    const type = file.previewFormat ?? file.ext
+    const local = file.url.startsWith('/local-files/')
+    if (type === 'gltf' || type === 'glb') {
+      const draco = new DRACOLoader(manager)
+      draco.setDecoderPath('/vendor/three/examples/jsm/libs/draco/gltf/')
+      const ktx2 = new KTX2Loader(manager).setTranscoderPath('/vendor/three/examples/jsm/libs/basis/').detectSupport(this.renderer)
+      const loader = new GLTFLoader(manager).setDRACOLoader(draco).setMeshoptDecoder(MeshoptDecoder).setKTX2Loader(ktx2)
+      try {
+        const loaded = await loader.loadAsync(file.preview)
+        model = loaded.scene
+        animations = loaded.animations
+        if (file.previewTexture && request === this.request) await applyGltfTexture(model, file.previewTexture, manager)
+      } finally {
+        draco.dispose()
+        ktx2.dispose()
+      }
+    } else if (type === 'fbx') {
+      model = await new FBXLoader(manager).loadAsync(file.preview)
+      animations = model.animations
+      model.traverse(item => {
+        if (item.isMesh && item.geometry.hasAttribute('position') && !item.geometry.hasAttribute('normal')) {
+          item.geometry.computeVertexNormals()
+        }
+      })
+    } else if (type === 'obj') {
+      model = await loadObj(file, manager, findResource)
+    } else if (type === 'dae') {
+      const loaded = await new ColladaLoader(manager).loadAsync(file.preview)
+      model = loaded.scene
+      animations = model.animations ?? []
+    } else if (type === '3ds' || type === '3mf') {
+      const loader = type === '3ds' ? new TDSLoader(manager) : new ThreeMFLoader(manager)
+      model = await loader.loadAsync(file.preview)
+    } else if (type === 'stl' || type === 'ply') {
+      const loader = type === 'stl' ? new STLLoader(manager) : new PLYLoader(manager)
+      const geometry = await loader.loadAsync(file.preview)
+      if (!geometry.getAttribute('normal')) geometry.computeVertexNormals()
+      const material = fallbackMaterial()
+      material.vertexColors = geometry.hasAttribute('color')
+      if (material.vertexColors) material.color.setHex(0xffffff)
+      model = new THREE.Mesh(geometry, material)
+    } else {
+      throw new Error('Для этого формата нужно отдельное приложение')
+    }
+    if ((type === 'fbx' || local) && files.some(item => item.kind === 'image')) {
+      await settled()
+      if (request === this.request) {
+        variantGroups = await applyExternalTextures(model, file, files, unityMaterials, manager)
+        normalizePreviewMaterials(model, file)
+      }
+    }
+    if (request !== this.request) {
+      dispose(model)
+      return null
+    }
+    model.updateMatrixWorld(true)
+    const box = new THREE.Box3().setFromObject(model)
+    const skeletonOnly = box.isEmpty()
+    let boneCount = 0
+    if (skeletonOnly) {
+      const position = new THREE.Vector3()
+      model.traverse(item => {
+        if (!item.isBone) return
+        item.getWorldPosition(position)
+        box.expandByPoint(position)
+        boneCount++
+      })
+    }
+    if (box.isEmpty()) {
+      dispose(model)
+      return { empty: true, clips: animations, meshes: 0, triangles: 0 }
+    }
+    const center = box.getCenter(new THREE.Vector3())
+    const container = new THREE.Group()
+    container.position.set(-center.x, -box.min.y, -center.z)
+    container.add(model)
+    this.scene.add(container)
+    container.updateMatrixWorld(true)
+    if (skeletonOnly) {
+      this.skeleton = new THREE.SkeletonHelper(model)
+      this.scene.add(this.skeleton)
+    }
+    this.root = container
+    this.model = model
+    this.variantGroups = variantGroups
+    if (local) {
+      const materials = new Set()
+      model.traverse(mesh => {
+        if (!mesh.isMesh || !mesh.geometry.hasAttribute('uv')) return
+        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+          if ('map' in material) materials.add(material)
+        }
+      })
+      this.manualMaterials = [...materials]
+      this.manualTextureLoader = file => {
+        const loader = file.ext === 'tga' ? new TGALoader() : convertedImages.has(file.ext) ? new ViewerTiffLoader() : new THREE.TextureLoader()
+        return loader.loadAsync(file.url)
+      }
+      this.manualFlipY = type !== 'gltf' && type !== 'glb'
+    }
+    this.sceneBounds = this.bounds = skeletonOnly ? box.clone().translate(container.position) : new THREE.Box3().setFromObject(container)
+    this.parts = new PreviewParts(model)
+    this.parts.apply(this.lighting === 'unlit')
+    this.clips = animations ?? []
+    this.mixer = this.clips.length ? new THREE.AnimationMixer(model) : null
+    const size = this.bounds.getSize(new THREE.Vector3())
+    this.grid.scale.setScalar(Math.max(.015, Math.max(size.x, size.y, size.z) / 3.5))
+    this.grid.position.y = -Math.max(.0002, size.length() * .0002)
+    this.fit()
+    let meshes = 0
+    let triangles = 0
+    model.traverse(item => {
+      if (!item.isMesh) return
+      meshes++
+      triangles += (item.geometry.index?.count ?? item.geometry.attributes.position?.count ?? 0) / 3
+    })
+    return { meshes, triangles: Math.round(triangles), clips: this.clips, skeletonOnly, boneCount, empty: false,
+      parts: this.parts.choices.map(item => item.name) }
+  }
+
+  setLighting(mode) {
+    this.lighting = mode
+    const bright = mode === 'bright'
+    this.renderer.toneMappingExposure = bright ? 1.4 : 1.08
+    this.scene.environmentIntensity = bright ? .9 : .62
+    this.ambient.intensity = bright ? 2.85 : 1.6
+    this.key.intensity = bright ? 3.0 : 2.15
+    this.rim.intensity = 1.1
+    this.parts?.apply(mode === 'unlit')
+  }
+
+  showPart(index) {
+    this.variantLoad = null
+    const box = this.parts?.select(index, this.lighting === 'unlit')
+    this.bounds = box && !box.isEmpty() ? box : this.sceneBounds
+    this.fit()
+  }
+
+  get variant() {
+    const selected = this.parts?.selection
+    const materials = selected && (selected.slot === undefined ? selected.part.materials : [selected.part.materials[selected.slot]])
+    const groups = materials ? this.variantGroups.filter(group => materials.includes(group.material)) : this.variantGroups
+    return groups.length === 1 && !this.colorOverrides.has(groups[0].material) ? groups[0] : null
+  }
+
+  manualTexture(index) {
+    return this.colorOverrides.get(this.manualMaterials[index])?.fileId ?? ''
+  }
+
+  async setManualTexture(index, file) {
+    const material = this.manualMaterials[index]
+    if (!material) return
+    this.variantLoad = null
+    const previous = this.colorOverrides.get(material)
+    if (!file) {
+      if (!previous) return
+      previous.texture?.dispose()
+      material.map = previous.originalMap
+      if (previous.originalColor) material.color.copy(previous.originalColor)
+      material.vertexColors = previous.vertexColors
+      this.colorOverrides.delete(material)
+    } else {
+      const override = {
+        originalMap: previous ? previous.originalMap : material.map,
+        originalColor: previous ? previous.originalColor : material.color?.clone(),
+        vertexColors: previous ? previous.vertexColors : material.vertexColors,
+        texture: previous?.texture, fileId: previous?.fileId,
+      }
+      this.colorOverrides.set(material, override)
+      const texture = await this.manualTextureLoader(file).catch(() => null)
+      if (this.colorOverrides.get(material) !== override) { texture?.dispose(); return }
+      if (!texture) {
+        if (previous) this.colorOverrides.set(material, previous)
+        else this.colorOverrides.delete(material)
+        throw new Error('Текстура не открылась')
+      }
+      texture.colorSpace = THREE.SRGBColorSpace
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+      texture.flipY = override.originalMap?.flipY ?? this.manualFlipY
+      texture.channel = override.originalMap?.channel ?? 0
+      texture.needsUpdate = true
+      override.texture?.dispose()
+      override.texture = material.map = texture
+      override.fileId = file.selectionId ?? file.id
+      material.color?.setHex(0xffffff)
+      material.vertexColors = false
+    }
+    material.needsUpdate = true
+    this.parts?.apply(this.lighting === 'unlit')
+  }
+
+  async setTextureVariant(index) {
+    const variant = this.variant
+    const file = variant?.files[index]
+    if (!file) return
+    const request = this.variantLoad = Symbol()
+    if (index === variant.index) return
+    const useOriginal = index === variant.originalIndex
+    let texture
+    try {
+      texture = useOriginal ? variant.original : await variant.loadTexture(file.url)
+    } catch (error) {
+      if (request === this.variantLoad) throw error
+      return
+    }
+    if (request !== this.variantLoad) {
+      if (!useOriginal) texture.dispose()
+      return
+    }
+    const { material } = variant
+    const previous = material.map
+    if (!useOriginal) {
+      texture.colorSpace = THREE.SRGBColorSpace
+      texture.wrapS = previous.wrapS
+      texture.wrapT = previous.wrapT
+      texture.repeat.copy(previous.repeat)
+      texture.offset.copy(previous.offset)
+      texture.center.copy(previous.center)
+      texture.rotation = previous.rotation
+      texture.channel = previous.channel
+      texture.flipY = previous.flipY
+      texture.needsUpdate = true
+    }
+    if (previous !== variant.original) previous.dispose()
+    material.map = texture
+    material.needsUpdate = true
+    variant.index = index
+    this.parts?.apply(this.lighting === 'unlit')
+  }
+
+  fit() {
+    if (!this.bounds) return
+    const sphere = this.bounds.getBoundingSphere(new THREE.Sphere())
+    const radius = Math.max(sphere.radius, .002)
+    const halfVertical = THREE.MathUtils.degToRad(this.camera.fov / 2)
+    const halfHorizontal = Math.atan(Math.tan(halfVertical) * this.camera.aspect)
+    const distance = radius / Math.sin(Math.min(halfVertical, halfHorizontal)) * 1.22
+    this.camera.position.copy(sphere.center).addScaledVector(new THREE.Vector3(1.15, .68, 1.45).normalize(), distance)
+    this.camera.near = Math.max(.00002, radius / 500)
+    this.camera.far = radius * 180
+    this.camera.updateProjectionMatrix()
+    this.controls.target.copy(sphere.center)
+    this.controls.minDistance = radius * .1
+    this.controls.maxDistance = radius * 35
+    this.controls.update()
+  }
+
+  zoom(inward) {
+    if (!this.bounds) return
+    if (inward) this.controls.dollyIn(.8)
+    else this.controls.dollyOut(.8)
+  }
+
+  wireframe(active) {
+    for (const { materials } of this.parts?.meshes ?? []) {
+      for (const material of materials) {
+        if ('wireframe' in material) material.wireframe = active
+      }
+    }
+    this.parts?.apply(this.lighting === 'unlit')
+  }
+
+  play(index) {
+    if (!this.mixer || !this.clips[index]) return false
+    if (this.active?.getClip() === this.clips[index] && this.active.paused) {
+      this.active.paused = false
+    } else {
+      this.mixer.stopAllAction()
+      this.active = this.mixer.clipAction(this.clips[index])
+      this.active.reset().play()
+    }
+    return true
+  }
+
+  pause() {
+    if (this.active) this.active.paused = true
+  }
+}

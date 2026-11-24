@@ -1,0 +1,12 @@
+{
+  "name": "eldermere-asset-viewer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "node scripts/patch-three.mjs",
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "three": "^0.187.0"
+  }
+}
