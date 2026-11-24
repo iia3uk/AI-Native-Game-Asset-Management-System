@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { PLYLoader } from 'three/addons/loaders/PLYLoader.js'
 import { geometryBounds, hasTextureImage, PreviewParts } from '../public/parts.js'
 import { normalizeFbx, normalizeFbxVertexColors } from '../public/stage.js'
+import { copyTextureMapping, isDataMap, preferColoredImage } from '../public/textures.js'
 
 function fbxMesh(material) {
   const geometry = new THREE.BoxGeometry()
@@ -112,4 +113,42 @@ test('PLY point clouds and triangle meshes are distinguishable to the preview', 
   assert.equal(cloud.userData.hasPlyFaces, false)
   assert.equal(cloud.getAttribute('position').count, 3)
   assert.equal(mesh.userData.hasPlyFaces, true)
+})
+
+test('albedo preview prefers an exact Colored counterpart from the same directory tree', () => {
+  const image = (dir, name) => ({ name, ext: 'png', url: dir + '/' + name })
+  const mask = image('/local-files/first/Tex', 'Bridge%2301_ALB.png')
+  const preferred = image('/local-files/first/Tex/Colored', mask.name)
+  const unrelated = image('/local-files/second/Tex/Colored', mask.name)
+  const normal = image('/local-files/first/Tex', 'Bridge%2301_NRM.png')
+  const coloredNormal = image('/local-files/first/Tex/Colored', normal.name)
+
+  assert.equal(preferColoredImage(mask, [mask, unrelated, preferred]), preferred)
+  assert.equal(preferColoredImage(mask, [mask, unrelated]), mask)
+  assert.equal(preferColoredImage(normal, [normal, coloredNormal]), normal)
+  assert.equal(isDataMap(mask), false)
+  assert.equal(isDataMap(normal), true)
+})
+
+test('a texture replacement keeps the authored UV channel and transform', () => {
+  const original = new THREE.Texture()
+  original.flipY = false
+  original.channel = 2
+  original.wrapS = THREE.MirroredRepeatWrapping
+  original.repeat.set(2, 3)
+  original.offset.set(.2, .3)
+  original.center.set(.5, .5)
+  original.rotation = .4
+  original.updateMatrix()
+  original.matrixAutoUpdate = false
+  const replacement = new THREE.Texture()
+
+  copyTextureMapping(replacement, original, true)
+
+  assert.equal(replacement.channel, 2)
+  assert.equal(replacement.flipY, false)
+  assert.equal(replacement.wrapS, THREE.MirroredRepeatWrapping)
+  assert.equal(replacement.matrixAutoUpdate, false)
+  assert.ok(original.matrix.equals(replacement.matrix))
+  assert.ok(original.repeat.equals(replacement.repeat))
 })

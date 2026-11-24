@@ -1,4 +1,5 @@
 import { ModelStage, convertedImages, decodedImageUrl } from './stage.js'
+import { isDataMap } from './textures.js'
 import { ModelThumbnails } from './thumbnails.js'
 
 const $ = id => document.getElementById(id)
@@ -87,7 +88,21 @@ async function restoreFolders() {
 const localMarks = () => Object.assign({}, ...[...localFolders.values()].map(folder => folder.marks))
 const combinedImages = () => [...localFolders.values()].flatMap(folder => folder.images)
 const localGroupId = (folder, group) => folder.key + '.' + group
-const imageLabel = file => `${localFolders.get(file.selectionId.split('.')[0])?.name ?? ''} / ${file.path}`
+const imageId = file => file.selectionId ?? file.id
+
+function imageLabel(file) {
+  const folder = file.selectionId && localFolders.get(file.selectionId.split('.')[0])
+  const path = folder ? folder.name + ' / ' + file.path : file.displayPath ?? file.path
+  return isDataMap(file) ? path + ' · карта данных' : path
+}
+
+function manualImages() {
+  return state.folder ? combinedImages() : state.active?.files.filter(localTextures) ?? []
+}
+
+function manualTextureScope() {
+  return state.folder ?? { key: 'fab.' + state.active.id }
+}
 
 function loadClassification() {
   try {
@@ -399,31 +414,37 @@ function rememberLocation() {
 }
 
 function renderManualImages() {
-  if (!state.folder || !stage) return
-  const current = stage.manualTexture(Number(ui['manual-material'].value))
+  if (!state.active || !stage) return
+  const index = Number(ui['manual-material'].value)
+  const current = stage.manualTexture(index)
   const filter = normalize(ui['manual-search'].value)
-  const allImages = combinedImages().sort((a, b) => imageLabel(a).localeCompare(imageLabel(b), 'ru', { numeric: true }))
+  const allImages = manualImages().sort((a, b) => imageLabel(a).localeCompare(imageLabel(b), 'ru', { numeric: true }))
   const images = allImages.filter(file => normalize(imageLabel(file)).includes(filter))
   const items = images.slice(0, 120)
-  if (current && !items.some(file => file.selectionId === current)) {
-    const selected = allImages.find(file => file.selectionId === current)
+  if (current && !items.some(file => imageId(file) === current)) {
+    const selected = allImages.find(file => imageId(file) === current)
     if (selected) items.unshift(selected)
   }
+  const bound = stage.automaticTexture(index)
+  const automatic = bound && allImages.find(file =>
+    bound === file.url || bound === new URL(file.url, location.origin).href)
   ui['manual-image'].replaceChildren(new Option('Автоматическая привязка', ''),
-    ...items.map(file => new Option(imageLabel(file), file.selectionId)))
+    ...items.map(file => new Option(imageLabel(file), imageId(file))))
+  ui['manual-image'].title = automatic ? 'Автоматическая карта · ' + imageLabel(automatic) : 'Карта цвета материала'
   ui['manual-image'].value = current
   ui['manual-status'].textContent = images.length > 120 ? 'Уточните имя или путь, чтобы увидеть остальные карты.' : ''
 }
 
 async function restoreManualTextures(file) {
-  const images = state.folder && combinedImages()
-  if (!images?.length || !stage.manualMaterials.length) return false
-  const { maps } = state.folder
-  const lookup = new Map(images.map(image => [image.selectionId, image]))
+  const images = manualImages()
+  if (!images.length || !stage.manualMaterials.length) return false
+  const scope = manualTextureScope()
+  const maps = scope.maps ?? readLocal(scope, 'textures')
+  const lookup = new Map(images.map(image => [imageId(image), image]))
   await Promise.all(stage.manualMaterials.map(async (_, index) => {
     const remembered = maps[markKey(file.id, index)]
-    const image = lookup.get(remembered) ?? lookup.get(state.folder.key + '.' + remembered)
-    if (image && localTextures(image)) await stage.setManualTexture(index, image).catch(() => {})
+    const image = lookup.get(remembered) ?? lookup.get(scope.key + '.' + remembered)
+    if (image) await stage.setManualTexture(index, image).catch(() => {})
   }))
   return true
 }
@@ -466,6 +487,7 @@ async function selectFile(file) {
   ui['texture-tools'].hidden = true
   ui['manual-texture'].hidden = true
   ui['manual-texture'].open = false
+  ui['manual-apply'].disabled = false
   ui['animation-tools'].hidden = true
   ui['model-stats'].textContent = ''
   ui.notice.textContent = ''
@@ -816,19 +838,21 @@ ui['save-model-category'].addEventListener('click', () => {
 ui['manual-search'].addEventListener('input', renderManualImages)
 ui['manual-material'].addEventListener('change', renderManualImages)
 ui['manual-apply'].addEventListener('click', async () => {
-  if (!state.folder || !state.file || !stage) return
+  if (!state.active || !state.file || !stage) return
   const load = state.load
-  const folder = state.folder
+  const scope = manualTextureScope()
   const index = Number(ui['manual-material'].value)
   const key = markKey(state.file.id, index)
-  const file = combinedImages().find(image => image.selectionId === ui['manual-image'].value)
+  const file = manualImages().find(image => imageId(image) === ui['manual-image'].value)
   ui['manual-apply'].disabled = true
   try {
     await stage.setManualTexture(index, file)
     if (load !== state.load) return
-    if (file) folder.maps[key] = file.selectionId
-    else delete folder.maps[key]
-    localStorage.setItem(storageKey(folder, 'textures'), JSON.stringify(folder.maps))
+    const maps = { ...(scope.maps ?? readLocal(scope, 'textures')) }
+    if (file) maps[key] = imageId(file)
+    else delete maps[key]
+    localStorage.setItem(storageKey(scope, 'textures'), JSON.stringify(maps))
+    if (state.folder) state.folder.maps = maps
     renderManualImages()
     renderTextureVariants()
     renderColorSource()
@@ -836,7 +860,7 @@ ui['manual-apply'].addEventListener('click', async () => {
   } catch (error) {
     if (load === state.load) ui['manual-status'].textContent = error.message
   } finally {
-    ui['manual-apply'].disabled = false
+    if (load === state.load) ui['manual-apply'].disabled = false
   }
 })
 

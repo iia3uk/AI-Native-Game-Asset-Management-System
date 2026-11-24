@@ -16,9 +16,11 @@ import { TDSLoader } from 'three/addons/loaders/TDSLoader.js'
 import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { geometryBounds, hasTextureImage, PreviewParts } from './parts.js'
+import { colorSuffix, copyTextureMapping, isDataMap, preferColoredImage, textureName } from './textures.js'
 
 const fallbackMaterial = () => new THREE.MeshStandardMaterial({ color: 0xc3cfb0, roughness: .78 })
 const textureUrls = new WeakMap()
+const textureUrl = texture => textureUrls.get(texture) ?? texture?.image?.src
 
 function withFbxWrapping(Loader) {
   return class extends Loader {
@@ -167,40 +169,42 @@ function closest(candidates, source) {
   if (best.shared > next.shared || best.distance < next.distance) return best.file
 }
 
-function materialStem(name) {
-  return name.toLowerCase().replace(/^(?:mi|m|t)[_ -]+/, '').replace(/[^a-z\d]/g, '')
+function materialStem(name = '') {
+  return name.toLowerCase().replace(/\.(?:fbx|obj|blend|gltf|glb)$/, '')
+    .replace(/[ _.-]+lod[ _.-]?\d+(?:[ _.-]+material[ _.-]?\d+)?$/, '')
+    .replace(/^(?:mi|m|t|sm|sk)[_ -]+/, '').replace(/[^a-z\d]/g, '')
 }
 
 function findColorTexture(key, file, images) {
-  const colors = /[ _.-]+(?:base[ _-]?(?:color|map)|albedo|diffuse|color|bc|d)$/i
-  const opacity = /[ _.-]+(?:opacity|o)$/i
+  const opacity = /[ _.-]+(?:opacity|alpha|o)$/i
   const stem = materialStem(key)
-  if (!stem || /^(?:default|lambert\d*|material\d*|blinn\d*)$/.test(stem)) return
-  const matches = suffix => closest(images.filter(item => {
-    const name = item.name.slice(0, -(item.ext.length + 1))
+  if (!stem || /^(?:default(?:material)?\d*|lambert\d*|material\d*|blinn\d*)$/.test(stem)) return
+  const matches = suffix => images.filter(item => {
+    const name = textureName(item)
     return suffix.test(name) && materialStem(name.replace(suffix, '')) === stem
-  }), file)
-  const color = matches(colors)
+  })
+  const chooseColor = candidates => closest([...new Set(candidates.map(item => preferColoredImage(item, images)))], file)
+  const color = chooseColor(matches(colorSuffix))
   if (color) {
-    const alpha = matches(opacity)
+    const alpha = closest(matches(opacity), file)
     return { url: color.url, alphaUrl: alpha?.url, alphaTest: alpha ? .5 : undefined }
   }
   const byName = new Map()
   for (const item of images) {
-    const name = item.name.slice(0, -(item.ext.length + 1))
-    if (!colors.test(name)) continue
+    const name = textureName(item)
+    if (!colorSuffix.test(name)) continue
     if (stem.length < 6 && materialStem(item.path.split('/').at(-2)) !== stem) continue
-    const family = name.replace(colors, '').replace(/[ _.-]+[a-z\d]+$/i, '')
+    const family = name.replace(colorSuffix, '').replace(/[ _.-]+[a-z\d]+$/i, '')
     if (materialStem(family) !== stem) continue
     const entries = byName.get(name.toLowerCase()) ?? []
     entries.push(item)
     byName.set(name.toLowerCase(), entries)
   }
-  const variants = [...byName.values()].map(entries => closest(entries, file)).filter(Boolean)
+  const variants = [...byName.values()].map(chooseColor).filter(Boolean)
     .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }))
   if (variants.length) return { url: variants[0].url, variants }
   if (file.url.startsWith('/local-files/')) {
-    const plain = closest(images.filter(item => materialStem(item.name.slice(0, -(item.ext.length + 1))) === stem), file)
+    const plain = closest(images.filter(item => !isDataMap(item) && materialStem(textureName(item)) === stem), file)
     if (plain) return { url: plain.url }
   }
 }
@@ -234,13 +238,18 @@ async function applyExternalTextures(model, file, files, unityMaterials, manager
       })
     }
   }
-  const loadTexture = url => (manager.getHandler(url) ?? new THREE.TextureLoader(manager)).loadAsync(url)
+  const loadTexture = async url => {
+    const texture = await (manager.getHandler(url) ?? new THREE.TextureLoader(manager)).loadAsync(url)
+    textureUrls.set(texture, url)
+    return texture
+  }
   await Promise.all([...materialMeshes.keys()].map(async material => {
     const key = material.name.trim().toLowerCase()
     const explicit = Object.hasOwn(bindings, key) ? bindings[key] : null
     const uses = materialMeshes.get(material)
     const [owner] = uses
-    const meshName = uses.size === 1 && !Array.isArray(owner.material) ? owner.name : ''
+    const meshNames = !Array.isArray(owner.material) ? new Set([...uses].map(mesh => mesh.name)) : new Set()
+    const meshName = meshNames.size && new Set([...meshNames].map(materialStem)).size === 1 ? owner.name : ''
     const single = materialMeshes.size === 1 && file.url.startsWith('/local-files/')
     const findByName = () => findColorTexture(key, file, images) ??
       (meshName ? findColorTexture(meshName, file, images) : undefined) ??
@@ -278,11 +287,7 @@ async function applyExternalTextures(model, file, files, unityMaterials, manager
       if (binding.alphaUrl && !hasTextureImage(material.alphaMap)) {
         const alpha = await loadTexture(binding.alphaUrl).catch(() => null)
         if (alpha) {
-          alpha.flipY = texture.flipY
-          alpha.wrapS = texture.wrapS
-          alpha.wrapT = texture.wrapT
-          alpha.repeat.copy(texture.repeat)
-          alpha.offset.copy(texture.offset)
+          copyTextureMapping(alpha, texture)
           alpha.needsUpdate = true
           if (material.alphaMap) replacedTextures.add(material.alphaMap)
           material.alphaMap = alpha
@@ -317,10 +322,9 @@ export function normalizeFbx(model) {
     for (const material of [mesh.material].flat()) if (material) materials.add(material)
   })
   const replaced = model.userData.replacedTextures ??= new Set()
-  const source = texture => textureUrls.get(texture) ?? texture?.image?.src
   for (const material of materials) {
     const { map, alphaMap } = material
-    if (alphaMap && map && (alphaMap === map || (source(map) && source(map) === source(alphaMap)))) {
+    if (alphaMap && map && (alphaMap === map || (textureUrl(map) && textureUrl(map) === textureUrl(alphaMap)))) {
       // FBX may connect the same RGBA image to diffuse and transparency.
       // Three already reads its alpha from map. alphaMap would multiply by green.
       replaced.add(alphaMap)
@@ -401,7 +405,7 @@ async function loadObj(file, manager, findResource) {
   return loader.parse(source)
 }
 
-async function applyGltfTexture(model, binding, manager) {
+async function applyGltfTexture(model, binding, files, manager) {
   const materials = new Set()
   model.traverse(mesh => {
     if (!mesh.isMesh || !mesh.geometry.hasAttribute('uv')) return
@@ -410,9 +414,13 @@ async function applyGltfTexture(model, binding, manager) {
     }
   })
   if (!materials.size) return
-  const texture = await (manager.getHandler(binding.url) ?? new THREE.TextureLoader(manager))
-    .loadAsync(binding.url).catch(() => null)
+  const images = files.filter(file => file.kind === 'image' && file.preview)
+  const source = images.find(file => file.url === binding.url)
+  const preferred = binding.palette ? source : preferColoredImage(source, images)
+  const url = preferred?.url ?? binding.url
+  const texture = await (manager.getHandler(url) ?? new THREE.TextureLoader(manager)).loadAsync(url).catch(() => null)
   if (!texture) return
+  textureUrls.set(texture, url)
   texture.flipY = false
   texture.colorSpace = THREE.SRGBColorSpace
   if (binding.palette) {
@@ -542,7 +550,7 @@ export class ModelStage {
           const loaded = await loader.loadAsync(file.preview)
           model = loaded.scene
           animations = loaded.animations
-          if (file.previewTexture && request === this.request) await applyGltfTexture(model, file.previewTexture, manager)
+          if (file.previewTexture && request === this.request) await applyGltfTexture(model, file.previewTexture, files, manager)
         } finally {
           draco.dispose()
           ktx2.dispose()
@@ -581,7 +589,7 @@ export class ModelStage {
       model.userData.replacedTextures = new Set()
       if (request === this.request) {
         if (type === 'fbx') normalizeFbx(model)
-        if ((type === 'fbx' || local) && files.some(item => item.kind === 'image')) {
+        if ((type === 'fbx' || type === 'glb' || type === 'gltf' || local) && files.some(item => item.kind === 'image')) {
           variantGroups = await applyExternalTextures(model, file, files, unityMaterials, manager)
         }
         if (type === 'fbx') normalizeFbxVertexColors(model)
@@ -645,21 +653,19 @@ export class ModelStage {
     this.root = container
     this.model = model
     this.variantGroups = variantGroups
-    if (local) {
-      const materials = new Set()
-      model.traverse(mesh => {
-        if (!mesh.isMesh || !mesh.geometry.hasAttribute('uv')) return
-        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
-          if (material && 'map' in material) materials.add(material)
-        }
-      })
-      this.manualMaterials = [...materials]
-      this.manualTextureLoader = file => {
-        const loader = file.ext === 'tga' ? new TGALoader() : convertedImages.has(file.ext) ? new ViewerTiffLoader() : new THREE.TextureLoader()
-        return loader.loadAsync(file.url)
+    const materials = new Set()
+    model.traverse(mesh => {
+      if (!mesh.isMesh || !mesh.geometry.hasAttribute('uv')) return
+      for (const material of [mesh.material].flat()) {
+        if (material && 'map' in material) materials.add(material)
       }
-      this.manualFlipY = type !== 'gltf' && type !== 'glb'
+    })
+    this.manualMaterials = [...materials]
+    this.manualTextureLoader = file => {
+      const loader = file.ext === 'tga' ? new TGALoader() : convertedImages.has(file.ext) ? new ViewerTiffLoader() : new THREE.TextureLoader()
+      return loader.loadAsync(file.url)
     }
+    this.manualFlipY = type !== 'gltf' && type !== 'glb'
     this.sceneBounds = this.bounds = box.clone().translate(container.position)
     this.parts = parts
     this.parts.apply(this.lighting === 'unlit')
@@ -709,6 +715,12 @@ export class ModelStage {
     return this.colorOverrides.get(this.manualMaterials[index])?.fileId ?? ''
   }
 
+  automaticTexture(index) {
+    const material = this.manualMaterials[index]
+    const override = this.colorOverrides.get(material)
+    return textureUrl(override ? override.originalMap : material?.map)
+  }
+
   async setManualTexture(index, file) {
     const material = this.manualMaterials[index]
     if (!material) return
@@ -738,8 +750,7 @@ export class ModelStage {
       }
       texture.colorSpace = THREE.SRGBColorSpace
       texture.wrapS = texture.wrapT = THREE.RepeatWrapping
-      texture.flipY = override.originalMap?.flipY ?? this.manualFlipY
-      texture.channel = override.originalMap?.channel ?? 0
+      copyTextureMapping(texture, override.originalMap, this.manualFlipY)
       texture.needsUpdate = true
       override.texture?.dispose()
       override.texture = material.map = texture
@@ -773,14 +784,7 @@ export class ModelStage {
     const previous = material.map
     if (!useOriginal) {
       texture.colorSpace = THREE.SRGBColorSpace
-      texture.wrapS = previous.wrapS
-      texture.wrapT = previous.wrapT
-      texture.repeat.copy(previous.repeat)
-      texture.offset.copy(previous.offset)
-      texture.center.copy(previous.center)
-      texture.rotation = previous.rotation
-      texture.channel = previous.channel
-      texture.flipY = previous.flipY
+      copyTextureMapping(texture, previous, this.manualFlipY)
       texture.needsUpdate = true
     }
     if (previous !== variant.original) previous.dispose()
