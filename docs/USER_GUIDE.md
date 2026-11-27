@@ -30,6 +30,21 @@ Texture dimensions come from supported headers in PNG, JPEG, GIF, WebP, DDS and 
 
 To get the same report as JSON, use `npm run cli -- inspect <asset-id> --json`.
 
+## Check against project budgets
+
+In an asset's index card, select a profile under **Проверка по профилю**. Mobile Game, Desktop Game, Stylized Game, Realistic Game and VR have editable starting budgets. Custom Project starts empty. Set each budget through **Изменить пороги**. Leave a limit blank to skip that check. **Восстановить исходные** restores the selected profile's starting values.
+
+The report explains each result and displays measured values beside thresholds. Size checks compare the largest side of the reported bounding box in source units. Texture budgets check the largest known pixel dimension. A texture with unknown dimensions leaves the check unknown unless another measured texture already exceeds the limit. Dependency checks use the index snapshot and leave externally referenced or unconfirmed files unknown. A structure check reports issues the analyzer found in the source sections it supports.
+
+```sh
+npm run cli -- profiles --json
+npm run cli -- profile custom-project --set-json '{"maxTriangles":12000,"maxTextureEdge":2048,"requireUV":true}'
+npm run cli -- inspect <asset-id> --profile custom-project --json
+npm run cli -- profile custom-project --reset
+```
+
+Threshold updates through `--set-json` replace the saved limits for the selected profile.
+
 ## Data, backups and export
 
 On Windows, the database and backups live under `%APPDATA%\AssetViewer`. Demo assets and cache data live under `%LOCALAPPDATA%\AssetViewer`. Other platforms use their application data and cache directories. `ASSET_VIEWER_DATA_DIR` overrides data paths with an absolute directory for source or desktop sessions.

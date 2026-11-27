@@ -1,7 +1,9 @@
 import { existsSync } from 'node:fs'
 import { AssetIndex, IndexInputError } from './asset-index.mjs'
 import { fileInfo, ScanChangeError } from './asset-files.mjs'
+import { IndexConflictError } from './index-errors.mjs'
 import { LibraryWatcher } from './library-watcher.mjs'
+import { qualityFields } from './quality-profiles.mjs'
 import { ScanWorker } from './scan-worker.mjs'
 
 export function indexRoutes({ database, ignoredWatchPaths, json, body, allowsWrite, openFolder, invalidateFolder }) {
@@ -98,9 +100,16 @@ export function indexRoutes({ database, ignoredWatchPaths, json, body, allowsWri
       if (method === 'GET' && resource === 'duplicates' && !id) {
         return json(response, 200, { groups: index.duplicates(Number(params.get('limit') ?? 50), Number(params.get('offset') ?? 0)) })
       }
+      if (resource === 'quality-profiles' && !action) {
+        if (method === 'GET' && !id) return json(response, 200, { profiles: index.qualityProfiles.list(), fields: qualityFields })
+        if (method === 'POST' && id) {
+          const profile = index.qualityProfiles.update(id, await body(request).catch(() => null))
+          return json(response, 200, { profile })
+        }
+      }
       if (resource === 'assets' && id && !action) {
         if (method === 'POST') return json(response, 200, { asset: index.updateAsset(id, await body(request).catch(() => null)) })
-        const details = index.inspect(id)
+        const details = index.inspect(id, { profileId: params.get('profile') ?? undefined })
         if (details) return json(response, 200, details)
       }
       if (method === 'POST' && resource === 'assets' && id && action === 'open') {
@@ -119,6 +128,7 @@ export function indexRoutes({ database, ignoredWatchPaths, json, body, allowsWri
     } catch (error) {
       if (shutdown.signal.aborted) return json(response, 503, { error: 'Сервер завершает работу.' })
       if (error instanceof IndexInputError) return json(response, 400, { error: error.message })
+      if (error instanceof IndexConflictError) return json(response, 409, { error: error.message })
       if (error instanceof ScanChangeError) return json(response, 409, { error: error.message })
       if (['EACCES', 'EPERM', 'ENOENT', 'ENOTDIR'].includes(error.code)) {
         return json(response, 409, { error: 'Каталог или файл недоступен. Проверьте путь и повторите операцию.' })

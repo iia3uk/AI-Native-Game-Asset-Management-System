@@ -1,3 +1,5 @@
+import { mountQualityProfile } from './quality-profile.js'
+
 const $ = id => document.getElementById('index-' + id)
 const number = new Intl.NumberFormat('ru')
 const decimal = new Intl.NumberFormat('ru', { maximumFractionDigits: 4 })
@@ -90,11 +92,13 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
   let busy = false
   let job
   let pollTimer
+  const quality = mountQualityProfile({ json, post, run, currentAsset: () => asset?.id })
 
   const activeJob = () => ['pending', 'running'].includes(job?.status)
   const watching = () => libraries.some(library => library.id === selection.value && library.watching)
 
   function buttons() {
+    quality.busy(busy)
     $('connect').querySelector('button:not([type])').disabled = busy
     $('pick').disabled = busy
     $('query').querySelector('button').disabled = busy
@@ -139,6 +143,7 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
   function setAsset(record) {
     asset = record
     details.hidden = !record
+    quality.visible(Boolean(record))
     if (!record) return
     $('name').textContent = record.name
     const info = $('file-info')
@@ -230,8 +235,9 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
           const automatic = job.trigger === 'watch'
           await search(automatic ? offset : 0, { preserveAsset: automatic })
           if (automatic && asset) {
-            const { analysis } = await json('/api/index/assets/' + asset.id)
+            const { analysis, validation } = await json(quality.assetUrl(asset.id))
             renderAnalysis(analysis, { keepOpen: true })
+            quality.show(validation)
           }
         }
       } catch (error) {
@@ -307,9 +313,11 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
   results.addEventListener('click', event => {
     const id = event.target.closest('button')?.dataset.id
     if (id) void run(async () => {
-      const { asset: record, analysis } = await json('/api/index/assets/' + id)
+      const { asset: record, analysis, validation } = await json(quality.assetUrl(id))
       setAsset(record)
       renderAnalysis(analysis)
+      quality.show(validation)
+      await quality.load()
       details.scrollIntoView({ block: 'nearest' })
     })
   })

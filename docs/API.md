@@ -16,9 +16,11 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | POST | `/api/index/libraries/:id/disconnect` | Empty object. Hides the library and retains its records |
 | GET | `/api/index/search` | `q`, `library`, `kind`, `limit` (1–100), `offset`. Returns `assets` and `nextOffset` |
 | GET | `/api/index/duplicates` | `limit`, `offset`. Hash groups among available files in connected libraries |
-| GET | `/api/index/assets/:id` | Returns `asset`, the latest 100 `versions` and the persisted `analysis` report |
+| GET | `/api/index/assets/:id` | Returns `asset`, the latest 100 `versions` and `analysis`. Optional `profile` adds a `validation` report |
 | POST | `/api/index/assets/:id` | Partial update of `category`, `tags`, `note`, `review` or `license` |
 | POST | `/api/index/assets/:id/open` | Returns the legacy viewer folder session, group and file identity |
+| GET | `/api/index/quality-profiles` | Returns the six saved or default profiles and the supported field definitions |
+| POST | `/api/index/quality-profiles/:id` | `{"revision":0,"limits":{"maxTriangles":12000}}` replaces the enabled limits. `{"revision":0,"reset":true}` restores defaults. Stale revisions return 409 |
 | POST | `/api/demo` | Creates and opens a separate procedural demo session on demand |
 
 Failed scans preserve the last committed index. Disconnection and removal of original files retain history. Search excludes disconnected and missing assets.
@@ -26,3 +28,5 @@ Failed scans preserve the last committed index. Disconnection and removal of ori
 Automatic scans use the same queue. An explicit scan request promotes the active automatic job to a manual job if the job is still available. Disabling watching cancels queued automatic jobs and requests cancellation for running automatic jobs.
 
 Analysis reports contain `status`, `metrics`, `issues`, `dependencies` and `dependenciesTruncated`. Unknown metrics use `null` or are omitted when the metric does not apply. Dependencies return a role, status, library-relative path when applicable, optional `targetId`, `via` material-library path and available image dimensions. The report includes up to 128 dependency entries. An `unavailable` dependency has a recognized local path with no live row in the same library. An `unindexed` dependency has a path outside the indexed format registry.
+
+Validation returns the chosen profile and revision, the overall status, and `checks` with a key, limit, measured or observed value, reason code and optional library-relative evidence path. Status values are `pass`, `fail`, `unknown` and `not-applicable`. A failure takes precedence over unknown checks. A result is `pass` when at least one check applies and every applicable check passes. Omit a limit or a boolean check to disable it. The limits object replaces the full profile configuration.

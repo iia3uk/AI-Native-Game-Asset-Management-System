@@ -5,7 +5,9 @@ import { backup, DatabaseSync } from 'node:sqlite'
 import { checkedPath, discoverAssets, folderPath, identifyAsset, pathKey, sameFile } from './asset-files.mjs'
 import { analysisVersion, analyzeAsset, dependencyLimit, supportsAnalysis } from './asset-analysis.mjs'
 import { migrate, schemaVersion, transaction } from './index-schema.mjs'
+import { IndexInputError } from './index-errors.mjs'
 import { ProcessingJobs } from './processing-jobs.mjs'
+import { QualityProfiles, validateQuality } from './quality-profiles.mjs'
 
 const readable = 'a.id, a.library_id AS libraryId, l.name AS library, a.path, a.name, a.ext, a.kind,' +
   ' a.size, a.mtime, a.hash, a.first_seen AS firstSeen, a.missing_since AS missingSince,' +
@@ -20,7 +22,7 @@ const content = (path, metadata = {}) =>
   folded([path, metadata.category, ...JSON.parse(metadata.tags ?? '[]'), metadata.note, metadata.license].join('\n'))
 const shape = asset => asset && { ...asset, tags: JSON.parse(asset.tags) }
 
-export class IndexInputError extends Error {}
+export { IndexInputError } from './index-errors.mjs'
 
 async function hashFile(root, file, signal) {
   const handle = await open(file.absolute, 'r')
@@ -85,6 +87,7 @@ export class AssetIndex {
         migrate(this.#db)
       }
       this.jobs = new ProcessingJobs(this.#db)
+      this.qualityProfiles = new QualityProfiles(this.#db)
     } catch (error) {
       this.#db.close()
       throw error
@@ -319,16 +322,19 @@ export class AssetIndex {
     `).get(id))
   }
 
-  inspect(id, { libraryIds } = {}) {
+  inspect(id, { libraryIds, profileId } = {}) {
     const asset = this.asset(id)
     if (!asset || (libraryIds !== undefined && !libraryIds.includes(asset.libraryId))) return undefined
-    return { asset, versions: this.versions(id), analysis: this.#analysis(asset) }
+    const analysis = this.#analysis(asset)
+    const details = { asset, versions: this.versions(id), analysis }
+    if (profileId !== undefined) details.validation = validateQuality(asset, analysis, this.qualityProfiles.get(profileId))
+    return details
   }
 
   #analysis(asset) {
     const saved = this.#db.prepare('SELECT report FROM asset_analysis WHERE asset_id = ?').get(asset.id)
     if (!saved) return { status: supportsAnalysis(asset.ext) ? 'pending' : 'unsupported', metrics: {},
-      issues: [], dependencies: [], dependenciesTruncated: false }
+      issues: [], dependencies: [], dependenciesTruncated: false, dependenciesComplete: false }
     const report = JSON.parse(saved.report)
     const read = this.#db.prepare(`
       SELECT d.role, d.location, d.path, d.dimensions, b.id AS targetId, b.path AS targetPath, p.report
@@ -375,7 +381,9 @@ export class AssetIndex {
       report.metrics.textures = completeMaterials && !report.dependenciesTruncated && images.every(item => item.path)
         ? new Set(images.map(item => pathKey(item.path))).size : null
     }
-    return { ...report, dependencies }
+    const dependenciesComplete = ['analyzed', 'partial'].includes(report.status) && completeMaterials &&
+      !report.dependenciesTruncated && !report.issues.includes('unreadable-texture-reference')
+    return { ...report, dependencies, dependenciesComplete }
   }
 
   updateAsset(id, change) {

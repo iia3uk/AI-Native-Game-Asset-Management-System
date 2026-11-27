@@ -109,7 +109,15 @@ const analysis = `
   ) STRICT;
 `
 
-export const schemaVersion = 4
+const quality = `
+  CREATE TABLE quality_profiles (
+    profile_id TEXT PRIMARY KEY,
+    limits TEXT CHECK (limits IS NULL OR json_valid(limits)),
+    revision INTEGER NOT NULL CHECK (revision > 0)
+  ) STRICT;
+`
+
+export const schemaVersion = 5
 
 export function transaction(db, write) {
   db.exec('BEGIN IMMEDIATE')
@@ -135,6 +143,7 @@ export function migrate(db) {
     if (lockedVersion < 2) db.exec(processing)
     if (lockedVersion < 3) db.exec(watching)
     if (lockedVersion < 4) db.exec(analysis)
+    if (lockedVersion < 5) db.exec(quality)
     db.exec('PRAGMA user_version = ' + schemaVersion)
   })
 }

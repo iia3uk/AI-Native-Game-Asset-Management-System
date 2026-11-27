@@ -233,6 +233,26 @@
         <button class="control primary-control">Сохранить метаданные</button>
       </div>
     </form>
+    <section id="index-quality" class="index-quality" aria-labelledby="index-quality-title" hidden>
+      <h3 id="index-quality-title">Проверка по профилю</h3>
+      <div class="index-toolbar">
+        <label class="index-quality-label">Профиль качества
+          <select id="index-quality-profile" disabled><option value="">Выберите профиль</option></select>
+        </label>
+        <button id="index-quality-edit" class="control" type="button" aria-expanded="false" aria-controls="index-quality-editor" disabled>Изменить пороги</button>
+      </div>
+      <p id="index-quality-status" class="notice" role="status"></p>
+      <ul id="index-quality-report" class="index-quality-report"></ul>
+      <form id="index-quality-editor" hidden>
+        <p class="notice">Предустановки содержат примерные бюджеты. Оставьте поле пустым, чтобы пропустить проверку.</p>
+        <div id="index-quality-fields" class="index-fields"></div>
+        <div class="index-toolbar">
+          <button id="index-quality-save" class="control primary-control" type="submit">Сохранить пороги</button>
+          <button id="index-quality-reset" class="control" type="button">Восстановить исходные</button>
+          <button id="index-quality-cancel" class="control" type="button">Отмена</button>
+        </div>
+      </form>
+    </section>
   </dialog>
 </body>
 </html>

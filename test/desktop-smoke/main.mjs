@@ -63,6 +63,27 @@ void startDesktop(root).then(async ({ window, origin }) => {
   await waitFor("!document.querySelector('#index-metadata').hidden && !document.querySelector('#index-watch').disabled")
   await webContents.executeJavaScript("document.querySelector('#index-analysis summary').click()")
   await waitFor("document.querySelector('#index-analysis').open && document.querySelector('#index-metrics').textContent.includes('Треугольники252')")
+  const customProfile = `
+    const select = document.querySelector('#index-quality-profile')
+    select.value = 'custom-project'
+    select.dispatchEvent(new Event('change'))
+  `
+  await webContents.executeJavaScript(customProfile)
+  await waitFor("!document.querySelector('#index-quality-edit').disabled")
+  async function setTriangleBudget(value) {
+    await webContents.executeJavaScript("document.querySelector('#index-quality-edit').click()")
+    await waitFor("!document.querySelector('#index-quality-editor').hidden && !document.querySelector('#index-quality-save').disabled")
+    await webContents.executeJavaScript(`{
+      const editor = document.querySelector('#index-quality-editor')
+      editor.elements.maxTriangles.value = ${JSON.stringify(value)}
+      editor.requestSubmit()
+    }`)
+    await waitFor("document.querySelector('#index-quality-editor').hidden && !document.querySelector('#index-watch').disabled")
+  }
+  await setTriangleBudget('251')
+  await waitFor("document.querySelector('#index-quality-report [data-result=fail]') && document.querySelector('#index-quality-report').textContent.includes('252')")
+  await setTriangleBudget('252')
+  await waitFor("document.querySelector('#index-quality-report [data-result=pass]')")
   await webContents.executeJavaScript(`
     document.querySelector('#index-metadata').elements.note.value = 'Unsaved smoke test note'
     document.querySelector('#index-watch').click()
@@ -76,7 +97,7 @@ void startDesktop(root).then(async ({ window, origin }) => {
   await webContents.executeJavaScript("document.querySelector('#index-watch').click()")
   await waitFor("document.querySelector('#index-watch').getAttribute('aria-pressed') === 'false'")
   assert.deepEqual(externalRequests, [])
-  console.log('Desktop demo, library scanning and watching, technical analysis, metadata draft, Node utility process, sandbox, folder bridge and session token passed.')
+  console.log('Desktop demo, library watching, technical analysis, quality budgets, metadata draft and renderer isolation passed.')
   app.quit()
 }).catch(error => {
   console.error(error)

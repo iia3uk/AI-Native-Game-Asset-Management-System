@@ -183,7 +183,7 @@ test('schema 3 migration backfills analysis on scan without changing asset histo
   const raw = new DatabaseSync(database)
   let index
   try {
-    raw.exec('DROP TABLE asset_dependencies; DROP TABLE asset_analysis; PRAGMA user_version = 3')
+    raw.exec('DROP TABLE quality_profiles; DROP TABLE asset_dependencies; DROP TABLE asset_analysis; PRAGMA user_version = 3')
     index = await AssetIndex.open(database)
     assert.equal(index.inspect(asset.id).analysis.status, 'pending')
     const { changed, reused } = await index.scan(id)

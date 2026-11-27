@@ -14,7 +14,9 @@ const commands = {
   scan: { args: ['library-id'], options: { 'dry-run': flag } },
   watch: { args: ['library-id', 'on|off'], options: {} },
   search: { args: ['query?'], options: { ...paging, library: string, kind: string, hash: string } },
-  inspect: { args: ['asset-id'], options: {} },
+  inspect: { args: ['asset-id'], options: { profile: string } },
+  profiles: { args: [], options: {} },
+  profile: { args: ['profile-id'], options: { 'set-json': string, reset: flag } },
   duplicates: { args: [], options: paging },
   export: { args: [], options: { library: string } },
   doctor: { args: [], options: {} },
@@ -64,8 +66,17 @@ async function execute(index, paths, command, [input, setting], values) {
       return { dryRun: true, files, bytes }
     }
     case 'search': return index.search({ q: input, kind: values.kind, libraryId: values.library, hash: values.hash, ...page(values) })
+    case 'profiles': return index.qualityProfiles.list()
+    case 'profile': {
+      const profile = index.qualityProfiles.get(input)
+      if (values.reset) return index.qualityProfiles.update(input, { revision: profile.revision, reset: true })
+      if (values['set-json'] === undefined) return profile
+      let limits
+      try { limits = JSON.parse(values['set-json']) } catch { throw new IndexInputError('Profile limits must be valid JSON.') }
+      return index.qualityProfiles.update(input, { revision: profile.revision, limits })
+    }
     case 'inspect': {
-      const details = index.inspect(input)
+      const details = index.inspect(input, { profileId: values.profile })
       if (!details) throw new Error('Asset unavailable.')
       return details
     }
@@ -99,6 +110,10 @@ async function main([command, ...args]) {
   if (command === 'watch' && !['on', 'off'].includes(setting)) {
     throw new IndexInputError('Use on or off to set library watching.')
   }
+  const modifiesProfile = command === 'profile' && (values.reset || values['set-json'] !== undefined)
+  if (command === 'profile' && values.reset && values['set-json'] !== undefined) {
+    throw new IndexInputError('Use either --set-json or --reset.')
+  }
   const paths = dataPaths()
   if (command === 'connect' && values['dry-run']) {
     return print({ dryRun: true, root: await folderPath(input) }, values.json)
@@ -114,7 +129,7 @@ async function main([command, ...args]) {
     await startMcp(paths.database)
     return
   }
-  const readOnly = !['connect', 'scan', 'watch'].includes(command) || Boolean(values['dry-run'])
+  const readOnly = (!['connect', 'scan', 'watch'].includes(command) && !modifiesProfile) || Boolean(values['dry-run'])
   const index = readOnly ? new AssetIndex(paths.database, { readOnly }) : await AssetIndex.open(paths.database)
   try {
     const result = await execute(index, paths, command, positionals, values)
