@@ -203,6 +203,13 @@
     </div>
     <p id="index-status" class="notice" role="status"></p>
     <p id="index-job-status" class="notice" role="status" hidden></p>
+    <details id="index-thumbnail-cache" class="index-analysis">
+      <summary>Кэш миниатюр</summary>
+      <div class="index-toolbar">
+        <p id="index-thumbnail-cache-usage" class="notice" role="status"></p>
+        <button id="index-thumbnail-cache-clear" type="button" class="control">Очистить кэш миниатюр</button>
+      </div>
+    </details>
     <ul id="index-results" class="index-results" aria-label="Результаты поиска"></ul>
     <nav class="index-toolbar" aria-label="Страницы результатов">
       <button id="index-prev" type="button" class="control" disabled>Назад</button>
@@ -211,6 +218,14 @@
     <form id="index-metadata" class="index-metadata" hidden>
       <h3 id="index-name"></h3>
       <dl id="index-file-info"></dl>
+      <div id="index-thumbnail" class="index-thumbnail" hidden>
+        <img id="index-thumbnail-image" width="112" height="112" alt="Миниатюра модели" hidden>
+        <div>
+          <p id="index-thumbnail-status" class="notice" role="status"></p>
+          <button id="index-thumbnail-generate" type="button" class="control" hidden>Создать миниатюру</button>
+          <button id="index-thumbnail-cancel" type="button" class="control" hidden>Отменить создание</button>
+        </div>
+      </div>
       <div class="index-fields">
         <label>Категория <input name="category" maxlength="80"></label>
         <label>Теги через запятую <input name="tags" maxlength="1800"></label>

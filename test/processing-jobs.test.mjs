@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { AssetIndex } from '../core/asset-index.mjs'
-import { ScanWorker } from '../core/scan-worker.mjs'
+import { ProcessingWorker } from '../core/processing-worker.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 
 test('queue migration retains assets, leases recover, and retries commit matching scan results', async t => {
@@ -34,7 +34,7 @@ test('queue migration retains assets, leases recover, and retries commit matchin
   const other = await AssetIndex.open(database)
   let worker
   try {
-    assert.equal(index.integrity().schemaVersion, 5)
+    assert.equal(index.integrity().schemaVersion, 6)
     assert.equal(index.asset(asset.id).note, 'Keep this during migration')
     const queued = index.jobs.enqueue(id)
     assert.equal(other.jobs.enqueue(id).id, queued.id)
@@ -47,7 +47,7 @@ test('queue migration retains assets, leases recover, and retries commit matchin
     assert.equal(index.jobs.get(queued.id).status, 'interrupted')
     assert.equal(other.jobs.retry(queued.id).status, 'pending')
     await writeFile(join(root, 'next.obj'), 'second asset')
-    worker = new ScanWorker(index)
+    worker = new ProcessingWorker(index)
     const done = await worker.wait(queued.id, AbortSignal.timeout(5000))
     assert.equal(done.status, 'completed')
     assert.equal(done.attempts, 2)

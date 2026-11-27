@@ -8,6 +8,7 @@ import { migrate, schemaVersion, transaction } from './index-schema.mjs'
 import { IndexInputError } from './index-errors.mjs'
 import { ProcessingJobs } from './processing-jobs.mjs'
 import { QualityProfiles, validateQuality } from './quality-profiles.mjs'
+import { thumbnailPlan } from './thumbnail-input.mjs'
 
 const readable = 'a.id, a.library_id AS libraryId, l.name AS library, a.path, a.name, a.ext, a.kind,' +
   ' a.size, a.mtime, a.hash, a.first_seen AS firstSeen, a.missing_since AS missingSince,' +
@@ -142,7 +143,10 @@ export class AssetIndex {
         UPDATE libraries SET enabled = 0, watch_enabled = 0, generation = generation + 1
         WHERE id = ? AND enabled = 1
       `).run(id)
-      if (changes) this.jobs.cancelWatch(id)
+      if (changes) {
+        this.jobs.cancelWatch(id)
+        this.jobs.cancelThumbnails(id)
+      }
       return Boolean(changes)
     })
   }
@@ -320,6 +324,19 @@ export class AssetIndex {
       SELECT ${readable}, l.root, l.generation FROM assets a JOIN libraries l ON a.library_id = l.id
       WHERE a.id = ? AND l.enabled = 1
     `).get(id))
+  }
+
+  thumbnailSource(id, libraryIds) {
+    validateId(id)
+    const asset = this.#db.prepare(`SELECT a.id, a.library_id AS libraryId, a.path, a.ext, a.size, a.hash,
+      a.mtime, a.ctime, a.missing_since AS missingSince, l.root FROM assets a JOIN libraries l ON a.library_id = l.id
+      WHERE a.id = ? AND l.enabled = 1`).get(id)
+    if (!asset || (libraryIds !== undefined && !libraryIds.includes(asset.libraryId))) return null
+    const dependencies = asset.ext === 'obj' ? [] : this.#db.prepare(`
+      SELECT d.location, d.path AS reference, b.path, b.size, b.hash, b.mtime, b.ctime
+      FROM asset_dependencies d LEFT JOIN assets b ON b.library_id = ? AND b.path_key = d.path_key AND b.missing_since IS NULL
+      WHERE d.asset_id = ? AND d.role = 'buffer' AND d.location <> 'embedded' ORDER BY d.ordinal`).all(asset.libraryId, id)
+    return thumbnailPlan(asset, dependencies)
   }
 
   inspect(id, { libraryIds, profileId } = {}) {

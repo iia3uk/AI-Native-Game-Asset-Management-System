@@ -9,8 +9,8 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | POST | `/api/index/libraries/:id/watch` | `{"enabled":true}` or `{"enabled":false}` persists the setting and returns `{library}` |
 | POST | `/api/index/libraries/:id/scan` | Empty object. Returns added, changed, moved, missing, hashed, reused and skipped hash counts |
 | POST | `/api/index/libraries/:id/jobs` | Empty object. Returns 202 and the new or active scan job |
-| GET | `/api/index/jobs` | Optional `library`, `limit` (1–200) and `offset`. Returns active jobs first |
-| GET | `/api/index/jobs/:id` | Returns persisted status, file count, attempt count, `trigger` (`manual` or `watch`) and result or error |
+| GET | `/api/index/jobs` | Optional `library`, `type` (`scan` or `thumbnail`), `limit` (1–200) and `offset`. Returns active jobs first |
+| GET | `/api/index/jobs/:id` | Persisted status, progress, attempts, trigger and result or error. Progress counts files for scans and reports a percentage for thumbnails |
 | POST | `/api/index/jobs/:id/cancel` | Cancels a pending job or requests cancellation for a running job |
 | POST | `/api/index/jobs/:id/retry` | Queues a failed, cancelled or interrupted job with fewer than three started attempts |
 | POST | `/api/index/libraries/:id/disconnect` | Empty object. Hides the library and retains its records |
@@ -19,6 +19,11 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | GET | `/api/index/assets/:id` | Returns `asset`, the latest 100 `versions` and `analysis`. Optional `profile` adds a `validation` report |
 | POST | `/api/index/assets/:id` | Partial update of `category`, `tags`, `note`, `review` or `license` |
 | POST | `/api/index/assets/:id/open` | Returns the legacy viewer folder session, group and file identity |
+| GET | `/api/index/assets/:id/thumbnail` | Thumbnail status, active or recent job when applicable, or PNG URL and byte size when available |
+| POST | `/api/index/assets/:id/thumbnail` | Empty object. Queues generation if applicable. Returns 202 with the new or active job, or 200 with the current thumbnail status |
+| GET | `/api/index/assets/:id/thumbnail-image?v=<key>` | Returns a cached PNG when the key still matches the current source and the geometry buffers |
+| GET | `/api/index/thumbnail-cache` | Returns `entries`, `bytes` and the configured byte `limit` |
+| POST | `/api/index/thumbnail-cache/clear` | Empty object. Removes generated thumbnails and returns cache usage |
 | GET | `/api/index/quality-profiles` | Returns the six saved or default profiles and the supported field definitions |
 | POST | `/api/index/quality-profiles/:id` | `{"revision":0,"limits":{"maxTriangles":12000}}` replaces the enabled limits. `{"revision":0,"reset":true}` restores defaults. Stale revisions return 409 |
 | POST | `/api/demo` | Creates and opens a separate procedural demo session on demand |
@@ -26,6 +31,8 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 Failed scans preserve the last committed index. Disconnection and removal of original files retain history. Search excludes disconnected and missing assets.
 
 Automatic scans use the same queue. An explicit scan request promotes the active automatic job to a manual job if the job is still available. Disabling watching cancels queued automatic jobs and requests cancellation for running automatic jobs.
+
+Thumbnail requests deduplicate active jobs for the same asset version. The thumbnail route reports `available`, `missing`, `stale`, `unsupported`, `unavailable`, `limited`, or a job status. A stale source requires a new scan. The image route returns 404 when the asset, cache entry or source version is no longer available. Queued or running jobs can populate the cache after a clear.
 
 Analysis reports contain `status`, `metrics`, `issues`, `dependencies` and `dependenciesTruncated`. Unknown metrics use `null` or are omitted when the metric does not apply. Dependencies return a role, status, library-relative path when applicable, optional `targetId`, `via` material-library path and available image dimensions. The report includes up to 128 dependency entries. An `unavailable` dependency has a recognized local path with no live row in the same library. An `unindexed` dependency has a path outside the indexed format registry.
 

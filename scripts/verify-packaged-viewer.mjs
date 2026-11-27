@@ -12,9 +12,12 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
   const archive = join(resources, 'app.asar')
   for (const path of [
     'public/app.js',
+    'public/index-thumbnail.js',
+    'core/thumbnail-render.mjs',
     'node_modules/three/build/three.module.js',
     'node_modules/three/examples/jsm/controls/OrbitControls.js',
     'node_modules/three/examples/jsm/loaders/GLTFLoader.js',
+    'node_modules/three/examples/jsm/loaders/OBJLoader.js',
     'node_modules/three/examples/jsm/loaders/3DMLoader.js',
     'node_modules/three/examples/jsm/libs/draco/gltf/draco_decoder.wasm',
     'node_modules/three/examples/jsm/libs/basis/basis_transcoder.wasm',

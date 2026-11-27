@@ -61,6 +61,14 @@ void startDesktop(root).then(async ({ window, origin }) => {
       .find(button => button.textContent.startsWith('woodland-cabin.glb')).click()
   `)
   await waitFor("!document.querySelector('#index-metadata').hidden && !document.querySelector('#index-watch').disabled")
+  await waitFor("!document.querySelector('#index-thumbnail').hidden && !document.querySelector('#index-thumbnail-generate').hidden")
+  await webContents.executeJavaScript("document.querySelector('#index-thumbnail-generate').click()")
+  await waitFor("document.querySelector('#index-thumbnail-image').naturalWidth === 160 && !document.querySelector('#index-thumbnail-image').hidden")
+  await webContents.executeJavaScript("document.querySelector('#index-thumbnail-cache summary').click()")
+  await waitFor("document.querySelector('#index-thumbnail-cache-usage').textContent.startsWith('Миниатюр 1 ·')")
+  await webContents.executeJavaScript("document.querySelector('#index-thumbnail-cache-clear').click()")
+  await waitFor("document.querySelector('#index-thumbnail-cache-usage').textContent.startsWith('Миниатюр 0 ·') && document.querySelector('#index-thumbnail-image').hidden")
+  await webContents.executeJavaScript("document.querySelector('#index-thumbnail-cache summary').click()")
   await webContents.executeJavaScript("document.querySelector('#index-analysis summary').click()")
   await waitFor("document.querySelector('#index-analysis').open && document.querySelector('#index-metrics').textContent.includes('Треугольники252')")
   const customProfile = `
@@ -97,7 +105,7 @@ void startDesktop(root).then(async ({ window, origin }) => {
   await webContents.executeJavaScript("document.querySelector('#index-watch').click()")
   await waitFor("document.querySelector('#index-watch').getAttribute('aria-pressed') === 'false'")
   assert.deepEqual(externalRequests, [])
-  console.log('Desktop demo, library watching, technical analysis, quality budgets, metadata draft and renderer isolation passed.')
+  console.log('Desktop demo, library watching, thumbnail generation and cache clear, technical analysis, quality budgets, metadata draft and renderer isolation passed.')
   app.quit()
 }).catch(error => {
   console.error(error)

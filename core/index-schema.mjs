@@ -117,7 +117,47 @@ const quality = `
   ) STRICT;
 `
 
-export const schemaVersion = 5
+const thumbnails = `
+  ALTER TABLE processing_jobs RENAME TO previous_processing_jobs;
+  CREATE TABLE processing_jobs (
+    id TEXT PRIMARY KEY,
+    library_id TEXT NOT NULL REFERENCES libraries(id),
+    type TEXT NOT NULL CHECK (type IN ('scan', 'thumbnail')),
+    status TEXT NOT NULL CHECK (status IN ('pending','running','completed','failed','cancelled','interrupted')),
+    priority INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    progress INTEGER NOT NULL DEFAULT 0,
+    result TEXT,
+    error TEXT,
+    worker TEXT,
+    lease_until INTEGER,
+    cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK (cancel_requested IN (0, 1)),
+    trigger TEXT NOT NULL DEFAULT 'manual' CHECK (trigger IN ('manual', 'watch')),
+    asset_id TEXT REFERENCES assets(id),
+    source_key TEXT,
+    CHECK ((type = 'thumbnail') = (asset_id IS NOT NULL AND source_key IS NOT NULL))
+  ) STRICT;
+
+  INSERT INTO processing_jobs (rowid, id, library_id, type, status, priority, created_at, started_at, finished_at,
+    attempts, progress, result, error, worker, lease_until, cancel_requested, trigger)
+  SELECT rowid, id, library_id, type, status, priority, created_at, started_at, finished_at,
+    attempts, progress, result, error, worker, lease_until, cancel_requested, trigger FROM previous_processing_jobs;
+  DROP TABLE previous_processing_jobs;
+
+  CREATE UNIQUE INDEX one_active_job_per_library ON processing_jobs (library_id)
+    WHERE type = 'scan' AND status IN ('pending','running');
+  CREATE UNIQUE INDEX one_active_thumbnail_per_source ON processing_jobs (asset_id, source_key)
+    WHERE type = 'thumbnail' AND status IN ('pending','running');
+  CREATE UNIQUE INDEX one_running_thumbnail ON processing_jobs (type) WHERE type = 'thumbnail' AND status = 'running';
+  CREATE INDEX latest_thumbnail ON processing_jobs (asset_id, source_key, created_at DESC);
+  CREATE INDEX pending_jobs ON processing_jobs (type, priority DESC, created_at) WHERE status = 'pending';
+  CREATE INDEX jobs_by_library ON processing_jobs (library_id, created_at DESC);
+`
+
+export const schemaVersion = 6
 
 export function transaction(db, write) {
   db.exec('BEGIN IMMEDIATE')
@@ -144,6 +184,7 @@ export function migrate(db) {
     if (lockedVersion < 3) db.exec(watching)
     if (lockedVersion < 4) db.exec(analysis)
     if (lockedVersion < 5) db.exec(quality)
+    if (lockedVersion < 6) db.exec(thumbnails)
     db.exec('PRAGMA user_version = ' + schemaVersion)
   })
 }

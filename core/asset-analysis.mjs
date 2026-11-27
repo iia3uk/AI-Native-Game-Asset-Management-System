@@ -14,7 +14,7 @@ const textMax = 24 * 1024 ** 2
 const digest = (status, issue, metrics = {}) => ({ status, issues: issue ? [issue] : [], metrics })
 export const supportsAnalysis = ext => modelFormats.has(ext) || imageFormats.has(ext)
 
-function location(source, value, { uri, embedded } = {}) {
+export function dependencyLocation(source, value, { uri, embedded } = {}) {
   const state = location => ({ location, path: null, key: null })
   if (embedded || (uri && typeof value === 'string' && /^data:/i.test(value))) return state('embedded')
   if (typeof value !== 'string' || !value || value.length > 1024) return state('unresolved')
@@ -154,7 +154,7 @@ export async function analyzeAsset(root, file, signal) {
   const references = new Map()
   let dependenciesTruncated = false
   const reference = (role, value, options, dimensions = null) => {
-    const target = location(path, value, options)
+    const target = dependencyLocation(path, value, options)
     const slot = options?.slot ?? ''
     const key = [role, target.location, target.key, slot].join('\0')
     if (references.has(key)) return

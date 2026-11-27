@@ -4,19 +4,25 @@ import { fileInfo, ScanChangeError } from './asset-files.mjs'
 import { IndexConflictError } from './index-errors.mjs'
 import { LibraryWatcher } from './library-watcher.mjs'
 import { qualityFields } from './quality-profiles.mjs'
-import { ScanWorker } from './scan-worker.mjs'
+import { ProcessingWorker } from './processing-worker.mjs'
+import { ThumbnailCache } from './thumbnail-cache.mjs'
+import { assetThumbnail } from './thumbnail-service.mjs'
 
-export function indexRoutes({ database, ignoredWatchPaths, json, body, allowsWrite, openFolder, invalidateFolder }) {
+export function indexRoutes({ database, thumbnailDirectory, ignoredWatchPaths, json, body, allowsWrite, openFolder, invalidateFolder }) {
   let pendingIndex
   let worker
+  let thumbnails
   let watcher
+  const cache = new ThumbnailCache(thumbnailDirectory)
   const shutdown = new AbortController()
 
   function openIndex() {
     return pendingIndex ??= AssetIndex.open(database).then(index => {
       if (!shutdown.signal.aborted) {
-        worker = new ScanWorker(index, invalidateFolder)
+        worker = new ProcessingWorker(index, { onScanComplete: invalidateFolder })
+        thumbnails = new ProcessingWorker(index, { type: 'thumbnail', cache })
         watcher = new LibraryWatcher(index, () => worker.wake(), { ignoredPaths: ignoredWatchPaths })
+        void cache.maintain().catch(error => console.error('Thumbnail cache:', error.message))
       }
       return index
     }).catch(error => {
@@ -71,10 +77,12 @@ export function indexRoutes({ database, ignoredWatchPaths, json, body, allowsWri
         if (method === 'GET' && !id) {
           const limit = Number(params.get('limit') ?? 50)
           const offset = Number(params.get('offset') ?? 0)
-          if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200 || !Number.isSafeInteger(offset) || offset < 0) {
+          const type = params.get('type')
+          if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200 || !Number.isSafeInteger(offset) || offset < 0 ||
+              (type !== null && !['scan', 'thumbnail'].includes(type))) {
             return json(response, 400, { error: 'Недопустимые параметры страницы.' })
           }
-          return json(response, 200, { jobs: index.jobs.list({ libraryId: params.get('library'), limit, offset }) })
+          return json(response, 200, { jobs: index.jobs.list({ libraryId: params.get('library'), type, limit, offset }) })
         }
         if (method === 'GET' && id && !action) {
           const job = index.jobs.get(id)
@@ -87,8 +95,31 @@ export function indexRoutes({ database, ignoredWatchPaths, json, body, allowsWri
         if (method === 'POST' && id && action === 'retry') {
           const job = index.jobs.retry(id)
           if (!job) return json(response, 409, { error: 'Задание недоступно для повторного запуска.' })
-          worker?.wake()
+          if (job.type === 'thumbnail') thumbnails?.wake()
+          else worker?.wake()
           return json(response, 202, { job })
+        }
+      }
+      if (resource === 'thumbnail-cache') {
+        if (method === 'GET' && !id) return json(response, 200, await cache.usage())
+        if (method === 'POST' && id === 'clear' && !action) return json(response, 200, await cache.clear())
+      }
+      if (resource === 'assets' && id && action === 'thumbnail') {
+        const preview = await assetThumbnail(index, cache, id, { enqueue: method === 'POST' })
+        if (!preview) return json(response, 404, { error: 'Ассет недоступен.' })
+        const { status, key, job, format, size } = preview
+        if (method === 'POST' && job) thumbnails?.wake()
+        const url = status === 'available' ? '/api/index/assets/' + id + '/thumbnail-image?v=' + key : undefined
+        return json(response, method === 'POST' && job ? 202 : 200, { status, job, format, size, url })
+      }
+      if (resource === 'assets' && id && action === 'thumbnail-image' && method === 'GET') {
+        const preview = await assetThumbnail(index, cache, id)
+        if (preview?.status === 'available' && params.get('v') === preview.key) {
+          const image = await cache.read(preview.key)
+          if (image) {
+            response.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': image.length, 'Cache-Control': 'no-store' })
+            return response.end(image)
+          }
         }
       }
       if (method === 'GET' && resource === 'search' && !id) {
@@ -146,11 +177,13 @@ export function indexRoutes({ database, ignoredWatchPaths, json, body, allowsWri
       shutdown.abort()
       void watcher?.stop()
       void worker?.stop()
+      void thumbnails?.stop()
     },
     async close() {
       const index = await pendingIndex
       await watcher?.stop()
       await worker?.stop()
+      await thumbnails?.stop()
       await index?.close()
     },
   }

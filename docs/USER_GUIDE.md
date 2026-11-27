@@ -14,6 +14,21 @@ Select a result to edit its metadata or click **Открыть во вьювер
 
 Scans keep running if you close the index dialog. Open it and select the library to see progress or the last result. Use **Отменить сканирование** while a job is active. Use **Повторить задание** after a failure or interruption. Queued jobs persist across restarts.
 
+## Generate model thumbnails
+
+In an indexed GLB, glTF, binary VRM or polygonal OBJ card, click **Создать миниатюру**. Generation runs in the background and uses the model's base geometry and glTF base colors at 160 × 160 pixels. The renderer supports triangle meshes within its size and complexity limits. Texture maps, animation, skinning, morphs, sparse accessors and Draco or meshopt compression are outside its support. Use **Открыть во вьювере** for interactive inspection.
+
+When a source or geometry buffer changes, scan the library again and request a new thumbnail. Use **Кэш миниатюр** in the index to view usage or clear generated images. The cache defaults to 64 MiB, with an inactivity limit of 30 days. Set `ASSET_VIEWER_THUMBNAIL_CACHE_BYTES` to a byte limit of at least 131072 before launching. Clearing the thumbnail cache leaves asset files and index metadata in place.
+
+```sh
+npm run cli -- preview <asset-id> --dry-run --json
+npm run cli -- preview <asset-id> --json
+npm run cli -- jobs --type thumbnail --json
+npm run cli -- thumbnail-cache --clear --dry-run --json
+```
+
+The default CLI preview command waits for the PNG and prints its cache path. Use `--status` to query without submitting, or `--queue` to submit for the running browser server or desktop app.
+
 ## Watch for changes
 
 Select a library in **Индекс** and turn on **Следить за папкой**. This setting is off by default and applies to the selected library. Asset Viewer groups nearby changes into a scan. It keeps existing metadata and history when it can identify a moved file. Deletions mark files missing in the index and retain their metadata and history.

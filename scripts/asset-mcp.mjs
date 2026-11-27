@@ -2,6 +2,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { AssetIndex } from '../core/asset-index.mjs'
+import { dataPaths } from '../core/data-paths.mjs'
+import { ThumbnailCache } from '../core/thumbnail-cache.mjs'
+import { assetThumbnail } from '../core/thumbnail-service.mjs'
 
 const uuid = z.string().uuid()
 const limit = z.number().int().min(1).max(20).default(20)
@@ -26,13 +29,14 @@ export async function startMcp(database, env = process.env) {
   const libraryIds = env.ASSET_VIEWER_MCP_LIBRARIES === undefined ? undefined :
     z.array(uuid).max(100).parse(env.ASSET_VIEWER_MCP_LIBRARIES.split(',').map(value => value.trim()).filter(Boolean))
   const allow = id => libraryIds === undefined || libraryIds.includes(id)
+  const cache = new ThumbnailCache(dataPaths(env).thumbnails)
   const index = new AssetIndex(database, { readOnly: true })
   const server = new McpServer({ name: 'Asset Viewer', version: '0.1.0' })
   const audit = env.ASSET_VIEWER_MCP_LOG === '1'
-  const tool = (name, description, inputSchema, run) =>
-    server.registerTool(name, { description: description + ' ' + fileText, inputSchema, annotations }, args => {
+  const tool = (name, description, inputSchema, run, serialize = result) =>
+    server.registerTool(name, { description: description + ' ' + fileText, inputSchema, annotations }, async args => {
       try {
-        const output = result(run(args))
+        const output = serialize(await run(args))
         if (audit) console.error(JSON.stringify({ tool: name, ok: true }))
         return output
       } catch (error) {
@@ -59,6 +63,17 @@ export async function startMcp(database, env = process.env) {
   tool('get_asset_metadata', 'Read the saved metadata for an asset by its stable ID.', { id: uuid }, ({ id }) => {
     const { root, generation, ...asset } = find(id)
     return asset
+  })
+  tool('get_asset_preview', 'Return the cached PNG thumbnail of an indexed asset if available.', { id: uuid }, async ({ id }) => {
+    const preview = await assetThumbnail(index, cache, id, { libraryIds })
+    if (!preview) throw new Error('Asset unavailable.')
+    if (preview.status !== 'available') return { status: preview.status }
+    const image = await cache.read(preview.key, { touch: false })
+    return image ? { status: 'available', format: 'png', size: image.length, image } : { status: 'missing' }
+  }, ({ image, ...details }) => {
+    const output = result(details)
+    if (image) output.content.push({ type: 'image', data: image.toString('base64'), mimeType: 'image/png' })
+    return output
   })
   tool('list_quality_profiles', 'List the saved quality budgets available for technical validation.', {}, () =>
     ({ profiles: index.qualityProfiles.list() }))

@@ -4,6 +4,9 @@ import { parseArgs } from 'node:util'
 import { AssetIndex, IndexInputError } from '../core/asset-index.mjs'
 import { discoverAssets, folderPath } from '../core/asset-files.mjs'
 import { dataPaths } from '../core/data-paths.mjs'
+import { ProcessingWorker } from '../core/processing-worker.mjs'
+import { ThumbnailCache } from '../core/thumbnail-cache.mjs'
+import { assetThumbnail } from '../core/thumbnail-service.mjs'
 
 const string = { type: 'string' }
 const flag = { type: 'boolean' }
@@ -15,6 +18,9 @@ const commands = {
   watch: { args: ['library-id', 'on|off'], options: {} },
   search: { args: ['query?'], options: { ...paging, library: string, kind: string, hash: string } },
   inspect: { args: ['asset-id'], options: { profile: string } },
+  preview: { args: ['asset-id'], options: { 'dry-run': flag, queue: flag, status: flag } },
+  jobs: { args: ['job-id?'], options: { ...paging, library: string, type: string } },
+  'thumbnail-cache': { args: [], options: { clear: flag, 'dry-run': flag } },
   profiles: { args: [], options: {} },
   profile: { args: ['profile-id'], options: { 'set-json': string, reset: flag } },
   duplicates: { args: [], options: paging },
@@ -48,6 +54,26 @@ function print(data, json) {
   else console.dir(data, { depth: 4, colors: Boolean(process.stdout.isTTY) })
 }
 
+async function preview(index, cache, id, values) {
+  const enqueue = !values['dry-run'] && !values.status
+  let result = await assetThumbnail(index, cache, id, { enqueue })
+  if (!result) throw new IndexInputError('Asset unavailable.')
+  if (values['dry-run']) return { dryRun: true, ...result }
+  if (values.status || values.queue || !result.job) return result
+  const worker = new ProcessingWorker(index, { type: 'thumbnail', cache, targetId: result.job.id })
+  const stop = new AbortController()
+  const abort = () => stop.abort()
+  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, abort)
+  try {
+    const finished = await worker.wait(result.job.id, stop.signal)
+    result = await assetThumbnail(index, cache, id)
+    return { ...result, job: finished }
+  } finally {
+    await worker.stop()
+    for (const signal of ['SIGINT', 'SIGTERM']) process.off(signal, abort)
+  }
+}
+
 async function execute(index, paths, command, [input, setting], values) {
   switch (command) {
     case 'libraries': return index.libraries()
@@ -79,6 +105,24 @@ async function execute(index, paths, command, [input, setting], values) {
       const details = index.inspect(input, { profileId: values.profile })
       if (!details) throw new Error('Asset unavailable.')
       return details
+    }
+    case 'preview': {
+      const result = await preview(index, new ThumbnailCache(paths.thumbnails), input, values)
+      if (!values['dry-run'] && !values.status && !['available', 'pending', 'running'].includes(result.status)) process.exitCode = 1
+      return result
+    }
+    case 'jobs': {
+      if (input) {
+        const job = index.jobs.get(input)
+        if (!job) throw new IndexInputError('Job unavailable.')
+        return job
+      }
+      const { limit, offset } = page(values)
+      if (limit < 1 || limit > 200 || !Number.isSafeInteger(offset) ||
+          (values.type !== undefined && !['scan', 'thumbnail'].includes(values.type))) {
+        throw new IndexInputError('Invalid jobs page or type.')
+      }
+      return index.jobs.list({ type: values.type, libraryId: values.library, limit, offset })
     }
     case 'duplicates': {
       const { limit, offset } = page(values)
@@ -124,12 +168,21 @@ async function main([command, ...args]) {
   if (command === 'doctor' && !existsSync(paths.database)) {
     return print({ node: process.version, platform: process.platform, database: paths.database, initialized: false }, values.json)
   }
+  if (command === 'preview' && [values.queue, values.status, values['dry-run']].filter(Boolean).length > 1) {
+    throw new IndexInputError('Use only one of --queue, --status or --dry-run.')
+  }
+  if (command === 'thumbnail-cache') {
+    const cache = new ThumbnailCache(paths.thumbnails)
+    const result = values.clear && !values['dry-run'] ? await cache.clear() : await cache.usage()
+    return print(values['dry-run'] ? { dryRun: true, ...result } : result, values.json)
+  }
   if (command === 'mcp') {
     const { startMcp } = await import('./asset-mcp.mjs')
     await startMcp(paths.database)
     return
   }
-  const readOnly = (!['connect', 'scan', 'watch'].includes(command) && !modifiesProfile) || Boolean(values['dry-run'])
+  const queuesPreview = command === 'preview' && !values.status
+  const readOnly = (!['connect', 'scan', 'watch'].includes(command) && !modifiesProfile && !queuesPreview) || Boolean(values['dry-run'])
   const index = readOnly ? new AssetIndex(paths.database, { readOnly }) : await AssetIndex.open(paths.database)
   try {
     const result = await execute(index, paths, command, positionals, values)

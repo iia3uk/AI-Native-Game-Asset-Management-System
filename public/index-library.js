@@ -1,4 +1,5 @@
 import { mountQualityProfile } from './quality-profile.js'
+import { mountIndexThumbnail } from './index-thumbnail.js'
 
 const $ = id => document.getElementById('index-' + id)
 const number = new Intl.NumberFormat('ru')
@@ -93,6 +94,7 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
   let job
   let pollTimer
   const quality = mountQualityProfile({ json, post, run, currentAsset: () => asset?.id })
+  const thumbnail = mountIndexThumbnail({ json, post })
 
   const activeJob = () => ['pending', 'running'].includes(job?.status)
   const watching = () => libraries.some(library => library.id === selection.value && library.watching)
@@ -144,6 +146,7 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
     asset = record
     details.hidden = !record
     quality.visible(Boolean(record))
+    thumbnail.select(record)
     if (!record) return
     $('name').textContent = record.name
     const info = $('file-info')
@@ -238,6 +241,7 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
             const { analysis, validation } = await json(quality.assetUrl(asset.id))
             renderAnalysis(analysis, { keepOpen: true })
             quality.show(validation)
+            void thumbnail.refresh()
           }
         }
       } catch (error) {
@@ -250,7 +254,7 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
 
   async function refreshJob() {
     if (!selection.value) return showJob(null)
-    const params = new URLSearchParams({ library: selection.value, limit: 1 })
+    const params = new URLSearchParams({ library: selection.value, limit: 1, type: 'scan' })
     const { jobs } = await json('/api/index/jobs?' + params)
     showJob(jobs[0])
   }
@@ -262,7 +266,10 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
     void run(async () => { await refreshLibraries(); await search(); await refreshJob() })
   })
   $('close').addEventListener('click', () => dialog.close())
-  dialog.addEventListener('close', () => clearTimeout(pollTimer))
+  dialog.addEventListener('close', () => {
+    clearTimeout(pollTimer)
+    thumbnail.select(null)
+  })
   if (window.assetViewerDesktop) {
     $('pick').hidden = false
     $('pick').addEventListener('click', () => void run(async () => {

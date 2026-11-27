@@ -20,6 +20,7 @@ Open [Asset Viewer](http://127.0.0.1:8177/). Choose **Демобиблиотек
 Select a connected library and turn on **Следить за папкой** to pick up file changes automatically while Asset Viewer is open.
 Open **Технический анализ** in an indexed file's details to inspect supported model metrics and their texture or buffer dependencies.
 Use **Проверка по профилю** to compare those measurements with editable project budgets.
+Use **Создать миниатюру** in an indexed model card to render a local PNG in the background. The index dialog shows thumbnail cache usage and can clear it.
 
 Use `npm run desktop` for the Electron app. Use `npm run build:windows` to create a Windows x64 installer and portable executable with bundled Node.js. See [BUILD.md](docs/BUILD.md).
 

@@ -45,7 +45,8 @@ const folders = new Map()
 const indexedFolders = new Map()
 let demoRequest
 const paths = dataPaths()
-const indexed = indexRoutes({ database: paths.database, ignoredWatchPaths: [paths.cache, paths.backups], json, body, allowsWrite,
+const indexed = indexRoutes({ database: paths.database, thumbnailDirectory: paths.thumbnails,
+  ignoredWatchPaths: [paths.cache, paths.backups], json, body, allowsWrite,
   openFolder: openIndexedFolder, invalidateFolder: invalidateIndexedFolder })
 
 async function safeFile(base, subpath) {

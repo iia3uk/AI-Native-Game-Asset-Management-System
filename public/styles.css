@@ -187,6 +187,10 @@ textarea { resize: vertical; min-height: 60px; padding: 7px 8px; font-size: 13px
 .index-metadata dt { color: var(--muted); }
 .index-metadata dd { margin: 0; overflow-wrap: anywhere; }
 .index-metadata textarea { width: 100%; padding: 8px; background: #111713; color: var(--text); border: 1px solid #354237; border-radius: 7px; }
+.index-thumbnail { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; }
+.index-thumbnail img { flex: none; border: 1px solid var(--line); border-radius: 7px; }
+.index-thumbnail p { margin: 0 0 4px; }
+.index-thumbnail p:empty { display: none; }
 .index-analysis { margin-block: 12px; }
 .index-analysis summary { cursor: pointer; }
 .index-analysis ul { padding-inline-start: 20px; font-size: 13px; overflow-wrap: anywhere; }

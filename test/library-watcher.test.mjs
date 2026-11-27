@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { AssetIndex } from '../core/asset-index.mjs'
 import { LibraryWatcher } from '../core/library-watcher.mjs'
-import { ScanWorker } from '../core/scan-worker.mjs'
+import { ProcessingWorker } from '../core/processing-worker.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 
 async function eventually(read, predicate, message) {
@@ -69,7 +69,7 @@ test('watch merges a burst and periodic reconciliation finds files without a rel
   const index = await AssetIndex.open(':memory:')
   const { id } = await index.connect(root)
   index.setWatching(id, true)
-  const worker = new ScanWorker(index, undefined, { pollMs: 25 })
+  const worker = new ProcessingWorker(index, { pollMs: 25 })
   const watcher = new LibraryWatcher(index, () => worker.wake(), {
     debounceMs: 230, pollMs: 30, refreshMs: 200, reconcileMs: 1800, ignoredPaths: [suppressed],
   })
