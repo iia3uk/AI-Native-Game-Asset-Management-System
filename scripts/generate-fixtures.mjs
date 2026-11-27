@@ -3,7 +3,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { BoxGeometry, ConeGeometry, CylinderGeometry, DodecahedronGeometry, Quaternion, Vector3 } from 'three'
-import { checkedPath, folderPath } from '../core/asset-files.mjs'
+import { checkedPath, folderPath } from '../core/files/asset-files.mjs'
 
 function glb(parts, animate = false) {
   const document = { asset: { version: '2.0', generator: 'Asset Viewer fixtures' }, scene: 0,

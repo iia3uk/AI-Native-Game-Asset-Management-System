@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
-import { AssetIndex } from '../core/asset-index.mjs'
-import { ProcessingWorker } from '../core/processing-worker.mjs'
+import { AssetIndex } from '../core/index/asset-index.mjs'
+import { ProcessingWorker } from '../core/processing/processing-worker.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 
 test('queue migration retains assets, leases recover, and retries commit matching scan results', async t => {
@@ -34,7 +34,7 @@ test('queue migration retains assets, leases recover, and retries commit matchin
   const other = await AssetIndex.open(database)
   let worker
   try {
-    assert.equal(index.integrity().schemaVersion, 6)
+    assert.equal(index.integrity().schemaVersion, 7)
     assert.equal(index.asset(asset.id).note, 'Keep this during migration')
     const queued = index.jobs.enqueue(id)
     assert.equal(other.jobs.enqueue(id).id, queued.id)

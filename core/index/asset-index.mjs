@@ -2,13 +2,13 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, rename, rm } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { backup, DatabaseSync } from 'node:sqlite'
-import { checkedPath, discoverAssets, folderPath, identifyAsset, pathKey, sameFile } from './asset-files.mjs'
-import { analysisVersion, analyzeAsset, dependencyLimit, supportsAnalysis } from './asset-analysis.mjs'
+import { checkedPath, discoverAssets, folderPath, identifyAsset, pathKey, sameFile } from '../files/asset-files.mjs'
+import { analysisVersion, analyzeAsset, dependencyLimit, supportsAnalysis } from '../analysis/asset-analysis.mjs'
 import { migrate, schemaVersion, transaction } from './index-schema.mjs'
 import { IndexInputError } from './index-errors.mjs'
-import { ProcessingJobs } from './processing-jobs.mjs'
-import { QualityProfiles, validateQuality } from './quality-profiles.mjs'
-import { thumbnailPlan } from './thumbnail-input.mjs'
+import { ProcessingJobs } from '../processing/processing-jobs.mjs'
+import { QualityProfiles, validateQuality } from '../analysis/quality-profiles.mjs'
+import { thumbnailPlan } from '../thumbnails/thumbnail-input.mjs'
 
 const readable = 'a.id, a.library_id AS libraryId, l.name AS library, a.path, a.name, a.ext, a.kind,' +
   ' a.size, a.mtime, a.hash, a.first_seen AS firstSeen, a.missing_since AS missingSince,' +
@@ -102,10 +102,15 @@ export class AssetIndex {
 
   async connect(path) {
     const root = await folderPath(path).catch(() => { throw new IndexInputError('Папка не найдена или недоступна.') })
+    return this.registerLibrary(root, basename(root) || root)
+  }
+
+  // Used inside the package publication transaction, after committing its verified root to disk.
+  registerLibrary(root, name) {
     this.#db.prepare(`
       INSERT INTO libraries (id, root, root_key, name, created_at) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(root_key) DO UPDATE SET enabled = 1, generation = generation + 1 WHERE enabled = 0
-    `).run(randomUUID(), root, pathKey(root), basename(root) || root, timestamp())
+    `).run(randomUUID(), root, pathKey(root), name, timestamp())
     return this.#db.prepare('SELECT id, root, name FROM libraries WHERE root_key = ?').get(pathKey(root))
   }
 

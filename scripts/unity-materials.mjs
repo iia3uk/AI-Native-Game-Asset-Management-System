@@ -1,4 +1,4 @@
-import { readBoundedText } from '../core/asset-files.mjs'
+import { readBoundedText } from '../core/files/asset-files.mjs'
 import { prefabMeshes } from './unity-prefabs.mjs'
 
 const textureFormats = new Set(['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'tga', 'tif', 'tiff', 'avif'])

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { app } from 'electron'
 import { startDesktop } from '../../desktop/bootstrap.mjs'
 import { generateFixtures } from '../../scripts/generate-fixtures.mjs'
+import { writeUnityFixture } from '../fixtures/unitypackage.mjs'
 
 const screenshot = process.env.ASSET_VIEWER_SMOKE_SCREENSHOT
 const root = fileURLToPath(new URL('../../', import.meta.url))
@@ -104,8 +105,24 @@ void startDesktop(root).then(async ({ window, origin }) => {
   assert.equal(await webContents.executeJavaScript("document.querySelector('#index-analysis').open"), true)
   await webContents.executeJavaScript("document.querySelector('#index-watch').click()")
   await waitFor("document.querySelector('#index-watch').getAttribute('aria-pressed') === 'false'")
+  const packagePath = await writeUnityFixture(join(process.env.ASSET_VIEWER_DATA_DIR, 'Smoke.unitypackage'))
+  assert.equal(await webContents.executeJavaScript("window.assetViewerDesktop.selectedFilePath(new File(['mock'], 'fake.unitypackage'))"), '')
+  await webContents.executeJavaScript(`{
+    document.querySelector('#package-importer').open = true
+    document.querySelector('#package-path').value = ${JSON.stringify(packagePath)}
+    document.querySelector('#package-form').requestSubmit()
+  }`)
+  await waitFor("document.querySelector('#package-plans summary')?.textContent.includes('Smoke.unitypackage · 6')")
+  await webContents.executeJavaScript("document.querySelector('#package-plans button').click()")
+  await waitFor("document.querySelector('#package-jobs').textContent.includes('В индексе')")
+  await webContents.executeJavaScript("Array.from(document.querySelectorAll('#package-jobs button')).find(button => button.textContent === 'Показать в индексе').click()")
+  await waitFor("document.querySelector('#index-results').textContent.includes('fixture-package.obj')")
+  await webContents.executeJavaScript("Array.from(document.querySelectorAll('#index-results button')).find(button => button.textContent.startsWith('fixture-package.obj')).click()")
+  await waitFor("document.querySelector('#index-name').textContent === 'fixture-package.obj' && !document.querySelector('#index-preview').disabled")
+  await webContents.executeJavaScript("document.querySelector('#index-preview').click()")
+  await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('1 треугольник')")
   assert.deepEqual(externalRequests, [])
-  console.log('Desktop demo, library watching, thumbnail generation and cache clear, technical analysis, quality budgets, metadata draft and renderer isolation passed.')
+  console.log('Desktop demo, library watching, thumbnail cache, technical analysis, metadata, Unity package import and renderer isolation passed.')
   app.quit()
 }).catch(error => {
   console.error(error)

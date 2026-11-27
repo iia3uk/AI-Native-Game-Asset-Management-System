@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promise
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
-import { AssetIndex } from '../core/asset-index.mjs'
+import { AssetIndex } from '../core/index/asset-index.mjs'
 import { generateFixtures } from '../scripts/generate-fixtures.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 
@@ -69,7 +69,7 @@ test('file identity, versions, search, backups and transactional incremental sca
     await index.close()
     index = await AssetIndex.open(dbPath)
     assert.equal(index.asset(asset.id).review, 'candidate')
-    assert.equal(index.integrity().schemaVersion, 6)
+    assert.equal(index.integrity().schemaVersion, 7)
   } finally { await index.close() }
 })
 

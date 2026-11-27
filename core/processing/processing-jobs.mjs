@@ -1,13 +1,19 @@
 import { randomUUID } from 'node:crypto'
-import { transaction } from './index-schema.mjs'
-import { IndexInputError } from './index-errors.mjs'
+import { basename } from 'node:path'
+import { transaction } from '../index/index-schema.mjs'
+import { IndexInputError } from '../index/index-errors.mjs'
 
 const fields = 'id, library_id AS libraryId, type, status, priority, created_at AS createdAt, started_at AS startedAt,' +
   ' finished_at AS finishedAt, attempts, progress, result, error, trigger, cancel_requested AS cancelRequested,' +
-  ' asset_id AS assetId, source_key AS sourceKey'
+  ' asset_id AS assetId, source_key AS sourceKey, package_path AS packagePath'
 const leaseMs = 15_000
 const now = () => new Date().toISOString()
-const shape = job => job && { ...job, result: job.result && JSON.parse(job.result), cancelRequested: Boolean(job.cancelRequested) }
+function shape(job) {
+  if (!job) return job
+  const { packagePath, ...fields } = job
+  if (packagePath) fields.packageName = basename(packagePath)
+  return { ...fields, result: job.result && JSON.parse(job.result), cancelRequested: Boolean(job.cancelRequested) }
+}
 
 export class ProcessingJobs {
   #db
@@ -38,21 +44,46 @@ export class ProcessingJobs {
   }
 
   enqueue(libraryId, { priority = 0, trigger = 'manual' } = {}) {
-    return transaction(this.#db, () => {
-      const library = this.#db.prepare('SELECT watch_enabled FROM libraries WHERE id = ? AND enabled = 1').get(libraryId)
-      if (!library || (trigger === 'watch' && !library.watch_enabled)) return null
-      const current = this.#db.prepare(`SELECT id, trigger, cancel_requested FROM processing_jobs WHERE library_id = ? AND type = 'scan'
-        AND status IN ('pending','running')`).get(libraryId)
-      if (current) {
-        if (trigger === 'manual' && current.trigger === 'watch' && !current.cancel_requested) {
-          this.#db.prepare("UPDATE processing_jobs SET trigger = 'manual', priority = MAX(priority, ?) WHERE id = ?")
-            .run(priority, current.id)
-        }
-        return this.get(current.id)
+    return transaction(this.#db, () => this.#enqueueScan(libraryId, priority, trigger))
+  }
+
+  #enqueueScan(libraryId, priority, trigger) {
+    const library = this.#db.prepare('SELECT watch_enabled FROM libraries WHERE id = ? AND enabled = 1').get(libraryId)
+    if (!library || (trigger === 'watch' && !library.watch_enabled)) return null
+    const current = this.#db.prepare(`SELECT id, trigger, cancel_requested FROM processing_jobs WHERE library_id = ? AND type = 'scan'
+      AND status IN ('pending','running')`).get(libraryId)
+    if (current) {
+      if (trigger === 'manual' && current.trigger === 'watch' && !current.cancel_requested) {
+        this.#db.prepare("UPDATE processing_jobs SET trigger = 'manual', priority = MAX(priority, ?) WHERE id = ?")
+          .run(priority, current.id)
       }
+      return this.get(current.id)
+    }
+    const id = randomUUID()
+    this.#db.prepare(`INSERT INTO processing_jobs (id, library_id, type, status, priority, created_at, trigger)
+      VALUES (?, ?, 'scan', 'pending', ?, ?, ?)`).run(id, libraryId, priority, now(), trigger)
+    return this.get(id)
+  }
+
+  #activeImport(path, key) {
+    return this.#db.prepare(`SELECT id FROM processing_jobs WHERE type = 'package-import' AND package_path = ?
+      AND source_key = ? AND status IN ('pending','running')`).get(path, key)
+  }
+
+  #enforceImportLimit() {
+    const { count } = this.#db.prepare(`SELECT COUNT(*) AS count FROM processing_jobs
+      WHERE type = 'package-import' AND status IN ('pending','running')`).get()
+    if (count >= 16) throw new IndexInputError('Очередь импорта заполнена.')
+  }
+
+  enqueueImport(path, key) {
+    return transaction(this.#db, () => {
+      const current = this.#activeImport(path, key)
+      if (current) return this.get(current.id)
+      this.#enforceImportLimit()
       const id = randomUUID()
-      this.#db.prepare(`INSERT INTO processing_jobs (id, library_id, type, status, priority, created_at, trigger)
-        VALUES (?, ?, 'scan', 'pending', ?, ?, ?)`).run(id, libraryId, priority, now(), trigger)
+      this.#db.prepare(`INSERT INTO processing_jobs (id, type, status, priority, created_at, source_key, package_path)
+        VALUES (?, 'package-import', 'pending', 0, ?, ?, ?)`).run(id, now(), key, path)
       return this.get(id)
     })
   }
@@ -103,12 +134,17 @@ export class ProcessingJobs {
     return transaction(this.#db, () => {
       const job = this.get(id)
       if (!job || !['failed', 'interrupted', 'cancelled'].includes(job.status) || job.attempts >= 3) return null
-      const library = this.#db.prepare('SELECT id FROM libraries WHERE id = ? AND enabled = 1').get(job.libraryId)
-      const other = job.type === 'scan' ? this.#db.prepare(`SELECT id FROM processing_jobs
-        WHERE type = 'scan' AND library_id = ? AND status IN ('pending','running')`).get(job.libraryId)
-        : this.#db.prepare(`SELECT id FROM processing_jobs WHERE type = 'thumbnail' AND asset_id = ?
-          AND source_key = ? AND status IN ('pending','running')`).get(job.assetId, job.sourceKey)
-      if (!library || other) return null
+      if (job.type === 'package-import') {
+        if (this.#activeImport(this.importSource(job.id), job.sourceKey)) return null
+        this.#enforceImportLimit()
+      } else {
+        const library = this.#db.prepare('SELECT id FROM libraries WHERE id = ? AND enabled = 1').get(job.libraryId)
+        const other = job.type === 'scan' ? this.#db.prepare(`SELECT id FROM processing_jobs
+          WHERE type = 'scan' AND library_id = ? AND status IN ('pending','running')`).get(job.libraryId)
+          : this.#db.prepare(`SELECT id FROM processing_jobs WHERE type = 'thumbnail' AND asset_id = ?
+            AND source_key = ? AND status IN ('pending','running')`).get(job.assetId, job.sourceKey)
+        if (!library || other) return null
+      }
       this.#db.prepare(`UPDATE processing_jobs SET status = 'pending', progress = 0, started_at = NULL,
         finished_at = NULL, result = NULL, error = NULL, cancel_requested = 0, trigger = 'manual', priority = MAX(priority, 0)
         WHERE id = ?`).run(id)
@@ -127,7 +163,7 @@ export class ProcessingJobs {
         error = CASE WHEN cancel_requested = 1 THEN NULL ELSE 'Worker stopped unexpectedly.' END,
         finished_at = ?, lease_until = NULL, worker = NULL
         WHERE type = ? AND status = 'running' AND lease_until <= ?`).run(now(), type, time)
-      if (type === 'thumbnail' && this.#db.prepare("SELECT 1 FROM processing_jobs WHERE type = ? AND status = 'running'").get(type)) return null
+      if (type !== 'scan' && this.#db.prepare("SELECT 1 FROM processing_jobs WHERE type = ? AND status = 'running'").get(type)) return null
       const job = this.#db.prepare(`SELECT id FROM processing_jobs WHERE type = ? AND status = 'pending'
         AND (? IS NULL OR id = ?) ORDER BY priority DESC, created_at, rowid LIMIT 1`).get(type, targetId, targetId)
       if (!job) return null
@@ -157,6 +193,26 @@ export class ProcessingJobs {
       if (!owner) throw new IndexInputError('Публикация миниатюры отменена.')
       publish()
       return this.finish(id, worker, { status: 'completed', progress: 100, result: { format: 'png' } })
+    })
+  }
+
+  importSource(id) {
+    return this.#db.prepare("SELECT package_path FROM processing_jobs WHERE id = ? AND type = 'package-import'").get(id)?.package_path
+  }
+
+  completeImport(id, worker, publish) {
+    return transaction(this.#db, () => {
+      const owner = this.#db.prepare(`SELECT 1 FROM processing_jobs WHERE id = ? AND worker = ? AND type = 'package-import'
+        AND status = 'running' AND cancel_requested = 0 AND lease_until > ?`).get(id, worker, Date.now())
+      if (!owner) throw new IndexInputError('Публикация пакета отменена.')
+      const result = publish()
+      let scanJobId = null
+      if (result.library) {
+        const { id: libraryId } = result.library
+        scanJobId = this.#enqueueScan(libraryId, 0, 'manual').id
+        this.#db.prepare('UPDATE processing_jobs SET library_id = ? WHERE id = ?').run(libraryId, id)
+      }
+      return this.finish(id, worker, { status: 'completed', progress: 100, result: { ...result, scanJobId } })
     })
   }
 }

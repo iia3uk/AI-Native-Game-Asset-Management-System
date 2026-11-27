@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 import { existsSync } from 'node:fs'
 import { parseArgs } from 'node:util'
-import { AssetIndex, IndexInputError } from '../core/asset-index.mjs'
-import { discoverAssets, folderPath } from '../core/asset-files.mjs'
-import { dataPaths } from '../core/data-paths.mjs'
-import { ProcessingWorker } from '../core/processing-worker.mjs'
-import { ThumbnailCache } from '../core/thumbnail-cache.mjs'
-import { assetThumbnail } from '../core/thumbnail-service.mjs'
+import { AssetIndex, IndexInputError } from '../core/index/asset-index.mjs'
+import { discoverAssets, folderPath } from '../core/files/asset-files.mjs'
+import { dataPaths } from '../core/config/data-paths.mjs'
+import { ProcessingWorker } from '../core/processing/processing-worker.mjs'
+import { ThumbnailCache } from '../core/thumbnails/thumbnail-cache.mjs'
+import { assetThumbnail } from '../core/thumbnails/thumbnail-service.mjs'
+import { inspectUnityPackage } from '../core/packages/unity/inspect.mjs'
+import { packageSource } from '../core/packages/unity/paths.mjs'
 
 const string = { type: 'string' }
 const flag = { type: 'boolean' }
@@ -19,7 +21,9 @@ const commands = {
   search: { args: ['query?'], options: { ...paging, library: string, kind: string, hash: string } },
   inspect: { args: ['asset-id'], options: { profile: string } },
   preview: { args: ['asset-id'], options: { 'dry-run': flag, queue: flag, status: flag } },
-  jobs: { args: ['job-id?'], options: { ...paging, library: string, type: string } },
+  jobs: { args: ['job-id?'], options: { ...paging, library: string, type: string, cancel: flag, retry: flag } },
+  'package-inspect': { args: ['absolute-path'], options: {} },
+  'package-import': { args: ['absolute-path'], options: { 'dry-run': flag, queue: flag } },
   'thumbnail-cache': { args: [], options: { clear: flag, 'dry-run': flag } },
   profiles: { args: [], options: {} },
   profile: { args: ['profile-id'], options: { 'set-json': string, reset: flag } },
@@ -60,14 +64,18 @@ async function preview(index, cache, id, values) {
   if (!result) throw new IndexInputError('Asset unavailable.')
   if (values['dry-run']) return { dryRun: true, ...result }
   if (values.status || values.queue || !result.job) return result
-  const worker = new ProcessingWorker(index, { type: 'thumbnail', cache, targetId: result.job.id })
+  const finished = await waitForJob(index, result.job.id, { type: 'thumbnail', cache })
+  result = await assetThumbnail(index, cache, id)
+  return { ...result, job: finished }
+}
+
+async function waitForJob(index, id, options) {
+  const worker = new ProcessingWorker(index, { ...options, targetId: id })
   const stop = new AbortController()
   const abort = () => stop.abort()
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, abort)
   try {
-    const finished = await worker.wait(result.job.id, stop.signal)
-    result = await assetThumbnail(index, cache, id)
-    return { ...result, job: finished }
+    return await worker.wait(id, stop.signal)
   } finally {
     await worker.stop()
     for (const signal of ['SIGINT', 'SIGTERM']) process.off(signal, abort)
@@ -113,13 +121,13 @@ async function execute(index, paths, command, [input, setting], values) {
     }
     case 'jobs': {
       if (input) {
-        const job = index.jobs.get(input)
+        const job = values.cancel ? index.jobs.cancel(input) : values.retry ? index.jobs.retry(input) : index.jobs.get(input)
         if (!job) throw new IndexInputError('Job unavailable.')
         return job
       }
       const { limit, offset } = page(values)
       if (limit < 1 || limit > 200 || !Number.isSafeInteger(offset) ||
-          (values.type !== undefined && !['scan', 'thumbnail'].includes(values.type))) {
+          (values.type !== undefined && !['scan', 'thumbnail', 'package-import'].includes(values.type))) {
         throw new IndexInputError('Invalid jobs page or type.')
       }
       return index.jobs.list({ type: values.type, libraryId: values.library, limit, offset })
@@ -159,6 +167,24 @@ async function main([command, ...args]) {
     throw new IndexInputError('Use either --set-json or --reset.')
   }
   const paths = dataPaths()
+  if (command === 'package-inspect' || command === 'package-import') {
+    if (values.queue && values['dry-run']) throw new IndexInputError('Use only one of --queue or --dry-run.')
+    const source = await packageSource(input)
+    const report = await inspectUnityPackage(source, { signal: AbortSignal.timeout(120_000) })
+    if (command === 'package-inspect') return print(report, values.json)
+    if (values['dry-run']) return print({ dryRun: true, ...report }, values.json)
+    const index = await AssetIndex.open(paths.database)
+    try {
+      const queued = index.jobs.enqueueImport(source.path, report.hash)
+      if (values.queue) return print({ job: queued }, values.json)
+      const job = await waitForJob(index, queued.id, { type: 'package-import', importDirectory: paths.imports })
+      const scan = job.result?.scanJobId ? await waitForJob(index, job.result.scanJobId, { type: 'scan' }) : null
+      if (job.status !== 'completed' || (scan && scan.status !== 'completed')) process.exitCode = 1
+      return print({ job, scan }, values.json)
+    } finally {
+      await index.close()
+    }
+  }
   if (command === 'connect' && values['dry-run']) {
     return print({ dryRun: true, root: await folderPath(input) }, values.json)
   }
@@ -182,7 +208,10 @@ async function main([command, ...args]) {
     return
   }
   const queuesPreview = command === 'preview' && !values.status
-  const readOnly = (!['connect', 'scan', 'watch'].includes(command) && !modifiesProfile && !queuesPreview) || Boolean(values['dry-run'])
+  const changesJob = command === 'jobs' && (values.cancel || values.retry)
+  if (changesJob && (!input || (values.cancel && values.retry))) throw new IndexInputError('Specify a job ID and one action.')
+  const readOnly = (!['connect', 'scan', 'watch'].includes(command) && !modifiesProfile && !queuesPreview && !changesJob) ||
+    Boolean(values['dry-run'])
   const index = readOnly ? new AssetIndex(paths.database, { readOnly }) : await AssetIndex.open(paths.database)
   try {
     const result = await execute(index, paths, command, positionals, values)

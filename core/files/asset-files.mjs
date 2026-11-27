@@ -1,6 +1,6 @@
 import { open, opendir, realpath, stat } from 'node:fs/promises'
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { imageFormats, modelFormats, supportFiles } from '../scripts/formats.mjs'
+import { imageFormats, modelFormats, supportFiles } from './formats.mjs'
 
 export const pathKey = path => process.platform === 'win32' ? path.toLowerCase() : path
 export const portablePath = path => path.split(sep).join('/')

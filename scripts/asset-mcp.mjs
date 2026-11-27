@@ -1,10 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { AssetIndex } from '../core/asset-index.mjs'
-import { dataPaths } from '../core/data-paths.mjs'
-import { ThumbnailCache } from '../core/thumbnail-cache.mjs'
-import { assetThumbnail } from '../core/thumbnail-service.mjs'
+import { AssetIndex } from '../core/index/asset-index.mjs'
+import { dataPaths } from '../core/config/data-paths.mjs'
+import { ThumbnailCache } from '../core/thumbnails/thumbnail-cache.mjs'
+import { assetThumbnail } from '../core/thumbnails/thumbnail-service.mjs'
 
 const uuid = z.string().uuid()
 const limit = z.number().int().min(1).max(20).default(20)

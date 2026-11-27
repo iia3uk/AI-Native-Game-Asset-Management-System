@@ -1,7 +1,7 @@
 import { watch } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { checkedPath, identifyAsset, inside } from './asset-files.mjs'
+import { checkedPath, identifyAsset, inside } from '../files/asset-files.mjs'
 
 export class LibraryWatcher {
   #roots = new Map()

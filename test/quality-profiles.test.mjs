@@ -3,8 +3,8 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
-import { AssetIndex } from '../core/asset-index.mjs'
-import { validateQuality } from '../core/quality-profiles.mjs'
+import { AssetIndex } from '../core/index/asset-index.mjs'
+import { validateQuality } from '../core/analysis/quality-profiles.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 
 const byKey = validation => Object.fromEntries(validation.checks.map(check => [check.key, check]))
@@ -127,7 +127,7 @@ test('schema 4 migration retains existing analysis and profile edits survive bac
 
   index = await AssetIndex.open(database)
   try {
-    assert.equal(index.integrity().schemaVersion, 6)
+    assert.equal(index.integrity().schemaVersion, 7)
     assert.deepEqual(index.inspect(asset.id), before)
     const profile = index.qualityProfiles.update('custom-project', { revision: 0, limits: { maxTriangles: 1 } })
     const snapshot = await index.backup(join(directory, 'backups'))

@@ -25,6 +25,6 @@ export function dataPaths(env = process.env, platform = process.platform, home =
     cache = join(xdg(env.XDG_CACHE_HOME, '.cache'), 'asset-viewer')
     config = join(xdg(env.XDG_CONFIG_HOME, '.config'), 'asset-viewer')
   }
-  return { data, cache, config, database: join(data, 'index.sqlite'), backups: join(data, 'backups'),
+  return { data, cache, config, database: join(data, 'index.sqlite'), backups: join(data, 'backups'), imports: join(data, 'imports'),
     demo: join(cache, 'demo-v1'), thumbnails: join(cache, 'thumbnails'), logs: join(cache, 'logs'), temporary: join(cache, 'tmp') }
 }

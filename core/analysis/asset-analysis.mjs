@@ -1,7 +1,7 @@
 import { open } from 'node:fs/promises'
 import { posix } from 'node:path'
-import { isCollisionFile } from '../public/model-names.js'
-import { checkedPath, pathKey, sameFile, ScanChangeError } from './asset-files.mjs'
+import { isCollisionFile } from '../../public/model-names.js'
+import { checkedPath, pathKey, sameFile, ScanChangeError } from '../files/asset-files.mjs'
 import { analyzeGltf, analyzeMtl, analyzeObj, isLodName } from './model-analysis.mjs'
 
 export const analysisVersion = 1

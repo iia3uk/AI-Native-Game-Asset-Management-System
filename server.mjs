@@ -6,10 +6,10 @@ import { fileURLToPath } from 'node:url'
 import { pipeline } from 'node:stream/promises'
 import { parseArgs } from 'node:util'
 import { blenderPreview, browseFolder, closePreviews, scanFolder } from './scripts/local-library.mjs'
-import { checkedPath, fileInfo, readBoundedText } from './core/asset-files.mjs'
-import { dataPaths } from './core/data-paths.mjs'
+import { checkedPath, fileInfo, readBoundedText } from './core/files/asset-files.mjs'
+import { dataPaths } from './core/config/data-paths.mjs'
 import { generateFixtures } from './scripts/generate-fixtures.mjs'
-import { indexRoutes } from './core/index-http.mjs'
+import { indexRoutes } from './core/http/index-http.mjs'
 
 const project = fileURLToPath(new URL('.', import.meta.url))
 try {
@@ -46,7 +46,7 @@ const indexedFolders = new Map()
 let demoRequest
 const paths = dataPaths()
 const indexed = indexRoutes({ database: paths.database, thumbnailDirectory: paths.thumbnails,
-  ignoredWatchPaths: [paths.cache, paths.backups], json, body, allowsWrite,
+  importDirectory: paths.imports, ignoredWatchPaths: [paths.cache, paths.backups, paths.imports], json, body, allowsWrite,
   openFolder: openIndexedFolder, invalidateFolder: invalidateIndexedFolder })
 
 async function safeFile(base, subpath) {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { VTKLoader } from 'three/addons/loaders/VTKLoader.js'
 import { geometryModel, parseOff } from '../public/extra-models.js'
-import { blenderModels, browserImages, browserModels, formatOrder, imageFormats, modelFormats } from '../scripts/formats.mjs'
+import { blenderModels, browserImages, browserModels, formatOrder, imageFormats, modelFormats } from '../core/files/formats.mjs'
 
 test('preview format registry covers direct models, Blender conversion and raster files', () => {
   assert.ok(browserModels.has('3dm') && browserModels.has('bvh') && browserModels.has('vrm'))

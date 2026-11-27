@@ -5,8 +5,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { inflateSync } from 'node:zlib'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
-import { AssetIndex } from '../core/asset-index.mjs'
-import { ThumbnailCache } from '../core/thumbnail-cache.mjs'
+import { AssetIndex } from '../core/index/asset-index.mjs'
+import { ThumbnailCache } from '../core/thumbnails/thumbnail-cache.mjs'
 import { generateFixtures } from '../scripts/generate-fixtures.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 
@@ -174,7 +174,7 @@ test('schema 5 scan records survive migration and a queued thumbnail resumes aft
   index = await AssetIndex.open(database)
   let queued
   try {
-    assert.equal(index.integrity().schemaVersion, 6)
+    assert.equal(index.integrity().schemaVersion, 7)
     assert.equal(index.jobs.get(scan.id).createdAt, scan.createdAt)
     assert.equal(index.asset(model.id).note, 'Keep reviewed model')
     queued = index.jobs.enqueueThumbnail(index.thumbnailSource(model.id))
@@ -187,6 +187,35 @@ test('schema 5 scan records survive migration and a queued thumbnail resumes aft
     const preview = await (await server.request('/api/index/assets/' + model.id + '/thumbnail')).json()
     assertThumbnail(Buffer.from(await (await server.request(preview.url)).arrayBuffer()))
   } finally { await server.close() }
+})
+
+test('schema 6 migration preserves pending thumbnails and their source identity', async t => {
+  const directory = await testDirectory(t)
+  const root = join(directory, 'library')
+  const database = join(directory, 'data', 'index.sqlite')
+  await generateFixtures(root)
+  let index = await AssetIndex.open(database)
+  const { id } = await index.connect(root)
+  await index.scan(id)
+  const { assets: [model] } = index.search({ q: 'woodland-cabin' })
+  const queued = index.jobs.enqueueThumbnail(index.thumbnailSource(model.id))
+  await index.close()
+  const raw = new DatabaseSync(database)
+  try {
+    raw.exec(`CREATE TABLE schema6_jobs AS SELECT id, library_id, type, status, priority, created_at, started_at,
+      finished_at, attempts, progress, result, error, worker, lease_until, cancel_requested, trigger, asset_id, source_key
+      FROM processing_jobs;
+      DROP TABLE processing_jobs;
+      ALTER TABLE schema6_jobs RENAME TO processing_jobs;
+      PRAGMA user_version = 6;`)
+  } finally { raw.close() }
+  index = await AssetIndex.open(database)
+  try {
+    assert.deepEqual(index.jobs.get(queued.id), queued)
+    assert.equal(index.jobs.claim('new-worker', 'thumbnail').id, queued.id)
+  } finally {
+    await index.close()
+  }
 })
 
 test('thumbnail cache evicts by use and expires old entries without touching other files', async t => {

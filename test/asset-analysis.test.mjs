@@ -5,7 +5,7 @@ import { mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
-import { AssetIndex } from '../core/asset-index.mjs'
+import { AssetIndex } from '../core/index/asset-index.mjs'
 import { generateFixtures } from '../scripts/generate-fixtures.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 

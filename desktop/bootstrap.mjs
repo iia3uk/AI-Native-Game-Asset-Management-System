@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { setTimeout } from 'node:timers/promises'
 import { app, BrowserWindow, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
-import { dataPaths } from '../core/data-paths.mjs'
+import { dataPaths } from '../core/config/data-paths.mjs'
 
 function choosePort(child) {
   return new Promise((resolve, reject) => {

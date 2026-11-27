@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { renameSync } from 'node:fs'
 import { lstat, lutimes, mkdir, open, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
-import { checkedPath } from './asset-files.mjs'
+import { checkedPath } from '../files/asset-files.mjs'
 
 const maxAge = 30 * 24 * 60 * 60_000
 const pngSizeLimit = 128 * 1024

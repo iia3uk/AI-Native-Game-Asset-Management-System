@@ -1,5 +1,6 @@
 import { mountQualityProfile } from './quality-profile.js'
 import { mountIndexThumbnail } from './index-thumbnail.js'
+import { mountPackageImporter } from './package-importer/index.js'
 
 const $ = id => document.getElementById('index-' + id)
 const number = new Intl.NumberFormat('ru')
@@ -95,6 +96,12 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
   let pollTimer
   const quality = mountQualityProfile({ json, post, run, currentAsset: () => asset?.id })
   const thumbnail = mountIndexThumbnail({ json, post })
+  const packages = mountPackageImporter({ dialog, json, post, openLibrary: id => run(async () => {
+    await refreshLibraries(id)
+    query.value = $('kind').value = ''
+    await search()
+    await refreshJob()
+  }) })
 
   const activeJob = () => ['pending', 'running'].includes(job?.status)
   const watching = () => libraries.some(library => library.id === selection.value && library.watching)
@@ -263,6 +270,7 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
     const root = currentFolder()
     if (root && !$('root').value) $('root').value = root
     dialog.showModal()
+    void packages.refresh()
     void run(async () => { await refreshLibraries(); await search(); await refreshJob() })
   })
   $('close').addEventListener('click', () => dialog.close())

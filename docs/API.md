@@ -9,8 +9,8 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | POST | `/api/index/libraries/:id/watch` | `{"enabled":true}` or `{"enabled":false}` persists the setting and returns `{library}` |
 | POST | `/api/index/libraries/:id/scan` | Empty object. Returns added, changed, moved, missing, hashed, reused and skipped hash counts |
 | POST | `/api/index/libraries/:id/jobs` | Empty object. Returns 202 and the new or active scan job |
-| GET | `/api/index/jobs` | Optional `library`, `type` (`scan` or `thumbnail`), `limit` (1–200) and `offset`. Returns active jobs first |
-| GET | `/api/index/jobs/:id` | Persisted status, progress, attempts, trigger and result or error. Progress counts files for scans and reports a percentage for thumbnails |
+| GET | `/api/index/jobs` | Optional `library`, `type` (`scan`, `thumbnail`, or `package-import`), `limit` (1–200) and `offset`. Returns active jobs first |
+| GET | `/api/index/jobs/:id` | Persisted status, progress, attempts, trigger and result or error. Progress counts files for scans and reports a percentage for thumbnails and imports |
 | POST | `/api/index/jobs/:id/cancel` | Cancels a pending job or requests cancellation for a running job |
 | POST | `/api/index/jobs/:id/retry` | Queues a failed, cancelled or interrupted job with fewer than three started attempts |
 | POST | `/api/index/libraries/:id/disconnect` | Empty object. Hides the library and retains its records |
@@ -26,11 +26,15 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | POST | `/api/index/thumbnail-cache/clear` | Empty object. Removes generated thumbnails and returns cache usage |
 | GET | `/api/index/quality-profiles` | Returns the six saved or default profiles and the supported field definitions |
 | POST | `/api/index/quality-profiles/:id` | `{"revision":0,"limits":{"maxTriangles":12000}}` replaces the enabled limits. `{"revision":0,"reset":true}` restores defaults. Stale revisions return 409 |
+| POST | `/api/index/packages/inspect` | `{"path":"<absolute local file>"}` returns the detected Unity package format, SHA-256, sizes, entry count and up to 500 preview entries |
+| POST | `/api/index/packages/import` | `{"path":"<absolute local file>","hash":"<SHA-256 from inspection>"}` returns 202 and the new or active import job |
 | POST | `/api/demo` | Creates and opens a separate procedural demo session on demand |
 
 Failed scans preserve the last committed index. Disconnection and removal of original files retain history. Search excludes disconnected and missing assets.
 
 Automatic scans use the same queue. An explicit scan request promotes the active automatic job to a manual job if the job is still available. Disabling watching cancels queued automatic jobs and requests cancellation for running automatic jobs.
+
+The package import result contains `directory`, `report`, `reused`, `library` and `scanJobId`. Check the scan job for indexing completion. `library` and `scanJobId` are null when all items were excluded. The package path is used locally and the job list exposes its basename.
 
 Thumbnail requests deduplicate active jobs for the same asset version. The thumbnail route reports `available`, `missing`, `stale`, `unsupported`, `unavailable`, `limited`, or a job status. A stale source requires a new scan. The image route returns 404 when the asset, cache entry or source version is no longer available. Queued or running jobs can populate the cache after a clear.
 

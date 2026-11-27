@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
-import { AssetIndex } from '../core/asset-index.mjs'
+import { AssetIndex } from '../core/index/asset-index.mjs'
 
 const sizes = process.argv.slice(2).map(Number)
 if (!sizes.length) sizes.push(100, 1000, 10000)

@@ -117,12 +117,12 @@ const quality = `
   ) STRICT;
 `
 
-const thumbnails = `
+const packageJobs = previousVersion => `
   ALTER TABLE processing_jobs RENAME TO previous_processing_jobs;
   CREATE TABLE processing_jobs (
     id TEXT PRIMARY KEY,
-    library_id TEXT NOT NULL REFERENCES libraries(id),
-    type TEXT NOT NULL CHECK (type IN ('scan', 'thumbnail')),
+    library_id TEXT REFERENCES libraries(id),
+    type TEXT NOT NULL CHECK (type IN ('scan', 'thumbnail', 'package-import')),
     status TEXT NOT NULL CHECK (status IN ('pending','running','completed','failed','cancelled','interrupted')),
     priority INTEGER NOT NULL,
     created_at TEXT NOT NULL,
@@ -138,13 +138,18 @@ const thumbnails = `
     trigger TEXT NOT NULL DEFAULT 'manual' CHECK (trigger IN ('manual', 'watch')),
     asset_id TEXT REFERENCES assets(id),
     source_key TEXT,
-    CHECK ((type = 'thumbnail') = (asset_id IS NOT NULL AND source_key IS NOT NULL))
+    package_path TEXT,
+    CHECK ((type = 'thumbnail') = (asset_id IS NOT NULL)),
+    CHECK ((type = 'scan') = (source_key IS NULL)),
+    CHECK ((type = 'package-import') = (package_path IS NOT NULL)),
+    CHECK (library_id IS NOT NULL OR type = 'package-import')
   ) STRICT;
 
   INSERT INTO processing_jobs (rowid, id, library_id, type, status, priority, created_at, started_at, finished_at,
-    attempts, progress, result, error, worker, lease_until, cancel_requested, trigger)
+    attempts, progress, result, error, worker, lease_until, cancel_requested, trigger, asset_id, source_key)
   SELECT rowid, id, library_id, type, status, priority, created_at, started_at, finished_at,
-    attempts, progress, result, error, worker, lease_until, cancel_requested, trigger FROM previous_processing_jobs;
+    attempts, progress, result, error, worker, lease_until, cancel_requested, trigger,
+    ${previousVersion >= 6 ? 'asset_id, source_key' : 'NULL, NULL'} FROM previous_processing_jobs;
   DROP TABLE previous_processing_jobs;
 
   CREATE UNIQUE INDEX one_active_job_per_library ON processing_jobs (library_id)
@@ -153,11 +158,14 @@ const thumbnails = `
     WHERE type = 'thumbnail' AND status IN ('pending','running');
   CREATE UNIQUE INDEX one_running_thumbnail ON processing_jobs (type) WHERE type = 'thumbnail' AND status = 'running';
   CREATE INDEX latest_thumbnail ON processing_jobs (asset_id, source_key, created_at DESC);
+  CREATE UNIQUE INDEX one_active_import_per_package ON processing_jobs (package_path, source_key)
+    WHERE type = 'package-import' AND status IN ('pending','running');
+  CREATE UNIQUE INDEX one_running_import ON processing_jobs (type) WHERE type = 'package-import' AND status = 'running';
   CREATE INDEX pending_jobs ON processing_jobs (type, priority DESC, created_at) WHERE status = 'pending';
   CREATE INDEX jobs_by_library ON processing_jobs (library_id, created_at DESC);
 `
 
-export const schemaVersion = 6
+export const schemaVersion = 7
 
 export function transaction(db, write) {
   db.exec('BEGIN IMMEDIATE')
@@ -184,7 +192,7 @@ export function migrate(db) {
     if (lockedVersion < 3) db.exec(watching)
     if (lockedVersion < 4) db.exec(analysis)
     if (lockedVersion < 5) db.exec(quality)
-    if (lockedVersion < 6) db.exec(thumbnails)
+    if (lockedVersion < 7) db.exec(packageJobs(lockedVersion))
     db.exec('PRAGMA user_version = ' + schemaVersion)
   })
 }

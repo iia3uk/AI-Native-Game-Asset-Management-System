@@ -1,9 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Worker } from 'node:worker_threads'
-import { IndexInputError } from './index-errors.mjs'
-import { ScanChangeError } from './asset-files.mjs'
-import { thumbnailCurrent } from './thumbnail-input.mjs'
+import { IndexInputError } from '../index/index-errors.mjs'
+import { ScanChangeError } from '../files/asset-files.mjs'
+import { thumbnailCurrent } from '../thumbnails/thumbnail-input.mjs'
+import { packageSource } from '../packages/unity/paths.mjs'
+import { stageUnityPackage } from '../packages/unity/import.mjs'
+
+const timeouts = { scan: 300_000, thumbnail: 25_000, 'package-import': 600_000 }
+const operation = { scan: 'сканирования библиотеки', thumbnail: 'создания миниатюры', 'package-import': 'импорта пакета' }
 
 export class ProcessingWorker {
   #id = randomUUID()
@@ -11,13 +16,15 @@ export class ProcessingWorker {
   #task = null
   #timer
 
-  constructor(index, { type = 'scan', cache, targetId, onScanComplete,
-    timeoutMs = type === 'scan' ? 300_000 : 25_000, pollMs = 500 } = {}) {
+  constructor(index, { type = 'scan', cache, importDirectory, targetId, onScanComplete, onImportComplete,
+    timeoutMs = timeouts[type], pollMs = 500 } = {}) {
     this.index = index
     this.type = type
     this.cache = cache
     this.targetId = targetId
     this.onScanComplete = onScanComplete
+    this.importDirectory = importDirectory
+    this.onImportComplete = onImportComplete
     this.timeoutMs = timeoutMs
     this.#timer = setInterval(() => this.wake(), pollMs)
     this.#timer.unref()
@@ -77,8 +84,10 @@ export class ProcessingWorker {
           signal, onProgress: value => { progress = value }, beforeCommit: heartbeat,
           onCommit: result => this.index.jobs.finish(job.id, this.#id, { status: 'completed', progress, result }),
         })
-      } else {
+      } else if (job.type === 'thumbnail') {
         await this.#thumbnail(job, signal, value => { progress = value; heartbeat(); signal.throwIfAborted() })
+      } else if (job.type === 'package-import') {
+        await this.#import(job, signal, value => { progress = value })
       }
     } catch (error) {
       const cancelled = this.index.jobs.get(job.id)?.cancelRequested
@@ -90,6 +99,22 @@ export class ProcessingWorker {
     }
     const finished = outcome ? this.index.jobs.finish(job.id, this.#id, outcome) : this.index.jobs.get(job.id)
     if (job.type === 'scan' && finished?.status === 'completed') this.onScanComplete?.(job.libraryId)
+    if (job.type === 'package-import' && finished?.status === 'completed') this.onImportComplete?.(finished.result)
+  }
+
+  async #import(job, signal, onProgress) {
+    const source = await packageSource(this.index.jobs.importSource(job.id))
+    await stageUnityPackage(this.importDirectory, source, job.sourceKey, {
+      signal, onProgress,
+      publish: (result, move) => {
+        signal.throwIfAborted()
+        return this.index.jobs.completeImport(job.id, this.#id, () => {
+          move()
+          const library = result.report.written ? this.index.registerLibrary(result.source, source.name) : null
+          return { library, directory: result.directory, report: result.report, reused: result.reused }
+        })
+      },
+    })
   }
 
   async #thumbnail(job, signal, advance) {
@@ -116,16 +141,16 @@ export class ProcessingWorker {
 const sourceChanged = () => new IndexInputError('Исходный файл или буфер изменился. Обновите индекс.')
 
 function processingError(type, error, timedOut) {
-  if (timedOut) return type === 'scan' ? 'Истекло время сканирования.' : 'Истекло время создания миниатюры.'
+  if (timedOut) return 'Истекло время ' + operation[type] + '.'
   if (error instanceof IndexInputError || error instanceof ScanChangeError) return error.message
   if (['EACCES', 'EPERM', 'ENOENT', 'ENOTDIR'].includes(error.code)) return 'Каталог или файл недоступен.'
   console.error(type + ' failed:', error.message)
-  return type === 'scan' ? 'Ошибка сканирования библиотеки.' : 'Не удалось создать миниатюру.'
+  return 'Ошибка ' + operation[type] + '.'
 }
 
 async function generateThumbnail(plan, signal) {
   signal.throwIfAborted()
-  const worker = new Worker(new URL('./thumbnail-render.mjs', import.meta.url), {
+  const worker = new Worker(new URL('../thumbnails/thumbnail-render.mjs', import.meta.url), {
     workerData: plan, resourceLimits: { maxOldGenerationSizeMb: 196, stackSizeMb: 4 },
   })
   let abort

@@ -2,9 +2,9 @@
 
 `server.mjs` is the loopback HTTP adapter. The browser renderer lives in `public/`, with the 3D stage separated from catalog UI and thumbnail scheduling. Legacy local grouping and Unity material resolution are currently in `scripts/`. Fab remains a separate file-backed source.
 
-`core/` owns browser-independent access and discovery. The same format registry drives discovery and existing preview support. `AssetIndex` owns the SQLite registry, assets, version history, full-text search and review fields. `index-http.mjs` adapts core calls to the browser. The browser opens indexed search results in the existing renderer.
+`core/files/` owns scoped file access, discovery and the shared format registry. `core/index/` owns SQLite, migrations, assets, version history, full-text search and review fields. `core/analysis/` contains technical analysis and quality profiles. `core/processing/` owns the durable queue, worker lifecycle and library watching. `core/thumbnails/` contains the PNG renderer and its cache. `core/http/` adapts the core APIs for the browser. Indexed search results open in the existing renderer.
 
-Asset roots are user-selected, canonical directories. Discovery skips child symlinks and junctions. File paths stay relative to their root until opened. Generated caches and database files belong to the application data directory, resolved by `core/data-paths.mjs`.
+Asset roots are user-selected, canonical directories. Discovery skips child symlinks and junctions. File paths stay relative to their root until opened. Application paths are resolved by `core/config/data-paths.mjs`.
 
 The SQLite job queue records scan progress and permits one active scan job per library. The HTTP process claims jobs using a renewable lease. The successful result and updated assets commit in the same transaction. Pending jobs resume after startup. An expired running job is marked interrupted and can be retried.
 
@@ -18,6 +18,10 @@ Thumbnail generation uses the SQLite jobs table and a dedicated worker slot, so 
 
 Generated 160 × 160 PNGs live in an application-owned directory shared by the HTTP server and CLI. The key includes content hashes, relative geometry buffer references, processor version, format and resolution. Thumbnail retrieval verifies current indexed inputs before serving output. A 64 MiB default quota evicts the least recently used files, and entries expire after 30 days without an HTTP image read. The cache is disposable and separate from database backups.
 
+`core/packages/archive/` handles bounded archive reads. `core/packages/unity/` separates package limits, path validation, inspection, report generation and staged publication. The Unity importer uses the same SQLite queue as scans and thumbnails. One import can run per database at a time, with at most 16 active or queued imports. The browser UI lives in `public/package-importer/`.
+
+Inspection streams TAR.GZ content and fingerprints the compressed bytes. Import checks that fingerprint before publishing to `imports/unitypackage-v1/<sha256>` under the data directory. The original Unity tree is kept in `Source/`, with package PNG previews beside it in `Previews/`. Library registration, follow-up scan creation and completion of the import job share one SQLite transaction. A crash after directory publication can leave a reusable completed export on disk. A retry verifies the archive SHA-256 and reuses the output.
+
 The CLI and stdio MCP interfaces call `AssetIndex` directly. The MCP connector opens the database read-only and applies a library scope to every asset query.
 
-The Electron main process launches the loopback server in a UtilityProcess and injects an ephemeral authorization header in its dedicated browser session. The isolated renderer has a single folder-picker bridge. The desktop app prefers port 8178, permits a configured port, and can fall back to an ephemeral port. Indexed user metadata stays independent of the browser port.
+The Electron main process launches the loopback server in a UtilityProcess and injects an ephemeral authorization header in its dedicated browser session. The isolated renderer can choose a folder or resolve the path of a file selected or dropped in the importer. The desktop app prefers port 8178, permits a configured port, and can fall back to an ephemeral port. Indexed user metadata stays independent of the browser port.

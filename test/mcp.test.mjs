@@ -5,9 +5,9 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import { AssetIndex } from '../core/asset-index.mjs'
-import { ProcessingWorker } from '../core/processing-worker.mjs'
-import { ThumbnailCache } from '../core/thumbnail-cache.mjs'
+import { AssetIndex } from '../core/index/asset-index.mjs'
+import { ProcessingWorker } from '../core/processing/processing-worker.mjs'
+import { ThumbnailCache } from '../core/thumbnails/thumbnail-cache.mjs'
 import { testDirectory } from './server-fixture.mjs'
 
 test('stdio MCP exposes bounded read-only tools and filters the configured libraries', { timeout: 15000 }, async t => {

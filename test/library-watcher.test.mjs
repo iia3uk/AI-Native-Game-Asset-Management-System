@@ -4,9 +4,9 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
-import { AssetIndex } from '../core/asset-index.mjs'
-import { LibraryWatcher } from '../core/library-watcher.mjs'
-import { ProcessingWorker } from '../core/processing-worker.mjs'
+import { AssetIndex } from '../core/index/asset-index.mjs'
+import { LibraryWatcher } from '../core/processing/library-watcher.mjs'
+import { ProcessingWorker } from '../core/processing/processing-worker.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 
 async function eventually(read, predicate, message) {

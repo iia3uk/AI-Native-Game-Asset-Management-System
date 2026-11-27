@@ -1,5 +1,5 @@
-import { IndexConflictError, IndexInputError } from './index-errors.mjs'
-import { transaction } from './index-schema.mjs'
+import { IndexConflictError, IndexInputError } from '../index/index-errors.mjs'
+import { transaction } from '../index/index-schema.mjs'
 
 export const qualityFields = {
   maxVertices: { type: 'integer', min: 1, max: 1_000_000_000 },

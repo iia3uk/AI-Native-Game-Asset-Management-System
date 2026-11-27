@@ -5,9 +5,9 @@ import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { blenderModels, browserImages, browserModels, formatOrder, previewCandidates } from './formats.mjs'
+import { blenderModels, browserImages, browserModels, formatOrder, previewCandidates } from '../core/files/formats.mjs'
 import { connectUnityMaterials } from './unity-materials.mjs'
-import { discoverAssets, fileInfo, folderPath, pathKey } from '../core/asset-files.mjs'
+import { discoverAssets, fileInfo, folderPath, pathKey } from '../core/files/asset-files.mjs'
 
 const runFile = promisify(execFile)
 const exportScript = process.env.ASSET_VIEWER_BLEND_SCRIPT ?? fileURLToPath(new URL('./export-blend.py', import.meta.url))

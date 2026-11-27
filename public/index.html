@@ -173,6 +173,22 @@
         <button class="control primary-control">Подключить и сканировать</button>
       </div>
     </form>
+    <details id="package-importer" class="index-analysis">
+      <summary>Импорт пакетов Unity</summary>
+      <form id="package-form">
+        <label for="package-path">Полный путь к пакету</label>
+        <div class="folder-path-row">
+          <input id="package-path" maxlength="4096" autocomplete="off" spellcheck="false">
+          <button id="package-pick" type="button" class="control" hidden>Выбрать файлы…</button>
+          <button class="control">Проанализировать</button>
+        </div>
+        <input id="package-files" type="file" accept=".unitypackage" multiple hidden>
+      </form>
+      <p id="package-drop" class="notice" hidden>Можно перетащить сюда файлы .unitypackage.</p>
+      <p id="package-status" class="notice" role="status"></p>
+      <ul id="package-plans" class="index-results" aria-label="Содержимое выбранных пакетов"></ul>
+      <ul id="package-jobs" class="index-results" aria-label="Задания импорта"></ul>
+    </details>
     <form id="index-query" class="index-query">
       <div>
         <label for="index-library">Библиотека</label>

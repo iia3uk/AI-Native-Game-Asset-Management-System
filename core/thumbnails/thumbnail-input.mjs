@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { open } from 'node:fs/promises'
-import { checkedPath, fileInfo, sameFile } from './asset-files.mjs'
+import { checkedPath, fileInfo, sameFile } from '../files/asset-files.mjs'
 
 const thumbnailVersion = 1
 export const thumbnailSize = 160

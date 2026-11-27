@@ -13,7 +13,9 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
   for (const path of [
     'public/app.js',
     'public/index-thumbnail.js',
-    'core/thumbnail-render.mjs',
+    'core/thumbnails/thumbnail-render.mjs',
+    'core/packages/unity/import.mjs',
+    'public/package-importer/index.js',
     'node_modules/three/build/three.module.js',
     'node_modules/three/examples/jsm/controls/OrbitControls.js',
     'node_modules/three/examples/jsm/loaders/GLTFLoader.js',

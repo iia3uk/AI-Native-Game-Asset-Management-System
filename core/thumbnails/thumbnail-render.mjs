@@ -1,7 +1,7 @@
 import { parentPort, workerData } from 'node:worker_threads'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js'
-import { dependencyLocation } from './asset-analysis.mjs'
+import { dependencyLocation } from '../analysis/asset-analysis.mjs'
 import { readThumbnailSource } from './thumbnail-input.mjs'
 import { renderThumbnail } from './thumbnail-raster.mjs'
 

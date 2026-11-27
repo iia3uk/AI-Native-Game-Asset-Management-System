@@ -1,26 +1,31 @@
 import { existsSync } from 'node:fs'
-import { AssetIndex, IndexInputError } from './asset-index.mjs'
-import { fileInfo, ScanChangeError } from './asset-files.mjs'
-import { IndexConflictError } from './index-errors.mjs'
-import { LibraryWatcher } from './library-watcher.mjs'
-import { qualityFields } from './quality-profiles.mjs'
-import { ProcessingWorker } from './processing-worker.mjs'
-import { ThumbnailCache } from './thumbnail-cache.mjs'
-import { assetThumbnail } from './thumbnail-service.mjs'
+import { AssetIndex, IndexInputError } from '../index/asset-index.mjs'
+import { fileInfo, ScanChangeError } from '../files/asset-files.mjs'
+import { IndexConflictError } from '../index/index-errors.mjs'
+import { LibraryWatcher } from '../processing/library-watcher.mjs'
+import { qualityFields } from '../analysis/quality-profiles.mjs'
+import { ProcessingWorker } from '../processing/processing-worker.mjs'
+import { ThumbnailCache } from '../thumbnails/thumbnail-cache.mjs'
+import { assetThumbnail } from '../thumbnails/thumbnail-service.mjs'
+import { packageRoutes } from './package-routes.mjs'
 
-export function indexRoutes({ database, thumbnailDirectory, ignoredWatchPaths, json, body, allowsWrite, openFolder, invalidateFolder }) {
+export function indexRoutes({ database, thumbnailDirectory, importDirectory, ignoredWatchPaths,
+  json, body, allowsWrite, openFolder, invalidateFolder }) {
   let pendingIndex
   let worker
   let thumbnails
+  let importer
   let watcher
   const cache = new ThumbnailCache(thumbnailDirectory)
   const shutdown = new AbortController()
+  const packages = packageRoutes({ json, body, shutdown: shutdown.signal, wake: () => importer?.wake() })
 
   function openIndex() {
     return pendingIndex ??= AssetIndex.open(database).then(index => {
       if (!shutdown.signal.aborted) {
         worker = new ProcessingWorker(index, { onScanComplete: invalidateFolder })
         thumbnails = new ProcessingWorker(index, { type: 'thumbnail', cache })
+        importer = new ProcessingWorker(index, { type: 'package-import', importDirectory, onImportComplete: () => worker.wake() })
         watcher = new LibraryWatcher(index, () => worker.wake(), { ignoredPaths: ignoredWatchPaths })
         void cache.maintain().catch(error => console.error('Thumbnail cache:', error.message))
       }
@@ -47,6 +52,9 @@ export function indexRoutes({ database, thumbnailDirectory, ignoredWatchPaths, j
       return json(response, 503, { error: 'Индекс недоступен. Проверьте каталог данных и резервные копии.' })
     }
     try {
+      if (method === 'POST' && resource === 'packages' && !action && ['inspect', 'import'].includes(id)) {
+        return await packages(index, request, response, id)
+      }
       if (method === 'GET' && resource === 'libraries' && !id) return json(response, 200, { libraries: index.libraries() })
       if (method === 'POST' && resource === 'libraries' && !id) {
         const input = await body(request).catch(() => null)
@@ -79,7 +87,7 @@ export function indexRoutes({ database, thumbnailDirectory, ignoredWatchPaths, j
           const offset = Number(params.get('offset') ?? 0)
           const type = params.get('type')
           if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200 || !Number.isSafeInteger(offset) || offset < 0 ||
-              (type !== null && !['scan', 'thumbnail'].includes(type))) {
+              (type !== null && !['scan', 'thumbnail', 'package-import'].includes(type))) {
             return json(response, 400, { error: 'Недопустимые параметры страницы.' })
           }
           return json(response, 200, { jobs: index.jobs.list({ libraryId: params.get('library'), type, limit, offset }) })
@@ -96,6 +104,7 @@ export function indexRoutes({ database, thumbnailDirectory, ignoredWatchPaths, j
           const job = index.jobs.retry(id)
           if (!job) return json(response, 409, { error: 'Задание недоступно для повторного запуска.' })
           if (job.type === 'thumbnail') thumbnails?.wake()
+          else if (job.type === 'package-import') importer?.wake()
           else worker?.wake()
           return json(response, 202, { job })
         }
@@ -178,10 +187,12 @@ export function indexRoutes({ database, thumbnailDirectory, ignoredWatchPaths, j
       void watcher?.stop()
       void worker?.stop()
       void thumbnails?.stop()
+      void importer?.stop()
     },
     async close() {
       const index = await pendingIndex
       await watcher?.stop()
+      await importer?.stop()
       await worker?.stop()
       await thumbnails?.stop()
       await index?.close()

@@ -18,6 +18,7 @@ npm start
 Open [Asset Viewer](http://127.0.0.1:8177/). Choose **Демобиблиотека** for the included procedural demo. Choose **Индекс** and enter an absolute folder path to create a persistent library, scan files, and search by name, path, format, or saved metadata. The current viewer interface is in Russian.
 
 Select a connected library and turn on **Следить за папкой** to pick up file changes automatically while Asset Viewer is open.
+Open **Импорт пакетов Unity** in the index to inspect `.unitypackage` files, extract supported originals and add them to the same library index without running Unity.
 Open **Технический анализ** in an indexed file's details to inspect supported model metrics and their texture or buffer dependencies.
 Use **Проверка по профилю** to compare those measurements with editable project budgets.
 Use **Создать миниатюру** in an indexed model card to render a local PNG in the background. The index dialog shows thumbnail cache usage and can clear it.

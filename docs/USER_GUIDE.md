@@ -14,6 +14,23 @@ Select a result to edit its metadata or click **Открыть во вьювер
 
 Scans keep running if you close the index dialog. Open it and select the library to see progress or the last result. Use **Отменить сканирование** while a job is active. Use **Повторить задание** after a failure or interruption. Queued jobs persist across restarts.
 
+## Import a Unity package
+
+Open **Индекс → Импорт пакетов Unity**. In the desktop app, select or drop up to 16 `.unitypackage` files. In the browser, enter the full local path and click **Проанализировать**. Expand each file to see its contents and choose **Извлечь и добавить в индекс**. The jobs list shows extraction and indexing progress and offers cancellation or retry where available.
+
+Use **Показать в индексе** after the scan completes. Supported originals such as FBX, GLB and PNG retain their original bytes and `Assets/` or `Packages/` paths. The application copies them into its data directory and uses the existing viewer. The report shows unavailable and excluded entries. Native Unity scenes and prefabs can be retained as source files and remain marked as requiring further processing. No editor is required.
+
+The job result shows the output directory. It contains `Source/`, any supplied PNG previews in `Previews/`, and three reports, `manifest.json`, `dependencies.json` and `conversion-report.json`. Source paths, GUIDs, available file IDs, hashes and dependency status are recorded. Importing the same archive again reuses its output. Generated FBX and GLB, binary Unity decoding, and Unreal or Fab package import are pending.
+
+```sh
+npm run cli -- package-inspect "/absolute/path/example.unitypackage" --json
+npm run cli -- package-import "/absolute/path/example.unitypackage" --dry-run --json
+npm run cli -- package-import "/absolute/path/example.unitypackage" --json
+npm run cli -- jobs --type package-import --json
+```
+
+The default CLI command waits for extraction and indexing. Add `--queue` to hand processing to the running desktop app or loopback server.
+
 ## Generate model thumbnails
 
 In an indexed GLB, glTF, binary VRM or polygonal OBJ card, click **Создать миниатюру**. Generation runs in the background and uses the model's base geometry and glTF base colors at 160 × 160 pixels. The renderer supports triangle meshes within its size and complexity limits. Texture maps, animation, skinning, morphs, sparse accessors and Draco or meshopt compression are outside its support. Use **Открыть во вьювере** for interactive inspection.
@@ -62,7 +79,7 @@ Threshold updates through `--set-json` replace the saved limits for the selected
 
 ## Data, backups and export
 
-On Windows, the database and backups live under `%APPDATA%\AssetViewer`. Demo assets and cache data live under `%LOCALAPPDATA%\AssetViewer`. Other platforms use their application data and cache directories. `ASSET_VIEWER_DATA_DIR` overrides data paths with an absolute directory for source or desktop sessions.
+On Windows, the database, backups and imports live under `%APPDATA%\AssetViewer`. Demo assets and cache data live under `%LOCALAPPDATA%\AssetViewer`. Other platforms use their application data and cache directories. `ASSET_VIEWER_DATA_DIR` overrides data paths with an absolute directory for source or desktop sessions. SQLite backups contain index data. Keep a separate copy of the import directory when backing up extracted files.
 
 ```sh
 npm run cli -- doctor
