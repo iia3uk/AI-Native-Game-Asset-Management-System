@@ -18,8 +18,8 @@ internal sealed class SpriteReader(string member, BundleResources resources, boo
         if (!atlas.IsDummy && HasReference(atlas))
             throw new BundleException("unity-bundle-sprite-atlas");
         var settings = render["settingsRaw"];
-        // Allow either mesh type for an unpacked sprite with a rectangular pixel crop.
-        if (settings.IsDummy || (settings.AsUInt & ~0x40u) != 0)
+        // Native Unity 6.3 and 6.6 use these values for unpacked FullRect and Tight sprites.
+        if (settings.IsDummy || settings.AsUInt is not (0 or 0x40 or 0xc00 or 0xc40))
             throw new BundleException("unity-bundle-sprite-packing");
         var alpha = render["alphaTexture"];
         if (!alpha.IsDummy && HasReference(alpha))

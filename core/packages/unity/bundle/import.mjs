@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { artifactHash, ExportArtifacts, exportFolders } from '../../../conversion/artifacts.mjs'
+import { saveBundleAudio } from '../../../conversion/unity/bundle-audio.mjs'
 import { saveBundleMesh } from '../../../conversion/unity/bundle-mesh.mjs'
 import { saveBundleTexture } from '../../../conversion/unity/bundle-texture.mjs'
 import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
@@ -27,10 +28,9 @@ async function saveOutputs(workspace, source, hash, recipe, report, { withFbx, b
   for (const asset of report.assets) {
     signal?.throwIfAborted()
     let result = asset
-    if (asset.file) {
-      result = asset.format === 'glb' ? await saveBundleMesh(asset, results, store, assetsToolsVersion, fbx, signal) :
-        await saveBundleTexture(asset, results, store, assetsToolsVersion, signal)
-    }
+    if (asset.file && asset.format === 'glb') result = await saveBundleMesh(asset, results, store, assetsToolsVersion, fbx, signal)
+    if (asset.file && asset.format === 'png') result = await saveBundleTexture(asset, results, store, assetsToolsVersion, signal)
+    if (asset.file && asset.format === 'wav') result = await saveBundleAudio(asset, results, store, assetsToolsVersion)
     assets.push(result)
     counts[result.status] = (counts[result.status] ?? 0) + 1
     onProgress?.(50 + Math.floor(40 * assets.length / report.assets.length))

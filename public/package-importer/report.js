@@ -26,6 +26,17 @@ const packageIssues = {
   'unity-bundle-sprite-alpha': 'Раздельный альфа-канал спрайта не поддерживается',
   'unity-bundle-sprite-texture-reference': 'Текстура спрайта недоступна в этом разделе UnityFS',
   'unity-bundle-sprite-rect': 'Область спрайта выходит за границы текстуры или задана дробными координатами',
+  'unity-bundle-audio-resource': 'В клипе отсутствует ссылка на аудиоданные',
+  'unity-bundle-audio-stream-path': 'Клип ссылается за пределы своего раздела UnityFS',
+  'unity-bundle-audio-stream-missing': 'Раздел с аудиоданными отсутствует',
+  'unity-bundle-audio-stream-range': 'Аудиоданные выходят за границы раздела',
+  'unity-bundle-audio-bank-format': 'Версия банка аудиоданных не поддерживается',
+  'unity-bundle-audio-codec': 'Для аудио UnityFS поддерживается PCM 16 бит',
+  'unity-bundle-audio-bank-layout': 'Структура банка аудиоданных не поддерживается',
+  'unity-bundle-audio-bank-size': 'Данных банка недостаточно или его размер повреждён',
+  'unity-bundle-audio-metadata': 'Параметры клипа расходятся с аудиоданными',
+  'unity-bundle-audio-size': 'WAV превышает лимит 32 МБ',
+  'unity-bundle-audio-output': 'Экспортированный WAV не прошёл проверку',
   'unreal-pak-encrypted-entry': 'Запись зашифрована',
   'unreal-pak-invalid-payload': 'Файл не прошёл проверку формата',
   'unreal-pak-orphan-companion': 'Отсутствует связанный пакет Unreal',
@@ -35,14 +46,15 @@ const packageIssues = {
 
 const artifactRoles = {
   prefab: 'Префаб', component: 'Компонент', mesh: 'Меш',
-  animation: 'Анимация', texture: 'Текстура', material: 'Материал',
+  animation: 'Анимация', texture: 'Текстура', material: 'Материал', audio: 'Аудио',
 }
 
 export const describeIssue = issue => packageIssues[issue] ?? issue
 
 export function assetLabel(asset) {
   const sprite = asset.sprite && `Спрайт ${asset.width} × ${asset.height} (текстура #${asset.sprite.texturePathId})`
-  return asset.sourcePath ?? asset.path ?? [asset.name, sprite, asset.textureEncoding?.toUpperCase(),
+  const audio = asset.audio && `PCM 16 бит, ${asset.audio.sampleRate} Гц, ${asset.audio.channels} кан.`
+  return asset.sourcePath ?? asset.path ?? [asset.name, sprite, audio, asset.textureEncoding?.toUpperCase(),
     [asset.member, asset.pathId].filter(Boolean).join(' #')].filter(Boolean).join(' · ')
 }
 

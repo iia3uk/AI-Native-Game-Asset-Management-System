@@ -1,4 +1,5 @@
 import { ModelStage } from './preview/stage.js'
+import { createAudioPreview } from './preview/loaders/audio-preview.js'
 import { convertedImages, decodedImages, decodedImageUrl } from './preview/loaders/image-preview.js'
 import { isDataMap } from './preview/materials/textures.js'
 import { isCollisionFile, visualModelFor } from './shared/model-names.js'
@@ -16,7 +17,7 @@ import { mountIndex } from './library/index.js'
 const $ = id => document.getElementById(id)
 const ui = Object.fromEntries([
   'all-packs', 'candidate-packs', 'candidate-count', 'library-stats', 'search', 'category', 'result-count', 'pack-list',
-  'pack-category', 'pack-title', 'pack-author', 'stage-canvas', 'stage-image', 'stage-empty', 'stage-label',
+  'pack-category', 'pack-title', 'pack-author', 'stage-canvas', 'stage-image', 'stage-audio', 'stage-empty', 'stage-label',
   'fit', 'zoom-in', 'zoom-out', 'rotate', 'wireframe', 'texture-tools', 'texture-variant', 'animation-tools', 'animation', 'animation-in-place', 'play', 'model-stats',
   'view-options', 'lighting', 'part-tools', 'preview-part', 'color-source',
   'selected-name', 'decision', 'note', 'save-note', 'notice', 'file-tabs', 'file-search', 'file-list',
@@ -63,6 +64,7 @@ function manualTextureScope() {
 }
 
 const thumbnails = new ModelThumbnails(ui['pack-list'])
+const audioPreview = createAudioPreview(ui['stage-audio'], status)
 const categoryMatches = (pack, file) => !ui.category.value || (file.kind === 'model' && modelCategory(pack, file) === ui.category.value)
 const eligibleFile = (pack, file) => categoryMatches(pack, file) &&
   (!state.candidates || state.marks[markKey(pack.id, file.id)]?.status === 'candidate')
@@ -256,6 +258,7 @@ async function selectFile(file) {
   state.previewFailed = false
   rememberLocation()
   stage?.clear()
+  audioPreview.clear()
   ui['stage-image'].hidden = true
   ui['stage-image'].onload = ui['stage-image'].onerror = null
   ui['stage-image'].removeAttribute('src')
@@ -302,6 +305,7 @@ async function selectFile(file) {
   renderFiles(true)
   renderDecision()
   if (!file) return status(state.folder ? 'В папке нет подходящих файлов.' : 'В этом наборе нет выбранного файла.')
+  if (audioPreview.show(file)) return status('')
   if (file.kind === 'image' && (file.preview || decodedImages.has(file.ext))) {
     let preview = file.preview
     if (!preview) {

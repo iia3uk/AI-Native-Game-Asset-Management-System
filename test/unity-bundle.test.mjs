@@ -15,6 +15,7 @@ import { bundleDecoderRevision, bundleResult } from '../core/engines/unity/bundl
 import { locateBundleWorker } from '../core/engines/unity/bundle/run.mjs'
 import { buildAssetBundleFixture } from './fixtures/unity-bundle/project.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
+import { verifyBundleAudio } from './unity-bundle/audio.mjs'
 import { readTexture } from './unity-bundle/png.mjs'
 import { verifyBundleSprites } from './unity-bundle/sprites.mjs'
 
@@ -81,16 +82,24 @@ test('UnityFS validates decoder reports and rejects non-bundle sources without t
     { ...sprite.sprite, x: -1 }, { ...sprite.sprite, y: 2047 }, { ...sprite.sprite, x: 1.5 }]) {
     assert.equal(bundleResult({ ...report, assets: [row, { ...sprite, sprite: invalid }] }, false), null)
   }
+  const audio = { member: 'CAB-123', pathId: '-110', classId: 83, status: 'decoded', issue: null,
+    name: 'Sound', format: 'wav', bytes: 444, output: 0, audio: { channels: 2, sampleRate: 44100, frames: 100 } }
+  assert.deepEqual(bundleResult({ ...report, assets: [audio] }, false).assets[0].audio, audio.audio)
+  for (const invalid of [null, { ...audio.audio, channels: 6 }, { ...audio.audio, sampleRate: 0 },
+    { ...audio.audio, frames: 0 }, { ...audio.audio, frames: 32 * 1024 ** 2 }, { ...audio.audio, frames: 101 }]) {
+    assert.equal(bundleResult({ ...report, assets: [{ ...audio, audio: invalid }] }, false), null)
+  }
 })
 
-test('Unity builds native UnityFS bundles and the independent worker indexes texture, sprite and static mesh outputs', {
+test('Unity builds native UnityFS bundles and the independent worker indexes textures, sprites, meshes and audio', {
   skip: process.env.ASSET_VIEWER_TEST_NATIVE_BUNDLE !== '1', timeout: 180_000,
 }, async t => {
   const root = await testDirectory(t)
   const version = process.env.ASSET_VIEWER_TEST_UNITY_VERSION || '6000.3.10f1'
   const { editor, match } = await locateUnityBridge(version)
   assert.equal(match, 'exact', 'The native fixture requires the requested Unity Editor version')
-  assert.ok(await locateBundleWorker(), 'Run npm run build:unity-bundle before the native test')
+  const worker = await locateBundleWorker()
+  assert.ok(worker, 'Run npm run build:unity-bundle before the native test')
   const input = await buildAssetBundleFixture(root, editor)
   const before = await readFile(input)
   const data = join(root, 'data')
@@ -242,4 +251,6 @@ test('Unity builds native UnityFS bundles and the independent worker indexes tex
   }
   const spriteData = join(root, 'sprite-data')
   await verifyBundleSprites(root, spriteData, client(spriteData))
+  const audioData = join(root, 'audio-data')
+  await verifyBundleAudio(root, audioData, client(audioData), worker)
 })

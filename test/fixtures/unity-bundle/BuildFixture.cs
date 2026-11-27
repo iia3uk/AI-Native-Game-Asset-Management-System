@@ -30,6 +30,7 @@ public static class AssetViewerBundleFixture
 
         var textures = BundleFixtureTextures.Create(root);
         var sprites = BundleFixtureSprites.Create(root);
+        var audio = BundleFixtureAudio.Create(root);
         AssetDatabase.SaveAssets();
 
         var output = Path.GetFullPath(Path.Combine(Application.dataPath, "../..", "Bundles"));
@@ -39,9 +40,10 @@ public static class AssetViewerBundleFixture
             assetBundleName = "fixture.bundle",
             assetNames = new[] { root + "/Triangle.asset", root + "/Line.asset" }.Concat(textures).ToArray()
         };
-        var mappings = new[] { mapping, new AssetBundleBuild {
-            assetBundleName = "sprites.bundle", assetNames = sprites,
-        } };
+        var mappings = new[] { mapping,
+            new AssetBundleBuild { assetBundleName = "sprites.bundle", assetNames = sprites },
+            new AssetBundleBuild { assetBundleName = "audio.bundle", assetNames = audio },
+        };
         if (BuildPipeline.BuildAssetBundles(output, mappings,
             BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.StrictMode,
             BuildTarget.StandaloneWindows64) == null)

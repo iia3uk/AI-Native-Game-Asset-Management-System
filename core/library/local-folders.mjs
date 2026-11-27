@@ -31,7 +31,7 @@ export async function scanFolder(path, { canonical = false } = {}) {
     const url = '/local-files/' + id + '/' + encodePath(path)
     const file = {
       id: hash(path), name: filename, path, displayPath: path, ext, kind, size, url,
-      preview: browserModels.has(ext) || browserImages.has(ext) ? url : null,
+      preview: browserModels.has(ext) || browserImages.has(ext) || ext === 'wav' ? url : null,
     }
     if (blenderModels.has(ext)) file.convertible = true
     files.set(path, file)

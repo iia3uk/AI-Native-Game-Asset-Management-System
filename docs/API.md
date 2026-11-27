@@ -38,6 +38,8 @@ For a UnityFS container, package inspection returns `format: "unityfs"`, `contai
 
 Supported UnityFS sprites have class ID 213 and publish individual PNGs. Inspection and manifest entries include `width`, `height` and `sprite: { texturePathId, x, y }`. The texture path ID refers to a Texture2D in the same serialized member. The coordinates are integer pixels from the lower left of the texture, and the PNG stores rows from the top. The dependency report lists verified `sprite-texture` links and marks coverage as partial.
 
+Supported UnityFS audio clips have class ID 83 and publish 16-bit PCM WAV files under `Audio/`. Inspection and manifest entries include `audio: { channels, sampleRate, frames }`. The artifact method is `assetstools-unityfs-fsb5-pcm16`. Indexed WAV files can be opened using the existing asset viewer route and served with byte ranges.
+
 For a Pak archive, inspection returns `format: "unreal-pak"`, `containerVersion`, `hash`, `total` and up to 500 entries in `assets`. Import accepts `auto` or `engineless` with no export formats or editor version. Pak jobs extract supported originals and report `report.packageFormat: "unreal-pak"`. The manifest page includes archive paths, extracted file hashes and reasons for skipped entries.
 
 Failed scans preserve the last committed index. Disconnection and removal of original files retain history. Search excludes disconnected and missing assets.

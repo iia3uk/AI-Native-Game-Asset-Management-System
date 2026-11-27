@@ -92,6 +92,7 @@ select { appearance: none; padding: 0 27px 0 10px; }
 .stage-canvas { position: absolute; inset: 0; }
 .stage-canvas canvas { display: block; width: 100%; height: 100%; outline-offset: -4px; touch-action: none; }
 .asset-image { position: absolute; inset: 6% 8%; width: 84%; height: 88%; object-fit: contain; }
+.asset-audio { position: absolute; top: 50%; left: 50%; width: min(360px, 84%); transform: translate(-50%, -50%); }
 .stage-empty { position: absolute; z-index: 2; inset: 0; display: grid; place-content: center; text-align: center; padding: 32px; pointer-events: none; }
 .stage-empty span { max-width: 370px; color: #ebeddf; padding: 12px 18px; border-radius: 8px; background: #172018e8; border: 1px solid #465747; font-size: 15px; }
 .stage-label { position: absolute; top: 13px; left: 13px; z-index: 1; max-width: calc(100% - 26px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; padding: 6px 9px; border-radius: 6px; color: #cfdebe; background: #142117dc; border: 1px solid #4c6250; pointer-events: none; }

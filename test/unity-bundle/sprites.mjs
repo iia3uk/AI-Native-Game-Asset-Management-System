@@ -55,12 +55,13 @@ export async function verifyBundleSprites(root, data, query) {
   const offset = native.indexOf(rect)
   assert.ok(offset >= 0, 'Find the serialized LowerSprite texture rectangle')
   assert.equal(native.lastIndexOf(rect), offset)
-  assert.equal(native.readUInt32LE(offset + rect.length), 0)
+  const settings = native.readUInt32LE(offset + rect.length)
+  assert.ok([0, 0xc00].includes(settings))
   const lower = available.find(asset => asset.name === 'LowerSprite')
   for (const [label, issue, edit] of [
     ['outside', 'rect', bytes => bytes.writeFloatLE(8, offset)],
     ['fractional', 'rect', bytes => bytes.writeFloatLE(1.5, offset)],
-    ['packed', 'packing', bytes => bytes.writeUInt32LE(1, offset + rect.length)],
+    ['packed', 'packing', bytes => bytes.writeUInt32LE(settings | 1, offset + rect.length)],
   ]) {
     const malformed = Buffer.from(native)
     edit(malformed)

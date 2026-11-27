@@ -1,6 +1,7 @@
 using System.Globalization;
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
+using AssetViewer.UnityBundle.Objects.Audio;
 using AssetViewer.UnityBundle.Objects.Mesh;
 using AssetViewer.UnityBundle.Objects.Sprites;
 using AssetViewer.UnityBundle.Objects.Textures;
@@ -67,16 +68,19 @@ internal static class BundleObjects
     private static Asset ReadObject(AssetsManager manager, AssetsFileInstance member, AssetFileInfo info,
         Asset row, BundleResources resources, SpriteReader sprites, bool inspectOnly, int output, ref long outputLimit)
     {
-        if (row.ClassId is not (28 or 43 or 213)) return row;
+        if (row.ClassId is not (28 or 43 or 83 or 213)) return row;
         if (!member.file.Metadata.TypeTreeEnabled) return row with { Issue = "unity-bundle-type-tree" };
         if (info.ByteSize > 32L << 20) return row with { Issue = "unity-bundle-object-size" };
         Product product;
         try
         {
             var field = manager.GetBaseField(member, info);
+            var name = field["m_Name"].AsString;
+            row = row with { Name = name.Length > 160 ? name[..160] : name };
             product = row.ClassId switch
             {
                 28 => Texture2D.Read(field, row.Member, resources, inspectOnly, outputLimit),
+                83 => AudioClip.Read(field, row.Member, resources, inspectOnly, outputLimit),
                 213 => sprites.Read(field, outputLimit),
                 _ => StaticMesh.Read(field).ToProduct(inspectOnly),
             };
@@ -91,7 +95,7 @@ internal static class BundleObjects
         }
         var available = row with { Name = product.Name, Format = product.Format, Width = product.Width, Height = product.Height,
             TextureEncoding = product.TextureEncoding, TextureStorage = product.TextureStorage, Sprite = product.Sprite,
-            Vertices = product.Vertices, Triangles = product.Triangles, Status = "available", Issue = null };
+            Vertices = product.Vertices, Triangles = product.Triangles, Audio = product.Audio, Status = "available", Issue = null };
         if (inspectOnly) return available;
         if (product.Bytes.Length > outputLimit) return row with { Issue = "unity-bundle-output-limit" };
         using var target = new FileStream(Path.Combine("output", $"{output}.{product.Format}"), FileMode.CreateNew);

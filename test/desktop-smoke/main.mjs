@@ -9,6 +9,7 @@ import { generateFixtures } from '../../scripts/generate-fixtures.mjs'
 import { verifyPackageFolder } from './package-folder.mjs'
 import { verifyPackageWatch } from './package-watch.mjs'
 import { verifyStartupWithoutInterface } from './startup.mjs'
+import { verifyUnityAudio } from './unity-audio.mjs'
 import { verifyUnityBundle } from './unity-bundle.mjs'
 import { verifyUnitySprites } from './unity-sprites.mjs'
 import { verifyUnrealPak } from './unreal-pak.mjs'
@@ -159,10 +160,12 @@ void startDesktop(root, { showWindow: false }).then(async ({ window, origin }) =
   await verifyPackageFolder(webContents, waitFor, join(process.env.ASSET_VIEWER_DATA_DIR, 'incoming-packages'))
   const bundle = process.env.ASSET_VIEWER_SMOKE_BUNDLE
   const sprites = process.env.ASSET_VIEWER_SMOKE_SPRITES
+  const audio = process.env.ASSET_VIEWER_SMOKE_AUDIO
   const pak = process.env.ASSET_VIEWER_SMOKE_PAK === '1'
   await verifyPackageWatch(webContents, waitFor, fixtures, { bundle, pak })
   if (bundle) await verifyUnityBundle(webContents, waitFor, bundle)
   if (sprites) await verifyUnitySprites(webContents, waitFor, sprites)
+  if (audio) await verifyUnityAudio(webContents, waitFor, audio)
   if (pak) await verifyUnrealPak(webContents, waitFor, fixtures)
   await verifyStartupWithoutInterface()
   assert.deepEqual(externalRequests, [])
@@ -170,6 +173,7 @@ void startDesktop(root, { showWindow: false }).then(async ({ window, origin }) =
   console.log('Desktop startup, demo, library watching, thumbnail cache, analysis, metadata, single-file, folder and watched Unity import, PBR material preview and renderer isolation passed.')
   if (bundle) console.log('UnityFS folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
   if (sprites) console.log('UnityFS sprite inspection, queued import, dependency reporting and indexed PNG preview passed.')
+  if (audio) console.log('UnityFS PCM inspection, queued import, local byte ranges and indexed WAV playback passed.')
   if (pak) console.log('Unreal Pak folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
   app.quit()
 }).catch(error => {

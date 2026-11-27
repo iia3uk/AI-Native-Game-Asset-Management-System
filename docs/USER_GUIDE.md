@@ -50,7 +50,7 @@ The default CLI command waits for extraction and indexing. Add `--queue` to hand
 
 ## Inspect and import a Unity AssetBundle
 
-The importer recognizes stock UnityFS by its file signature. Select or drop a bundle in **Импорт пакетов Unity и Unreal**, or enter its path and click **Проанализировать**. Expand the result for the container version, Unity version and serialized object IDs. **Обработать и добавить в индекс** queues PNG and GLB output. Select **FBX** to request an additional Blender export. UnityFS always uses the independent decoder, including when it is submitted with `.unitypackage` files configured to use Unity Editor.
+The importer recognizes stock UnityFS by its file signature. Select or drop a bundle in **Импорт пакетов Unity и Unreal**, or enter its path and click **Проанализировать**. Expand the result for the container version, Unity version and serialized object IDs. **Обработать и добавить в индекс** queues PNG, GLB and WAV output for supported objects. Select **FBX** to request an additional Blender export. UnityFS always uses the independent decoder, including when it is submitted with `.unitypackage` files configured to use Unity Editor.
 
 The Windows app includes the decoder. For source runs, follow the [worker build instructions](BUILD.md). The same interface is available in the CLI:
 
@@ -64,6 +64,8 @@ Inspection lists the archive and Unity versions and up to 500 serialized objects
 
 Unpacked sprites with an integer pixel rectangle and a supported base texture in the same serialized member produce individual `Sprite-*.png` files. Multiple sprites can come from one sheet. Their PNGs keep the source transparency, and the report records each rectangle and texture reference. Packed atlases, separate alpha textures and cross-member sprite references are reported as unsupported. [Unity Sprite API](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/Sprite.html).
 
+Mono and stereo AudioClips with 16-bit PCM in a single-sound FSB5 bank produce WAV files with the same sample values and sample rate. Open a WAV result from the index with **Открыть во вьюере** to play it. Export supports an embedded `.resource` entry and a maximum WAV size of 32 MiB. Vorbis, other codecs and external resource references are reported individually. [Unity audio import settings](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/AudioImporterSampleSettings.html).
+
 The report marks unsupported layouts and classes. Meshes with skinning, blend shapes, mesh compression, extra vertex attributes or multiple vertex streams are outside the current decoder. Streamed textures, additional pixel formats, material bindings and bundle dependency analysis remain pending. A repeated import with the same SHA-256, output formats and tool versions reuses verified results.
 
 ## Automatically import packages from a folder
@@ -71,7 +73,7 @@ The report marks unsupported layouts and classes. Meshes with skinning, blend sh
 Open **Индекс**, connect the incoming folder, select it under **Библиотека**, then expand **Автоимпорт пакетов** and enable the formats you want. The app checks existing files and new or changed files in subfolders while it is running. It confirms the format from the contents before extracting anything. Results are indexed in managed libraries, and progress and reports appear in **Импорт пакетов Unity и Unreal**.
 
 - **.unitypackage** extracts the originals and requests FBX and GLB for supported models.
-- **UnityFS** watches `.bundle` and `.unity3d`, decodes supported textures, sprites and static meshes, and requests FBX where Blender is available.
+- **UnityFS** watches `.bundle` and `.unity3d`, decodes supported textures, sprites, static meshes and audio, and requests FBX where Blender is available.
 - **Unreal Pak** watches `.pak` and extracts supported original files using the independent CUE4Parse worker.
 
 Turning off a format cancels its active automatic imports for that folder. The settings and SHA-256 history survive restarts. Use **Повторить** in a job row to retry a failed, interrupted or cancelled import. For a renamed archive, use manual inspection to detect the format by contents.
