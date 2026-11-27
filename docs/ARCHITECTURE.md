@@ -47,6 +47,8 @@ Schema 9 adds the mode and requested Unity version to the job and to the cache r
 
 `core/packages/unity/bundle/` handles UnityFS source selection and publication. `core/engines/unity/bundle/` manages the AssetsTools.NET worker and validates its responses. Inside the worker, `UnityFs/` validates the bundle and reads serialized object identities, `Objects/` decodes textures and meshes, and `Formats/` writes the GLB. `core/conversion/unity/` publishes PNG and GLB outputs and can request an FBX through the existing Blender adapter. Both independent workers use the shared process runner, artifact store and asset index.
 
+`core/packages/detect.mjs` checks the source signature. `core/packages/dispatch.mjs` routes Unity package and UnityFS imports from the HTTP API, CLI and processing queue. UnityFS reuses the staged publication transaction and output scan. Its cache keys include input SHA-256, decoder recipe and optional Blender identity. The Windows package includes the self-contained worker under `resources/unity-bundle/`.
+
 `core/engines/blender/batch.mjs` runs the bundled Python adapter for formats that need conversion. The adapter stages OBJ and glTF dependencies, imports each model once and uses the same scene for the requested derivatives. Legacy previews and package conversions share a serial Blender runner within the server process. The two features have separate scripts and timeout policies.
 
 The CLI and stdio MCP interfaces call `AssetIndex` directly. The MCP connector opens the database read-only and applies a library scope to every asset query.
@@ -54,3 +56,5 @@ The CLI and stdio MCP interfaces call `AssetIndex` directly. The MCP connector o
 The Electron main process launches the loopback server in a UtilityProcess and injects an ephemeral authorization header in its dedicated browser session. The isolated renderer can choose a folder or resolve the path of a file selected or dropped in the importer. The desktop app prefers port 8178, permits a configured port, and can fall back to an ephemeral port. Indexed user metadata stays independent of the browser port.
 
 `npm run desktop` opens an interactive window. `npm run test:desktop` uses the same bootstrap with a hidden window and an isolated data directory. Set `ASSET_VIEWER_SMOKE_SCREENSHOT` to save a capture of the demo during the test.
+
+`desktop/window/startup.mjs` waits for the viewer script and the first paint before showing the interactive window. Startup timeouts and renderer exits write `desktop-error.log` in the application log directory and show a native error.

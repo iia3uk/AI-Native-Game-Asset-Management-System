@@ -802,6 +802,8 @@ ui.animation.addEventListener('change', () => {
 })
 ui['animation-in-place'].addEventListener('change', () => stage?.setInPlace(ui['animation-in-place'].checked))
 
+document.documentElement.dataset.viewerReady = 'true'
+
 try {
   const query = new URLSearchParams(location.search)
   const [index, review, config] = await Promise.all([json('/api/library').catch(() => ({ packs: [] })),

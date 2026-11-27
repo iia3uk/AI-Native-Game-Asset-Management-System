@@ -5,7 +5,7 @@ import { IndexInputError } from '../index/index-errors.mjs'
 import { ScanChangeError } from '../files/asset-files.mjs'
 import { thumbnailCurrent } from '../thumbnails/thumbnail-input.mjs'
 import { packageSource, watchedPackageSource } from '../packages/unity/paths.mjs'
-import { stageUnityPackage } from '../packages/unity/import.mjs'
+import { stagePackage } from '../packages/dispatch.mjs'
 
 const timeouts = { scan: 300_000, thumbnail: 25_000, 'package-import': 600_000 }
 const operation = { scan: 'сканирования библиотеки', thumbnail: 'создания миниатюры', 'package-import': 'импорта пакета' }
@@ -109,13 +109,13 @@ export class ProcessingWorker {
   async #import(job, signal, onProgress) {
     const watched = this.index.jobs.watchedImportSource(job.id)
     const source = watched ? await watchedPackageSource(watched) : await packageSource(this.index.jobs.importSource(job.id))
-    await stageUnityPackage(this.importDirectory, source, job.sourceKey, {
-      signal, onProgress, formats: job.exportFormats, mode: job.engineMode, editorVersion: job.editorVersion,
-      publish: (result, move) => {
+    await stagePackage(this.importDirectory, source, job, {
+      signal, onProgress,
+      publish: (result, move, hasAssets) => {
         signal.throwIfAborted()
         return this.index.jobs.completeImport(job.id, this.#id, () => {
           move()
-          const library = result.report.written ? this.index.registerLibrary(result.source, source.name) : null
+          const library = hasAssets ? this.index.registerLibrary(result.source, source.name) : null
           return { library, directory: result.directory, report: result.report, reused: result.reused }
         })
       },

@@ -1,8 +1,8 @@
-import { app, dialog } from 'electron'
+import { app } from 'electron'
 import { startDesktop } from './bootstrap.mjs'
+import { showDesktopFailure } from './window/failure.mjs'
 
 void startDesktop().catch(error => {
-  console.error(error.message)
-  if (process.env.ASSET_VIEWER_DESKTOP_DIAGNOSTICS !== '1') dialog.showErrorBox('Asset Viewer', error.message)
+  showDesktopFailure(error)
   app.exit(1)
 })

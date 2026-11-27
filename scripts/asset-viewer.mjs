@@ -7,12 +7,10 @@ import { dataPaths } from '../core/config/data-paths.mjs'
 import { ProcessingWorker } from '../core/processing/processing-worker.mjs'
 import { ThumbnailCache } from '../core/thumbnails/thumbnail-cache.mjs'
 import { assetThumbnail } from '../core/thumbnails/thumbnail-service.mjs'
-import { inspectUnityPackage } from '../core/packages/unity/inspect.mjs'
+import { inspectPackage, packageOptions } from '../core/packages/dispatch.mjs'
 import { packageSource } from '../core/packages/unity/paths.mjs'
 import { importUnityBundle } from '../core/packages/unity/bundle/import.mjs'
 import { engineInventory } from '../core/engines/inventory.mjs'
-import { packageExportFormats } from '../core/conversion/formats.mjs'
-import { unityImportOptions } from '../core/engines/unity/options.mjs'
 import { inspectUnreal } from '../core/packages/unreal/inspect.mjs'
 import { exportUnrealWithEditor } from '../core/packages/unreal/export.mjs'
 import { extractUnrealPak } from '../core/packages/unreal/extract.mjs'
@@ -102,7 +100,7 @@ async function runPackageOperation(paths, label, operation) {
   for (const event of ['SIGINT', 'SIGTERM']) process.once(event, abort)
   try {
     const report = await operation({ directory: paths.imports, signal: stop.signal })
-    if (!report.output) {
+    if (!report.output || report.status === 'no-compatible-inputs') {
       if (report.status !== 'completed') process.exitCode = 1
       return report
     }
@@ -218,11 +216,12 @@ async function main([command, ...args]) {
     extractUnrealPak(input, { ...options, inspectOnly: values.inspect })), values.json)
   if (command === 'package-inspect' || command === 'package-import') {
     if (values.queue && values['dry-run']) throw new IndexInputError('Use only one of --queue or --dry-run.')
-    const options = unityImportOptions(values.mode, values['unity-version'])
-    const exportFormats = packageExportFormats(values.export?.split(',')) || (options.mode === 'engineless' ? '' : 'fbx,glb')
     const source = await packageSource(input)
-    const report = await inspectUnityPackage(source, { signal: AbortSignal.timeout(120_000) })
+    const report = await inspectPackage(source, { signal: AbortSignal.timeout(120_000) })
     if (command === 'package-inspect') return print(report, values.json)
+    const { formats: exportFormats, ...options } = packageOptions(report.format, {
+      mode: values.mode, editorVersion: values['unity-version'], formats: values.export?.split(','),
+    })
     if (values['dry-run']) return print({ dryRun: true, ...report, ...options,
       ...(exportFormats && { exportFormats: exportFormats.split(',') }) }, values.json)
     const index = await AssetIndex.open(paths.database)

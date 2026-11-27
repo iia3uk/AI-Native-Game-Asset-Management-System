@@ -16,7 +16,7 @@ Scans keep running if you close the index dialog. Open it and select the library
 
 ## Import a Unity package
 
-Open **Индекс → Импорт пакетов Unity**. In the desktop app, select or drop up to 16 `.unitypackage` files. In the browser, enter the full local path and click **Проанализировать**. Expand a package to see its contents. Select **FBX** or **GLB-предпросмотр** to request model exports, then choose **Обработать и добавить в индекс**. With multiple packages analyzed, **Обработать все пакеты** queues the remaining packages with the same formats. The jobs list displays progress and offers cancellation or retry where available.
+Open **Индекс → Импорт пакетов Unity**. In the desktop app, select or drop up to 16 `.unitypackage` or UnityFS files. In the browser, enter the full local path and click **Проанализировать**. Expand a package to see its contents. Select **FBX** or **GLB-предпросмотр** to request model exports, then choose **Обработать и добавить в индекс**. With multiple packages analyzed, **Обработать все пакеты** queues the remaining packages with the same formats. The jobs list displays progress and offers cancellation or retry where available.
 
 Use **Показать в индексе** after the scan completes. Supported originals such as FBX, GLB and PNG retain their original bytes and `Assets/` or `Packages/` paths. The application copies them into its data directory and uses the existing viewer. The report shows unavailable and excluded entries.
 
@@ -41,17 +41,19 @@ The default CLI command waits for extraction and indexing. Add `--queue` to hand
 
 ## Inspect and import a Unity AssetBundle
 
-The CLI recognizes stock UnityFS by its file signature. Follow the [worker build instructions](BUILD.md), then run:
+The importer recognizes stock UnityFS by its file signature. Select or drop a bundle in **Импорт пакетов Unity**, or enter its path and click **Проанализировать**. Expand the result for the container version, Unity version and serialized object IDs. **Обработать и добавить в индекс** queues PNG and GLB output. Select **FBX** to request an additional Blender export. UnityFS always uses the independent decoder, including when it is submitted with `.unitypackage` files configured to use Unity Editor.
+
+The Windows app includes the decoder. For source runs, follow the [worker build instructions](BUILD.md). The same interface is available in the CLI:
 
 ```sh
-npm run cli -- unity-bundle "/absolute/path/example.bundle" --inspect --json
-npm run cli -- unity-bundle "/absolute/path/example.bundle" --json
-npm run cli -- unity-bundle "/absolute/path/example.bundle" --fbx --json
+npm run cli -- package-inspect "/absolute/path/example.bundle" --json
+npm run cli -- package-import "/absolute/path/example.bundle" --json
+npm run cli -- package-import "/absolute/path/example.bundle" --export fbx --queue --json
 ```
 
-Inspection lists the archive and Unity versions and up to 500 serialized objects with their IDs and support status. The worker handles stored and LZ4 blocks. It reads embedded type trees and publishes inline RGBA32 textures as PNG. It exports supported static triangle meshes as GLB with positions, normals, UV0 and separate submeshes. Add `--fbx` to request an FBX through Blender. If Blender is unavailable, the GLB and PNG still reach the index.
+Inspection lists the archive and Unity versions and up to 500 serialized objects with their IDs and support status. The worker handles stored and LZ4 blocks. It reads embedded type trees and publishes inline RGBA32 textures as PNG. It exports supported static triangle meshes as GLB with positions, normals, UV0 and separate submeshes. If Blender is unavailable, the GLB and PNG still reach the index.
 
-The report marks unsupported layouts and classes. Meshes with skinning, blend shapes, mesh compression, extra vertex attributes or multiple vertex streams are outside the current decoder. Streamed textures, additional pixel formats, material bindings, dependency analysis, conversion cache and background jobs remain pending.
+The report marks unsupported layouts and classes. Meshes with skinning, blend shapes, mesh compression, extra vertex attributes or multiple vertex streams are outside the current decoder. Streamed textures, additional pixel formats, material bindings and bundle dependency analysis remain pending. A repeated import with the same SHA-256, output formats and tool versions reuses verified results.
 
 ## Automatically import a Unity package folder
 

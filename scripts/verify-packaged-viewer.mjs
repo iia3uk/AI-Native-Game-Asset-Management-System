@@ -13,6 +13,8 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
   const resources = join(appOutDir, 'resources')
   const archive = join(resources, 'app.asar')
   for (const path of [
+    'desktop/window/startup.mjs',
+    'desktop/window/failure.mjs',
     'public/app.js',
     'public/catalog/classification.js',
     'public/catalog/pack-list.js',
@@ -33,6 +35,10 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'public/styles/viewer.css',
     'core/thumbnails/thumbnail-render.mjs',
     'core/packages/unity/import.mjs',
+    'core/packages/dispatch.mjs',
+    'core/packages/detect.mjs',
+    'core/packages/unity/bundle/cache.mjs',
+    'core/packages/unity/bundle/source.mjs',
     'core/packages/unity/bundle/import.mjs',
     'core/packages/unreal/extract.mjs',
     'core/engines/inventory.mjs',
@@ -55,6 +61,12 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     if (!statFile(archive, normalize(path)).size) throw new Error('Missing renderer dependency in app.asar: ' + path)
   }
   await access(join(resources, 'app.asar.unpacked', 'scripts', 'export-blend.py'))
+  for (const path of [
+    'AssetViewer.UnityBundle.exe', 'AssetViewer.UnityBundle.dll', 'AssetsTools.NET.dll', 'coreclr.dll',
+    'Notices/AssetsTools.NET.LICENSE.txt', 'Notices/LICENSE.TXT', 'Notices/THIRD-PARTY-NOTICES.TXT',
+  ]) {
+    await access(join(resources, 'unity-bundle', path))
+  }
   for (const script of ['batch.py', 'stage_inputs.py']) {
     await access(join(resources, 'app.asar.unpacked', 'core', 'engines', 'blender', 'scripts', script))
   }

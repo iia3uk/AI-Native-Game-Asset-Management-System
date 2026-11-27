@@ -1,95 +1,115 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, open, realpath, rename, rm, writeFile } from 'node:fs/promises'
+import { renameSync } from 'node:fs'
+import { lstat, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, isAbsolute, join } from 'node:path'
+import { join } from 'node:path'
 import { artifactHash, ExportArtifacts, exportFolders } from '../../../conversion/artifacts.mjs'
 import { saveBundleMesh } from '../../../conversion/unity/bundle-mesh.mjs'
 import { saveBundleTexture } from '../../../conversion/unity/bundle-texture.mjs'
 import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
 import { bundleResult } from '../../../engines/unity/bundle/protocol.mjs'
-import { assetsToolsVersion, inputLimit, locateBundleWorker, runBundleWorker, stageBundle } from '../../../engines/unity/bundle/run.mjs'
-import { fileInfo, folderPath, sameFile } from '../../../files/asset-files.mjs'
+import { assetsToolsVersion, locateBundleWorker, runBundleWorker, stageBundle } from '../../../engines/unity/bundle/run.mjs'
+import { checkedPath } from '../../../files/asset-files.mjs'
 import { IndexInputError } from '../../../index/index-errors.mjs'
+import { bundleRecipe, bundleVersion, readBundleCache } from './cache.mjs'
+import { readBundleSource, selectBundlePath } from './source.mjs'
 
-const signature = Buffer.from('UnityFS\0')
-
-async function readSource(input, signal) {
-  const path = typeof input === 'string' ? input.trim().replace(/^"(.*)"$/, '$1') : ''
-  if (path.length > 4096 || !isAbsolute(path) || /[\x00-\x1f]/.test(path)) {
-    throw new IndexInputError('Укажите полный путь к локальному Unity AssetBundle.')
+async function bundleRoot(directory) {
+  await mkdir(directory, { recursive: true, mode: 0o700 })
+  const imports = await realpath(directory)
+  const root = join(imports, 'unity-bundle-v' + bundleVersion)
+  await mkdir(root, { recursive: true, mode: 0o700 })
+  if (!await checkedPath(imports, root)) throw new IndexInputError('Каталог импорта UnityFS недоступен.')
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^\.stage-[a-zA-Z0-9]{6}$/.test(entry.name)) continue
+    const path = await checkedPath(root, entry.name)
+    if (path && Date.now() - (await lstat(path)).mtimeMs > 60 * 60_000) await rm(path, { recursive: true, force: true })
   }
-  const root = await folderPath(dirname(path)).catch(() => null)
-  const file = root && await fileInfo(root, basename(path))
-  if (!file) throw new IndexInputError('Выберите доступный файл Unity AssetBundle.')
-  if (file.info.size < 48 || file.info.size > inputLimit) return { status: 'failed', issue: 'unity-bundle-input-size' }
-  signal?.throwIfAborted()
-  const handle = await open(file.path, 'r')
-  try {
-    if (!sameFile(await handle.stat(), file.info)) return { status: 'failed', issue: 'unity-bundle-source-changed' }
-    const bytes = Buffer.alloc(signature.length)
-    if ((await handle.read(bytes, 0, bytes.length, 0)).bytesRead !== bytes.length || !bytes.equals(signature)) {
-      return { status: 'failed', issue: 'unity-bundle-signature' }
-    }
-  } finally {
-    await handle.close()
-  }
-  return { root, file, name: basename(file.path) }
+  return root
 }
 
-async function publish(workspace, root, source, report, withFbx, signal) {
+async function saveOutputs(workspace, source, hash, recipe, report, { withFbx, blender, signal, onProgress }) {
   const output = join(workspace, 'publish')
   const results = join(workspace, 'output')
   await mkdir(output)
   await Promise.all(exportFolders.map(folder => mkdir(join(output, folder))))
   const store = new ExportArtifacts(output, signal)
   const deadline = AbortSignal.timeout(5 * 60_000)
-  const fbx = withFbx && report.assets.some(asset => asset.file && asset.format === 'glb') &&
-    { blender: await locateBatchBlender(), deadline, signal: signal ? AbortSignal.any([signal, deadline]) : deadline }
+  const fbx = withFbx && { blender, deadline, signal: signal ? AbortSignal.any([signal, deadline]) : deadline }
   const assets = []
+  const counts = {}
   for (const asset of report.assets) {
     signal?.throwIfAborted()
-    if (!asset.file) assets.push(asset)
-    else if (asset.format === 'glb') assets.push(await saveBundleMesh(asset, results, store, assetsToolsVersion, fbx, signal))
-    else assets.push(await saveBundleTexture(asset, results, store, assetsToolsVersion, signal))
+    let result = asset
+    if (asset.file) {
+      result = asset.format === 'glb' ? await saveBundleMesh(asset, results, store, assetsToolsVersion, fbx, signal) :
+        await saveBundleTexture(asset, results, store, assetsToolsVersion, signal)
+    }
+    assets.push(result)
+    counts[result.status] = (counts[result.status] ?? 0) + 1
+    onProgress?.(50 + Math.floor(40 * assets.length / report.assets.length))
   }
-  const converted = assets.filter(asset => asset.status === 'converted').length
+  const converted = counts.converted ?? 0
   const summary = { status: converted ? 'completed' : 'no-compatible-inputs', method: 'assetstools-unityfs',
     converterVersion: assetsToolsVersion, format: report.format, unityVersion: report.unityVersion,
-    total: assets.length, converted, skipped: assets.length - converted }
-  if (!converted) return { ...summary, assets: assets.slice(0, 500) }
-  const sha256 = await artifactHash(join(workspace, 'input.bundle'), signal)
-  const reports = {
-    manifest: { version: 1, source: { name: source.name, size: source.file.info.size, sha256, license: null },
+    total: assets.length, converted, skipped: assets.length - converted, counts }
+  const documents = {
+    manifest: { version: bundleVersion, recipe, source: { name: source.name, size: source.file.info.size, sha256: hash, license: null },
       method: summary.method, converterVersion: assetsToolsVersion, assets },
     dependencies: { version: 1, status: 'unavailable', entries: [] },
     'conversion-report': summary,
   }
-  await Promise.all(Object.entries(reports).map(([name, payload]) =>
+  await Promise.all(Object.entries(documents).map(([name, payload]) =>
     writeFile(join(output, name + '.json'), JSON.stringify(payload, null, 2) + '\n', { signal, flag: 'wx' })))
-  signal?.throwIfAborted()
-  const destination = join(root, randomUUID())
-  await rename(output, destination)
-  return { ...summary, output: destination, sourceName: source.name }
+  const cacheable = assets.every(asset => asset.status !== 'failed' && !asset.exports?.some(item => item.status === 'failed'))
+  return { summary, output, cacheable }
 }
 
-export async function importUnityBundle(path, { directory, inspectOnly = false, withFbx = false, signal }) {
-  const source = await readSource(path, signal)
+export async function processUnityBundle(selected, { directory, inspectOnly = false, withFbx = false, expectedHash,
+  signal, onProgress, publish = (result, move) => { move(); return result } }) {
+  const source = await readBundleSource(selected, signal)
   if (source.status) return source
-  const executable = await locateBundleWorker()
-  if (!executable) return { status: 'unavailable', issue: 'unity-bundle-worker-unavailable' }
-  const selectedRoot = join(directory, 'unity-bundle-v1')
-  if (!inspectOnly) await mkdir(selectedRoot, { recursive: true })
-  const root = await realpath(inspectOnly ? tmpdir() : selectedRoot)
+  const root = inspectOnly ? await realpath(tmpdir()) : await bundleRoot(directory)
   const workspace = await mkdtemp(join(root, inspectOnly ? 'asset-viewer-bundle-' : '.stage-'))
   try {
     const stageError = await stageBundle(source, workspace, inspectOnly, signal)
     if (stageError) return { status: 'failed', issue: stageError }
+    const hash = await artifactHash(join(workspace, 'input.bundle'), signal)
+    if (expectedHash && expectedHash !== hash) return { status: 'failed', issue: 'unity-bundle-source-changed' }
+    onProgress?.(15)
+    const blender = withFbx && !inspectOnly ? await locateBatchBlender() : null
+    const recipe = bundleRecipe(withFbx, blender)
+    if (!inspectOnly) {
+      const cached = await readBundleCache(root, hash, recipe, source.name, signal)
+      if (cached) {
+        signal?.throwIfAborted()
+        return publish(cached, () => {})
+      }
+    }
+    const executable = await locateBundleWorker()
+    if (!executable) return { status: 'unavailable', issue: 'unity-bundle-worker-unavailable' }
     const report = bundleResult(await runBundleWorker(executable, workspace, signal), inspectOnly)
     if (!report) return { status: 'failed', issue: 'unity-bundle-worker-protocol' }
     if (report.status !== 'completed') return report
-    if (inspectOnly) return { ...report, total: report.assets.length, assets: report.assets.slice(0, 500) }
-    return await publish(workspace, root, source, report, withFbx, signal)
+    if (inspectOnly) return { ...report, hash, total: report.assets.length, assets: report.assets.slice(0, 500) }
+    onProgress?.(50)
+    const { summary, output, cacheable } = await saveOutputs(workspace, source, hash, recipe, report, { withFbx, blender, signal, onProgress })
+    const destination = join(root, cacheable ? hash + '-' + recipe : randomUUID())
+    signal?.throwIfAborted()
+    try {
+      return publish({ ...summary, output: destination, sourceName: source.name, reused: false }, () => renameSync(output, destination))
+    } catch (error) {
+      if (!cacheable || !['EEXIST', 'ENOTEMPTY', 'EPERM'].includes(error.code)) throw error
+      const cached = await readBundleCache(root, hash, recipe, source.name, signal)
+      if (!cached) throw error
+      signal?.throwIfAborted()
+      return publish(cached, () => {})
+    }
   } finally {
     await rm(workspace, { force: true, recursive: true, maxRetries: 3 })
   }
+}
+
+export async function importUnityBundle(path, options) {
+  return processUnityBundle(await selectBundlePath(path), options)
 }

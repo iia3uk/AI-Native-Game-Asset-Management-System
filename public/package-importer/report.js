@@ -24,6 +24,10 @@ const artifactRoles = {
 
 export const describeIssue = issue => unityIssues[issue] ?? issue
 
+export function assetLabel(asset) {
+  return asset.sourcePath ?? [asset.name, [asset.member, asset.pathId].filter(Boolean).join(' #')].filter(Boolean).join(' · ')
+}
+
 export function appendManifest({ details, record, json, element, button, assetStatus }) {
   const list = element('ul')
   const more = button('Показать файлы', () => void load())
@@ -35,14 +39,14 @@ export function appendManifest({ details, record, json, element, button, assetSt
     try {
       const page = await json('/api/index/jobs/' + record.id + '/manifest?offset=' + offset)
       for (const asset of page.assets) {
-        const row = element('li', asset.sourcePath + ' · ' + (assetStatus[asset.status] ?? asset.status))
-        const issues = (asset.issues ?? []).filter(issue => issue.startsWith('unity-'))
+        const row = element('li', assetLabel(asset) + ' · ' + (assetStatus[asset.status] ?? asset.status))
+        const issues = [asset.issue, ...(asset.issues ?? [])].filter(issue => issue?.startsWith('unity-'))
         if (issues.length) row.append(element('p', issues.map(describeIssue).join(' · ')))
         if (asset.materialDescription) {
           const { path, shader } = asset.materialDescription
           row.append(element('p', ['Привязки материала', shader, path].filter(Boolean).join(' · ')))
         }
-        const artifacts = (asset.exports ?? []).filter(item => item.format !== 'meta')
+        const artifacts = [asset.artifact, ...(asset.exports ?? [])].filter(item => item && item.format !== 'meta')
         if (artifacts.length) {
           const results = element('ul')
           for (const item of artifacts) {

@@ -1,0 +1,36 @@
+import { open } from 'node:fs/promises'
+import { basename, dirname, isAbsolute } from 'node:path'
+import { inputLimit } from '../../../engines/unity/bundle/run.mjs'
+import { checkedPath, fileInfo, folderPath, sameFile } from '../../../files/asset-files.mjs'
+import { IndexInputError } from '../../../index/index-errors.mjs'
+import { unityFsMagic } from '../../detect.mjs'
+
+export async function selectBundlePath(input) {
+  const path = typeof input === 'string' ? input.trim().replace(/^"(.*)"$/, '$1') : ''
+  if (path.length > 4096 || !isAbsolute(path) || /[\x00-\x1f]/.test(path)) {
+    throw new IndexInputError('Укажите полный путь к локальному Unity AssetBundle.')
+  }
+  const root = await folderPath(dirname(path)).catch(() => null)
+  if (!root) throw new IndexInputError('Выберите доступный файл Unity AssetBundle.')
+  return { root, path: basename(path), name: basename(path) }
+}
+
+export async function readBundleSource({ root, path, name }, signal) {
+  const file = await fileInfo(root, path)
+  if (!file) throw new IndexInputError('Выберите доступный файл Unity AssetBundle.')
+  if (file.info.size < 48 || file.info.size > inputLimit) return { status: 'failed', issue: 'unity-bundle-input-size' }
+  signal?.throwIfAborted()
+  const handle = await open(file.path, 'r')
+  try {
+    if (!sameFile(await handle.stat(), file.info) || !await checkedPath(root, path)) {
+      return { status: 'failed', issue: 'unity-bundle-source-changed' }
+    }
+    const bytes = Buffer.alloc(unityFsMagic.length)
+    if ((await handle.read(bytes)).bytesRead !== bytes.length || !bytes.equals(unityFsMagic)) {
+      return { status: 'failed', issue: 'unity-bundle-signature' }
+    }
+  } finally {
+    await handle.close()
+  }
+  return { root, file, name }
+}

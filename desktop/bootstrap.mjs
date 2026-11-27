@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { setTimeout } from 'node:timers/promises'
 import { app, BrowserWindow, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
 import { dataPaths } from '../core/config/data-paths.mjs'
+import { showDesktopFailure } from './window/failure.mjs'
+import { loadViewerWindow, rendererFailure } from './window/startup.mjs'
 
 function choosePort(child) {
   return new Promise((resolve, reject) => {
@@ -119,12 +121,16 @@ export async function startDesktop(applicationRoot = app.getAppPath(), { showWin
     return result.canceled ? null : result.filePaths[0]
   })
   app.on('window-all-closed', () => app.quit())
-  child.once('exit', code => {
+  await loadViewerWindow(window, origin + '/', { showWindow })
+  window.webContents.on('render-process-gone', (_event, details) => {
     if (quitting || window.isDestroyed()) return
-    dialog.showErrorBox('Asset Viewer', 'The local server stopped (' + code + '). Restart the app to reopen the index.')
+    showDesktopFailure(rendererFailure(details))
     app.quit()
   })
-  if (showWindow) window.once('ready-to-show', () => window.show())
-  await window.loadURL(origin + '/')
+  child.once('exit', code => {
+    if (quitting || window.isDestroyed()) return
+    showDesktopFailure(new Error('Локальный сервер завершился (код ' + code + '). Перезапустите приложение.'))
+    app.quit()
+  })
   return { window, origin, paths }
 }

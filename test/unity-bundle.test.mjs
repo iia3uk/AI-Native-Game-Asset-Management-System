@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -14,7 +15,7 @@ import { locateUnityBridge } from '../core/engines/unity/bridge/run.mjs'
 import { bundleResult } from '../core/engines/unity/bundle/protocol.mjs'
 import { locateBundleWorker } from '../core/engines/unity/bundle/run.mjs'
 import { buildAssetBundleFixture } from './fixtures/unity-bundle/project.mjs'
-import { testDirectory } from './server-fixture.mjs'
+import { startServer, testDirectory } from './server-fixture.mjs'
 
 const run = promisify(execFile)
 const cli = fileURLToPath(new URL('../scripts/asset-viewer.mjs', import.meta.url))
@@ -29,6 +30,25 @@ function client(data) {
       throw error
     }
   }
+}
+
+async function waitForImport(server, path, hash, formats = []) {
+  const request = await server.post('/api/index/packages/import', { path, hash, formats })
+  assert.equal(request.status, 202)
+  const { job } = await request.json()
+  return waitForJob(server, job.id)
+}
+
+async function waitForJob(server, id) {
+  const deadline = Date.now() + 25_000
+  do {
+    const response = await server.request('/api/index/jobs/' + id)
+    assert.equal(response.status, 200)
+    const { job } = await response.json()
+    if (!['pending', 'running'].includes(job.status)) return job
+    await delay(100)
+  } while (Date.now() < deadline)
+  assert.fail('UnityFS job did not reach a terminal state.')
 }
 
 test('UnityFS validates decoder reports and rejects non-bundle sources without touching the index', async t => {
@@ -124,4 +144,55 @@ test('Unity builds a native UnityFS bundle and the independent worker indexes de
     { status: 'failed', issue: 'unity-bundle-metadata-size' })
   assert.deepEqual(await readFile(input), before)
   assert.deepEqual(await readdir(join(output.output, '..')), [output.output.split(/[\\/]/).at(-1)])
+
+  const alternate = join(root, 'Container.bin')
+  await writeFile(alternate, before)
+  const server = await startServer(root)
+  try {
+    const inspected = await server.post('/api/index/packages/inspect', { path: alternate })
+    assert.equal(inspected.status, 200)
+    const { package: plan } = await inspected.json()
+    assert.deepEqual([plan.format, plan.containerVersion, plan.unityVersion, plan.hash], ['unityfs', 8, version, manifest.source.sha256])
+    assert.equal(plan.assets.find(asset => asset.classId === 28).pathId, texture.pathId)
+    const disallowed = await server.post('/api/index/packages/import', { path: alternate, hash: plan.hash, mode: 'engine-assisted' })
+    assert.equal(disallowed.status, 400)
+
+    const cached = await waitForImport(server, alternate, plan.hash, ['fbx'])
+    assert.equal(cached.status, 'completed', cached.error)
+    assert.equal(cached.result.reused, true)
+    assert.equal(cached.result.library.id, output.library.id)
+    assert.equal(cached.result.report.packageFormat, 'unityfs')
+    assert.deepEqual(cached.result.report.counts, { converted: 2, unsupported: 1 })
+    assert.equal((await waitForJob(server, cached.result.scanJobId)).status, 'completed')
+    const page = await (await server.request('/api/index/jobs/' + cached.id + '/manifest')).json()
+    assert.deepEqual(page.assets, manifest.assets)
+
+    const fresh = await waitForImport(server, alternate, plan.hash)
+    assert.equal(fresh.status, 'completed', fresh.error)
+    assert.equal(fresh.result.reused, false)
+    assert.notEqual(fresh.result.directory, output.output)
+    assert.equal((await waitForJob(server, fresh.result.scanJobId)).status, 'completed')
+    const results = await (await server.request('/api/index/search?kind=model&library=' + fresh.result.library.id)).json()
+    assert.deepEqual(results.assets.map(asset => asset.ext), ['glb'])
+    const reopened = await server.post('/api/index/assets/' + results.assets[0].id + '/open', {})
+    assert.equal(reopened.status, 200)
+    const { folder, fileId } = await reopened.json()
+    const resource = folder.resources.find(item => item.id === fileId)
+    const served = await server.request(resource.url)
+    assert.equal(served.status, 200)
+    assert.equal(Buffer.from(await served.arrayBuffer()).toString('ascii', 0, 4), 'glTF')
+
+    await writeFile(alternate, before.subarray(0, -1))
+    const changed = await waitForImport(server, alternate, plan.hash)
+    assert.equal(changed.status, 'failed')
+    assert.match(changed.error, /изменился после анализа/)
+    await writeFile(alternate, before)
+    await writeFile(join(output.output, entry.artifact.path), 'tampered cache')
+    const corrupt = await waitForImport(server, alternate, plan.hash, ['fbx'])
+    assert.equal(corrupt.status, 'failed')
+    assert.match(corrupt.error, /Кеш импорта UnityFS повреждён/)
+    assert.deepEqual(await readFile(alternate), before)
+  } finally {
+    await server.close()
+  }
 })

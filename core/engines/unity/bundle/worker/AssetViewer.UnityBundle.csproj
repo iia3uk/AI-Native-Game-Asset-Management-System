@@ -12,5 +12,13 @@
   <ItemGroup>
     <PackageReference Include="AssetsTools.NET" Version="[3.0.5]" />
     <RuntimeHostConfigurationOption Include="System.GC.HeapHardLimit" Value="402653184" />
+    <None Update="Notices/AssetsTools.NET.LICENSE.txt" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+  <Target Name="CopyRuntimeNotices" AfterTargets="Publish" Condition="'$(SelfContained)' == 'true'">
+    <ItemGroup>
+      <DotNetRuntimePack Include="@(ResolvedRuntimePack)" Condition="'%(ResolvedRuntimePack.FrameworkName)' == 'Microsoft.NETCore.App'" />
+    </ItemGroup>
+    <Copy SourceFiles="%(DotNetRuntimePack.PackageDirectory)/LICENSE.TXT;%(DotNetRuntimePack.PackageDirectory)/THIRD-PARTY-NOTICES.TXT"
+          DestinationFolder="$(PublishDir)/Notices" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

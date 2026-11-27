@@ -33,6 +33,8 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | GET | `/api/index/engines` | Lists detected Unity, Unreal and Blender executables and available version metadata without starting an editor |
 | POST | `/api/demo` | Creates and opens a separate procedural demo session on demand |
 
+For a UnityFS container, package inspection returns `format: "unityfs"`, `containerVersion`, `unityVersion`, `hash`, `total` and up to 500 serialized objects in `assets`. Use the same import route with the inspection hash. UnityFS jobs always decode supported textures to PNG and meshes to GLB. Request `"fbx"` in `formats` for an additional Blender export. The UnityFS result has `report.packageFormat: "unityfs"`. The manifest exposes serialized member names, object path IDs and per-format results.
+
 Failed scans preserve the last committed index. Disconnection and removal of original files retain history. Search excludes disconnected and missing assets.
 
 Automatic scans use the same queue. An explicit scan request promotes the active automatic job to a manual job if the job is still available. Turning off both watching settings cancels queued automatic scans and requests cancellation for a running automatic scan.

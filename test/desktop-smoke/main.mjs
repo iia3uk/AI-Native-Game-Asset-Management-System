@@ -7,6 +7,8 @@ import { app } from 'electron'
 import { startDesktop } from '../../desktop/bootstrap.mjs'
 import { generateFixtures } from '../../scripts/generate-fixtures.mjs'
 import { verifyPackageWatch } from './package-watch.mjs'
+import { verifyStartupWithoutInterface } from './startup.mjs'
+import { verifyUnityBundle } from './unity-bundle.mjs'
 import { verifyUnityPreview } from './unity-preview.mjs'
 import { unityEntries, unityFixtureEntries, writeUnityFixture } from '../fixtures/unitypackage.mjs'
 
@@ -18,6 +20,7 @@ app.commandLine.appendSwitch('use-angle', 'swiftshader')
 
 void startDesktop(root, { showWindow: false }).then(async ({ window, origin }) => {
   const { webContents } = window
+  webContents.setBackgroundThrottling(false)
   const externalRequests = []
   webContents.session.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, ({ url }, respond) => {
     const local = new URL(url).origin === origin
@@ -35,8 +38,12 @@ void startDesktop(root, { showWindow: false }).then(async ({ window, origin }) =
       if (await webContents.executeJavaScript(expression)) return
       await setTimeout(125)
     } while (Date.now() < deadline)
-    const status = await webContents.executeJavaScript("document.querySelector('#index-status')?.textContent")
-    throw new Error('Renderer did not reach expected state: ' + expression + '. Index status: ' + status)
+    const status = await webContents.executeJavaScript(`Object.fromEntries(
+      ['index-status', 'package-status', 'package-plans', 'package-jobs', 'package-importer'].map(id => {
+        const node = document.getElementById(id)
+        return [id, id === 'package-importer' ? node.open : node.textContent.slice(0, 500)]
+      }))`)
+    throw new Error('Renderer did not reach expected state: ' + expression + '. Status: ' + JSON.stringify(status))
   }
   await waitFor("document.querySelector('#library-stats').textContent.includes('3D-файлов')")
   assert.equal(await webContents.executeJavaScript("typeof window.assetViewerDesktop.chooseFolder"), 'function')
@@ -147,9 +154,13 @@ void startDesktop(root, { showWindow: false }).then(async ({ window, origin }) =
   await webContents.executeJavaScript("document.querySelector('#index-preview').click()")
   await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('1 треугольник')")
   await verifyPackageWatch(webContents, waitFor, fixtures)
+  const bundle = process.env.ASSET_VIEWER_SMOKE_BUNDLE
+  if (bundle) await verifyUnityBundle(webContents, waitFor, bundle)
+  await verifyStartupWithoutInterface()
   assert.deepEqual(externalRequests, [])
   assert.equal(window.isVisible(), false)
-  console.log('Desktop demo, library watching, thumbnail cache, technical analysis, metadata, manual and watched Unity import, PBR material preview and renderer isolation passed.')
+  console.log('Desktop startup, demo, library watching, thumbnail cache, analysis, metadata, manual and watched Unity import, PBR material preview and renderer isolation passed.')
+  if (bundle) console.log('UnityFS inspection, queued import, artifact report and indexed GLB preview passed.')
   app.quit()
 }).catch(error => {
   console.error(error)

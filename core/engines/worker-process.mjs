@@ -1,11 +1,14 @@
 import { execFile } from 'node:child_process'
-import { dirname, isAbsolute, join } from 'node:path'
+import { basename, dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { fileInfo } from '../files/asset-files.mjs'
 
 const execute = promisify(execFile)
-const release = fileURLToPath(new URL('../../release/', import.meta.url))
+const applicationRoot = fileURLToPath(new URL('../../', import.meta.url))
+const release = join(applicationRoot, 'release')
+const resources = process.resourcesPath ??
+  (process.versions.electron && basename(applicationRoot) === 'app.asar' ? dirname(applicationRoot) : null)
 const platforms = { win32: 'win', linux: 'linux' }
 
 export async function findWorker(directory, executable, variable) {
@@ -13,7 +16,7 @@ export async function findWorker(directory, executable, variable) {
   if (override && !isAbsolute(override)) throw new Error(variable + ' must be an absolute path.')
   const name = executable + (process.platform === 'win32' ? '.exe' : '')
   const platform = platforms[process.platform]
-  const bundled = process.resourcesPath && join(process.resourcesPath, directory, name)
+  const bundled = resources && join(resources, directory, name)
   const local = platform && join(release, directory, platform + '-' + process.arch, name)
   for (const path of override ? [override] : [bundled, local].filter(Boolean)) {
     const file = await fileInfo(dirname(path), path)

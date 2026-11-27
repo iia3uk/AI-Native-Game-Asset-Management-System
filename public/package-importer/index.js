@@ -1,5 +1,5 @@
 import { mountEngineStatus } from './engine-status.js'
-import { appendManifest, describeIssue } from './report.js'
+import { appendManifest, assetLabel, describeIssue } from './report.js'
 import { mountImportOptions } from './import-options.js'
 
 const $ = name => document.getElementById('package-' + name)
@@ -8,7 +8,7 @@ const packagesRoute = '/api/index/packages'
 const active = job => ['pending', 'running'].includes(job.status)
 const assetStatus = {
   ready: 'Готово', extracted: 'Прямое извлечение', unsupported: 'Не поддерживается',
-  'requires-engine': 'Требуется обработчик Unity', failed: 'Файл отсутствует',
+  available: 'Доступно для декодирования', 'requires-engine': 'Требуется обработчик Unity', failed: 'Ошибка обработки',
   'missing-dependencies': 'Отсутствуют зависимости', converted: 'Сконвертировано',
 }
 const jobStatus = {
@@ -109,6 +109,10 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
         element('p', record.result.directory))
       const materials = record.result.report.materials
       if (materials?.written) details.append(element('p', 'Описаний материалов · ' + materials.written))
+      if (record.result.report.packageFormat === 'unityfs') {
+        const { format, unityVersion, converted, total } = record.result.report
+        details.append(element('p', 'UnityFS ' + format + ' · Unity ' + unityVersion + ' · Декодировано ' + converted + ' из ' + total))
+      }
       if (record.result.report.export) {
         details.append(element('p', 'Моделей сконвертировано · ' + record.result.report.converted))
       }
@@ -133,6 +137,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
   }
 
   async function queuePlan(path, plan, options) {
+    if (plan.format === 'unityfs') options = { mode: 'engineless', formats: options.formats }
     await json(packagesRoute + '/import', post({ path, hash: plan.hash, ...options }))
     queuedPlans.get(path)?.row.remove()
     queuedPlans.delete(path)
@@ -161,8 +166,11 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     const details = element('details')
     const preview = element('ul')
     const shown = plan.assets.slice(0, 50)
-    for (const asset of shown) preview.append(element('li', asset.sourcePath + ' · ' + assetStatus[asset.status]))
+    for (const asset of shown) preview.append(element('li', assetLabel(asset) + ' · ' + (assetStatus[asset.status] ?? asset.status)))
     details.append(element('summary', path.split(/[\\/]/).at(-1) + ' · ' + plan.total + ' записей'), preview)
+    if (plan.format === 'unityfs') {
+      details.insertBefore(element('p', 'UnityFS ' + plan.containerVersion + ' · Unity ' + plan.unityVersion + ' · Без Unity Editor'), preview)
+    }
     if (plan.total > shown.length) details.append(element('p', 'Показано ' + shown.length + ' из ' + plan.total + ' записей.'))
     const start = button('Обработать и добавить в индекс', async () => {
       if (busy) return
