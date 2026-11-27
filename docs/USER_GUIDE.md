@@ -26,7 +26,7 @@ The job result shows the managed output directory. **Отчёт об импор�
 
 The Unity bridge exports whole prefabs and their mesh renderers as individual FBX files, standalone transform animations as FBX, supported readable textures as PNG and material texture bindings as JSON. GLB previews of Unity geometry use Blender. Unity scenes, binary Unity assets, assets with custom serialized components and shader graphs remain source files or diagnostic entries.
 
-The reports are `manifest.json`, `dependencies.json` and `conversion-report.json`. They record source paths, GUIDs, available file IDs, hashes, dependency status and how each artifact was made. An unchanged archive with the same mode, formats and tool installations reuses verified output. Custom destination folders and Unreal or Fab package import remain pending.
+The reports are `manifest.json`, `dependencies.json` and `conversion-report.json`. They record source paths, GUIDs, available file IDs, hashes, dependency status and how each artifact was made. An unchanged archive with the same mode, formats and tool installations reuses verified output. Custom destination folders and Fab package import remain pending.
 
 ```sh
 npm run cli -- package-inspect "/absolute/path/example.unitypackage" --json
@@ -62,7 +62,16 @@ npm run cli -- unreal-export "/absolute/path/Project.uproject" --unreal-version 
 
 `unreal-export` is an opt-in CLI preview for trusted editor content. Select a `.uproject` or a `Content` folder. It needs a locally discovered Unreal Editor 5.1 or newer and selects the associated build when available. For a folder without an association, it can use the latest compatible detected Editor. You can override the version. The temporary project uses bundled Python and only stages eligible assets under `/Game`. It reports missing dependencies and unsupported resources.
 
-The bridge requests FBX for static meshes, skeletal meshes and animation sequences, PNG for supported textures and WAV for audio. Materials and standalone skeletons produce JSON metadata. Verified outputs publish under the app's managed import folder and discoverable files are added to the shared index. The manifest records source paths and hashes. GLB previews, cooked extraction and background queue support are pending. Native Unreal export still needs end-to-end validation.
+The bridge requests FBX for static meshes, skeletal meshes and animation sequences, PNG for supported textures and WAV for audio. Materials and standalone skeletons produce JSON metadata. Verified outputs publish under the app's managed import folder and discoverable files are added to the shared index. The manifest records source paths and hashes. The Editor bridge still needs end-to-end validation with a native Unreal installation.
+
+Use `unreal-extract` with a standard unencrypted Pak to list and extract supported files without Unreal Editor. Follow the [worker build instructions](BUILD.md) to make the CUE4Parse executable available. With `--inspect`, the command lists up to 500 entries without opening the database. Remove `--inspect` to save supported files under `imports/unreal-pak-v1/` in the app data directory and add them to the shared index.
+
+```sh
+npm run cli -- unreal-extract "/absolute/path/example.pak" --inspect --json
+npm run cli -- unreal-extract "/absolute/path/example.pak" --json
+```
+
+The independent worker handles stored and Zlib-compressed entries from supported stock Pak layouts. Supported embedded FBX, GLB, PNG and WAV files retain their bytes. Valid loose Unreal packages and matching companions are saved to `Source/` with their archive-relative paths. Reports record each result and source hashes. Cooked object decoding, IoStore extraction, dependency resolution and background processing for Unreal remain pending.
 
 Set `ASSET_VIEWER_UNITY` or `ASSET_VIEWER_BLENDER` to an absolute executable path. Set `ASSET_VIEWER_UNITY_ROOTS` or `ASSET_VIEWER_UNREAL_ROOTS` to absolute installation directories using the operating system's PATH separator. Start or restart the app with those settings.
 

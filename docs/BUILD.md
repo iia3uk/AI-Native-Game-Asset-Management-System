@@ -18,6 +18,12 @@ The default installer targets the current user. A desktop shortcut is created, a
 
 Pushing an intentional version tag matching `package.json` runs checks and prepares a draft GitHub Release. The owner reviews the artifact hashes and publishes the draft. Updating installed apps is manual.
 
+## Build the optional Unreal Pak worker
+
+Install the .NET 10 SDK on the build machine and run `npm run build:cue4parse`. The script restores locked dependencies and writes a self-contained executable and its runtime to `release/cue4parse/win-x64/` or `release/cue4parse/linux-x64/`. Run `npm run build:cue4parse -- linux-x64` or specify `win-x64` to select a target explicitly.
+
+Keep the published files together. Runtime use does not require a .NET SDK or Unreal Editor. Linux still needs the platform libraries required by .NET, including ICU. The source CLI discovers the published worker automatically. For a different location, set `ASSET_VIEWER_CUE4PARSE` to the absolute path of the worker executable. The default Electron installer does not include this optional worker.
+
 ## Isolated desktop smoke
 
 On Windows, from PowerShell:

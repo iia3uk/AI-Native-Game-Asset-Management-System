@@ -4,3 +4,5 @@ __pycache__/
 *_ASSETS/
 fab-downloader/
 release/
+core/engines/unreal/decoder/worker/bin/
+core/engines/unreal/decoder/worker/obj/

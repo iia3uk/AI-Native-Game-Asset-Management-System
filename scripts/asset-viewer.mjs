@@ -14,6 +14,7 @@ import { packageExportFormats } from '../core/conversion/formats.mjs'
 import { unityImportOptions } from '../core/engines/unity/options.mjs'
 import { inspectUnreal } from '../core/packages/unreal/inspect.mjs'
 import { exportUnrealWithEditor } from '../core/packages/unreal/export.mjs'
+import { extractUnrealPak } from '../core/packages/unreal/extract.mjs'
 
 const string = { type: 'string' }
 const flag = { type: 'boolean' }
@@ -32,6 +33,7 @@ const commands = {
     mode: string, 'unity-version': string } },
   'unreal-inspect': { args: ['absolute-path'], options: {} },
   'unreal-export': { args: ['absolute-path'], options: { 'unreal-version': string } },
+  'unreal-extract': { args: ['absolute-path'], options: { inspect: flag } },
   engines: { args: [], options: { 'unity-project': string, 'unreal-project': string } },
   'thumbnail-cache': { args: [], options: { clear: flag, 'dry-run': flag } },
   profiles: { args: [], options: {} },
@@ -91,15 +93,14 @@ async function waitForJob(index, id, options) {
   }
 }
 
-async function unrealExport(paths, input, unrealVersion) {
+async function unrealOperation(paths, operation) {
   const stop = new AbortController()
   const abort = () => stop.abort()
   for (const event of ['SIGINT', 'SIGTERM']) process.once(event, abort)
   try {
-    const report = await exportUnrealWithEditor(input, { directory: paths.imports,
-      unrealVersion, signal: stop.signal })
+    const report = await operation({ directory: paths.imports, signal: stop.signal })
     if (!report.output) {
-      process.exitCode = 1
+      if (report.status !== 'completed') process.exitCode = 1
       return report
     }
     const index = await AssetIndex.open(paths.database)
@@ -205,7 +206,10 @@ async function main([command, ...args]) {
   if (command === 'unreal-inspect') {
     return print(await inspectUnreal(input, { signal: AbortSignal.timeout(120_000) }), values.json)
   }
-  if (command === 'unreal-export') return print(await unrealExport(paths, input, values['unreal-version']), values.json)
+  if (command === 'unreal-export') return print(await unrealOperation(paths, options =>
+    exportUnrealWithEditor(input, { ...options, unrealVersion: values['unreal-version'] })), values.json)
+  if (command === 'unreal-extract') return print(await unrealOperation(paths, options =>
+    extractUnrealPak(input, { ...options, inspectOnly: values.inspect })), values.json)
   if (command === 'package-inspect' || command === 'package-import') {
     if (values.queue && values['dry-run']) throw new IndexInputError('Use only one of --queue or --dry-run.')
     const options = unityImportOptions(values.mode, values['unity-version'])

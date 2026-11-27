@@ -1,7 +1,6 @@
-import { open } from 'node:fs/promises'
-import { analyzeAsset } from '../analysis/asset-analysis.mjs'
-import { fileInfo, readBoundedText } from '../files/asset-files.mjs'
-import { modelArtifact } from './artifacts.mjs'
+import { analyzeAsset } from '../../analysis/asset-analysis.mjs'
+import { fileInfo, readBoundedText } from '../../files/asset-files.mjs'
+import { isWaveArtifact, modelArtifact } from '../artifacts.mjs'
 
 const folders = { model: 'Models', 'skeletal-model': 'Models', animation: 'Animations',
   texture: 'Textures', audio: 'Audio', skeleton: 'Metadata', material: 'Materials' }
@@ -15,17 +14,7 @@ async function verifyOutput(root, path, product, signal) {
     return metrics.width > 0 && metrics.height > 0 &&
       metrics.width === product.width && metrics.height === product.height ? file : null
   }
-  if (product.format === 'wav') {
-    const handle = await open(file.path, 'r')
-    try {
-      const bytes = Buffer.alloc(12)
-      const { bytesRead } = await handle.read(bytes)
-      return bytesRead === 12 && file.info.size >= 44 && bytes.toString('ascii', 0, 4) === 'RIFF' &&
-        bytes.toString('ascii', 8, 12) === 'WAVE' && bytes.readUInt32LE(4) + 8 === file.info.size ? file : null
-    } finally {
-      await handle.close()
-    }
-  }
+  if (product.format === 'wav') return await isWaveArtifact(file) ? file : null
   try {
     const metadata = JSON.parse(await readBoundedText(root, path, 1024 ** 2))
     return metadata?.objectPath === product.objectPath && metadata?.className === product.className &&

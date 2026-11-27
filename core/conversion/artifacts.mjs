@@ -32,6 +32,19 @@ export async function modelArtifact(root, path, ext, signal) {
     analysis.dependencies.every(item => item.location === 'embedded') ? file : null
 }
 
+export async function isWaveArtifact(file) {
+  if (file.info.size < 44) return false
+  const handle = await open(file.path, 'r')
+  try {
+    const prefix = Buffer.alloc(12)
+    const { bytesRead } = await handle.read(prefix)
+    return bytesRead === 12 && prefix.toString('ascii', 0, 4) === 'RIFF' &&
+      prefix.toString('ascii', 8, 12) === 'WAVE' && prefix.readUInt32LE(4) + 8 === file.info.size
+  } finally {
+    await handle.close()
+  }
+}
+
 export function artifactPath(entry, format) {
   const original = posix.basename(entry.sourcePath)
   const directory = format === 'fbx' ? 'Models' : format === 'glb' ? 'Previews' : format === 'meta' ? 'Metadata' : folders[entry.kind]
