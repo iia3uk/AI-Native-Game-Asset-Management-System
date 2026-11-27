@@ -69,7 +69,7 @@ test('file identity, versions, search, backups and transactional incremental sca
     await index.close()
     index = await AssetIndex.open(dbPath)
     assert.equal(index.asset(asset.id).review, 'candidate')
-    assert.equal(index.integrity().schemaVersion, 10)
+    assert.equal(index.integrity().schemaVersion, 11)
   } finally { await index.close() }
 })
 

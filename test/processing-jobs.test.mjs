@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { AssetIndex } from '../core/index/asset-index.mjs'
+import { removePackageWatchSchema } from './fixtures/index-schema.mjs'
 import { ProcessingWorker } from '../core/processing/processing-worker.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 
@@ -21,6 +22,7 @@ test('queue migration retains assets, leases recover, and retries commit matchin
   initial.updateAsset(asset.id, { note: 'Keep this during migration' })
   await initial.close()
   const raw = new DatabaseSync(database)
+  removePackageWatchSchema(raw)
   raw.exec(`
     DROP TABLE quality_profiles;
     DROP TABLE asset_dependencies;
@@ -34,7 +36,7 @@ test('queue migration retains assets, leases recover, and retries commit matchin
   const other = await AssetIndex.open(database)
   let worker
   try {
-    assert.equal(index.integrity().schemaVersion, 10)
+    assert.equal(index.integrity().schemaVersion, 11)
     assert.equal(index.asset(asset.id).note, 'Keep this during migration')
     const queued = index.jobs.enqueue(id)
     assert.equal(other.jobs.enqueue(id).id, queued.id)

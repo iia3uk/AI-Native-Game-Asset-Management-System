@@ -231,7 +231,6 @@
     <div class="index-toolbar">
       <button id="index-rescan" type="button" class="control" disabled>Пересканировать</button>
       <button id="index-watch" type="button" class="control" aria-pressed="false" title="Автоматически обновлять индекс при изменениях в этой папке" disabled>Следить за папкой</button>
-      <button id="index-package-watch" type="button" class="control" aria-pressed="false" title="Обрабатывать новые и изменённые .unitypackage в выбранной библиотеке без Unity Editor" disabled>Автоимпорт Unity</button>
       <button id="index-cancel-scan" type="button" class="control" hidden>Отменить сканирование</button>
       <button id="index-retry-scan" type="button" class="control" hidden>Повторить задание</button>
       <button id="index-disconnect" type="button" class="control" disabled>Отключить</button>
@@ -239,6 +238,14 @@
     </div>
     <p id="index-status" class="notice" role="status"></p>
     <p id="index-job-status" class="notice" role="status" hidden></p>
+    <details id="index-package-autoimport" class="index-analysis">
+      <summary>Автоимпорт пакетов</summary>
+      <div class="index-toolbar" role="group" aria-label="Форматы автоимпорта для выбранной библиотеки">
+        <button id="index-package-watch" type="button" class="control" data-format="unitypackage" aria-pressed="false" disabled>.unitypackage</button>
+        <button id="index-bundle-watch" type="button" class="control" data-format="unityfs" aria-pressed="false" title="Файлы .bundle и .unity3d" disabled>UnityFS</button>
+        <button id="index-pak-watch" type="button" class="control" data-format="unreal-pak" aria-pressed="false" title="Файлы .pak" disabled>Unreal Pak</button>
+      </div>
+    </details>
     <details id="index-thumbnail-cache" class="index-analysis">
       <summary>Кэш миниатюр</summary>
       <div class="index-toolbar">

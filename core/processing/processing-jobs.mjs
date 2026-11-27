@@ -108,9 +108,8 @@ export class ProcessingJobs {
   }
 
   refillWatchedImports(ignoredPaths) {
-    const formats = 'fbx,glb'
     const mode = 'engineless'
-    return transaction(this.#db, () => queueWatchedPackages(this.#db, importLimit - 1 - this.#importCount(), ignoredPaths, (path, key) => {
+    return transaction(this.#db, () => queueWatchedPackages(this.#db, importLimit - 1 - this.#importCount(), ignoredPaths, (path, key, formats) => {
       if (this.#activeImport(path, key, formats, mode, '')) return null
       return this.#createImport(path, key, formats, mode, '', -10, 'watch')
     }))
@@ -140,8 +139,9 @@ export class ProcessingJobs {
     this.#cancelWhere("library_id = ? AND trigger = 'watch'", libraryId)
   }
 
-  cancelPackageWatch(libraryId) {
-    this.#cancelWhere("trigger = 'watch' AND id IN (SELECT job_id FROM package_watch_imports WHERE library_id = ?)", libraryId)
+  cancelPackageWatch(libraryId, format = null) {
+    this.#cancelWhere(`trigger = 'watch' AND id IN (SELECT job_id FROM package_watch_imports
+      WHERE library_id = ? AND (? IS NULL OR format = ?))`, libraryId, format, format)
   }
 
   cancelThumbnails(libraryId) {
@@ -153,13 +153,13 @@ export class ProcessingJobs {
     return this.get(id)
   }
 
-  #cancelWhere(condition, argument) {
+  #cancelWhere(condition, ...args) {
     this.#db.prepare(`
       UPDATE processing_jobs SET cancel_requested = 1,
         status = CASE WHEN status = 'pending' THEN 'cancelled' ELSE status END,
         finished_at = CASE WHEN status = 'pending' THEN ? ELSE finished_at END
       WHERE (${condition}) AND status IN ('pending','running')
-    `).run(now(), argument)
+    `).run(now(), ...args)
   }
 
   retry(id) {
@@ -234,7 +234,7 @@ export class ProcessingJobs {
   }
 
   watchedImportSource(id) {
-    return this.#db.prepare(`SELECT l.root, l.enabled, w.source_path AS path
+    return this.#db.prepare(`SELECT l.root, l.enabled, w.source_path AS path, w.format
       FROM package_watch_imports w JOIN libraries l ON l.id = w.library_id WHERE w.job_id = ?`).get(id)
   }
 

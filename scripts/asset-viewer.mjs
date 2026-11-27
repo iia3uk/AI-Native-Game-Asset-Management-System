@@ -23,7 +23,7 @@ const commands = {
   connect: { args: ['absolute-path'], options: { 'dry-run': flag } },
   scan: { args: ['library-id'], options: { 'dry-run': flag } },
   watch: { args: ['library-id', 'on|off'], options: {} },
-  'watch-packages': { args: ['library-id', 'on|off'], options: {} },
+  'watch-packages': { args: ['library-id', 'on|off'], options: { format: string } },
   search: { args: ['query?'], options: { ...paging, library: string, kind: string, hash: string } },
   inspect: { args: ['asset-id'], options: { profile: string } },
   preview: { args: ['asset-id'], options: { 'dry-run': flag, queue: flag, status: flag } },
@@ -121,7 +121,7 @@ async function execute(index, paths, command, [input, setting], values) {
     case 'libraries': return index.libraries()
     case 'connect': return index.connect(input)
     case 'watch': return index.setWatching(input, setting === 'on')
-    case 'watch-packages': return index.setPackageWatching(input, setting === 'on', [paths.cache, paths.backups, paths.imports])
+    case 'watch-packages': return index.setPackageWatching(input, setting === 'on', [paths.cache, paths.backups, paths.imports], values.format)
     case 'scan': {
       if (!values['dry-run']) return index.scan(input)
       const library = index.libraries().find(library => library.id === input)

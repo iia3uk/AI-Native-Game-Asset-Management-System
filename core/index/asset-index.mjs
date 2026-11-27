@@ -9,6 +9,8 @@ import { IndexInputError } from './index-errors.mjs'
 import { ProcessingJobs } from '../processing/processing-jobs.mjs'
 import { QualityProfiles, validateQuality } from '../analysis/quality-profiles.mjs'
 import { thumbnailPlan } from '../thumbnails/thumbnail-input.mjs'
+import { maxPakInput } from '../packages/unreal/pak/limits.mjs'
+import { watchedPackageRecipe } from '../packages/watch-formats.mjs'
 
 const readable = 'a.id, a.library_id AS libraryId, l.name AS library, a.path, a.name, a.ext, a.kind,' +
   ' a.size, a.mtime, a.hash, a.first_seen AS firstSeen, a.missing_since AS missingSince,' +
@@ -116,15 +118,18 @@ export class AssetIndex {
 
   libraries() {
     return this.#db.prepare(`
-      SELECT l.id, l.root, l.name, l.indexed_at AS indexedAt, l.watch_enabled AS watching, w.library_id IS NOT NULL AS packageWatching,
+      SELECT l.id, l.root, l.name, l.indexed_at AS indexedAt, l.watch_enabled AS watching,
+        (SELECT json_group_array(w.format ORDER BY w.format) FROM package_watch_libraries w WHERE w.library_id = l.id) AS packageWatchFormats,
         COUNT(a.id) AS assets,
         COUNT(CASE WHEN a.kind = 'model' THEN 1 END) AS models,
         COUNT(CASE WHEN a.kind = 'image' THEN 1 END) AS images,
         COALESCE(SUM(a.size), 0) AS bytes
-      FROM libraries l LEFT JOIN package_watch_libraries w ON w.library_id = l.id
-        LEFT JOIN assets a ON a.library_id = l.id AND a.missing_since IS NULL
+      FROM libraries l LEFT JOIN assets a ON a.library_id = l.id AND a.missing_since IS NULL
       WHERE l.enabled = 1 GROUP BY l.id ORDER BY l.name, l.id
-    `).all().map(library => ({ ...library, watching: Boolean(library.watching), packageWatching: Boolean(library.packageWatching) }))
+    `).all().map(library => {
+      const packageWatchFormats = JSON.parse(library.packageWatchFormats)
+      return { ...library, watching: Boolean(library.watching), packageWatchFormats, packageWatching: packageWatchFormats.includes('unitypackage') }
+    })
   }
 
   watchedLibraries() {
@@ -145,22 +150,24 @@ export class AssetIndex {
     })
   }
 
-  setPackageWatching(id, enabled, ignoredPaths = []) {
+  setPackageWatching(id, enabled, ignoredPaths = [], format = 'unitypackage') {
     validateId(id)
     if (typeof enabled !== 'boolean') throw new IndexInputError('Укажите, включён ли автоимпорт.')
+    if (typeof format !== 'string' || !watchedPackageRecipe(format)) throw new IndexInputError('Выберите формат автоимпорта.')
     return transaction(this.#db, () => {
       const library = this.#db.prepare('SELECT root, watch_enabled AS watching FROM libraries WHERE id = ? AND enabled = 1').get(id)
       if (!library) throw new IndexInputError('Библиотека не подключена.')
       if (enabled) {
         if (ignoredPaths.some(path => inside(path, library.root))) throw new IndexInputError('Выберите папку с исходными пакетами вне каталогов результатов и кеша.')
-        this.#db.prepare('INSERT OR IGNORE INTO package_watch_libraries (library_id) VALUES (?)').run(id)
+        this.#db.prepare('INSERT OR IGNORE INTO package_watch_libraries (library_id, format) VALUES (?, ?)').run(id, format)
+      } else {
+        this.#db.prepare('DELETE FROM package_watch_libraries WHERE library_id = ? AND format = ?').run(id, format)
+        this.jobs.cancelPackageWatch(id, format)
       }
-      else {
-        this.#db.prepare('DELETE FROM package_watch_libraries WHERE library_id = ?').run(id)
-        this.jobs.cancelPackageWatch(id)
-        if (!library.watching) this.jobs.cancelWatch(id)
-      }
-      return { id, packageWatching: enabled }
+      const packageWatchFormats = this.#db.prepare('SELECT format FROM package_watch_libraries WHERE library_id = ? ORDER BY format')
+        .all(id).map(setting => setting.format)
+      if (!library.watching && !packageWatchFormats.length) this.jobs.cancelWatch(id)
+      return { id, packageWatchFormats, packageWatching: packageWatchFormats.includes('unitypackage') }
     })
   }
 
@@ -211,7 +218,7 @@ export class AssetIndex {
       const existing = byPath.get(key)
       const { size, mtimeMs: mtime, ctimeMs: ctime } = file.info
       let hash = null
-      if (size > maxHashedSize) {
+      if (size > (file.ext === 'pak' ? maxPakInput : maxHashedSize)) {
         skippedHashes++
       } else if (existing?.hash && existing.size === size && existing.mtime === mtime && existing.ctime === ctime) {
         hash = existing.hash

@@ -1,6 +1,7 @@
 import { mountQualityProfile } from './quality-profile.js'
 import { mountIndexThumbnail } from './index-thumbnail.js'
 import { mountPackageImporter } from '../package-importer/index.js'
+import { mountPackageWatch } from './package-watch.js'
 
 const $ = id => document.getElementById('index-' + id)
 const number = new Intl.NumberFormat('ru')
@@ -97,7 +98,7 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
   const quality = mountQualityProfile({ json, post, run, currentAsset: () => asset?.id })
   const thumbnail = mountIndexThumbnail({ json, post })
   const packages = mountPackageImporter({ dialog, json, post,
-    hasWatchedLibraries: () => libraries.some(library => library.packageWatching),
+    hasWatchedLibraries: () => libraries.some(library => library.packageWatchFormats.length),
     openLibrary: id => run(async () => {
       await refreshLibraries(id)
       query.value = $('kind').value = ''
@@ -107,9 +108,20 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
   })
 
   const activeJob = () => ['pending', 'running'].includes(job?.status)
-  const watching = () => libraries.some(library => library.id === selection.value && library.watching)
-  const packageWatching = () => libraries.some(library => library.id === selection.value && library.packageWatching)
-  const observing = () => watching() || packageWatching()
+  const selectedLibrary = () => libraries.find(library => library.id === selection.value)
+  const watching = () => Boolean(selectedLibrary()?.watching)
+  const observing = () => watching() || Boolean(selectedLibrary()?.packageWatchFormats.length)
+  const packageWatch = mountPackageWatch($('package-autoimport'), (format, label) => void run(async () => {
+    const id = selection.value
+    const enabled = !selectedLibrary()?.packageWatchFormats.includes(format)
+    const { library } = await json('/api/index/libraries/' + id + '/package-watch', post({ enabled, format }))
+    await refreshLibraries(id)
+    await refreshJob()
+    const active = library.packageWatchFormats.includes(format)
+    status.textContent = 'Автоимпорт ' + label + (active ? ' включён. Задания появятся в разделе импорта.' : ' выключен.')
+    if (active) document.getElementById('package-importer').open = true
+    void packages.refresh()
+  }))
 
   function buttons() {
     quality.busy(busy)
@@ -117,9 +129,9 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
     $('pick').disabled = busy
     $('query').querySelector('button').disabled = busy
     selection.disabled = $('kind').disabled = busy
-    for (const id of ['rescan', 'watch', 'package-watch', 'disconnect']) $(id).disabled = busy || !selection.value
+    for (const id of ['rescan', 'watch', 'disconnect']) $(id).disabled = busy || !selection.value
     $('watch').setAttribute('aria-pressed', String(watching()))
-    $('package-watch').setAttribute('aria-pressed', String(packageWatching()))
+    packageWatch.update(selectedLibrary(), busy)
     $('rescan').disabled ||= activeJob()
     $('cancel-scan').disabled = busy || Boolean(job?.cancelRequested)
     $('retry-scan').disabled = busy
@@ -315,15 +327,6 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
       await search(offset, { preserveAsset: true })
     }
     status.textContent = library.watching ? 'Наблюдение за папкой включено.' : 'Наблюдение за папкой выключено.'
-  }))
-  $('package-watch').addEventListener('click', () => void run(async () => {
-    const id = selection.value
-    const { library } = await json('/api/index/libraries/' + id + '/package-watch', post({ enabled: !packageWatching() }))
-    await refreshLibraries(id)
-    await refreshJob()
-    status.textContent = library.packageWatching ? 'Автоимпорт .unitypackage включён. Задания появятся в разделе импорта.' : 'Автоимпорт .unitypackage выключен.'
-    if (library.packageWatching) document.getElementById('package-importer').open = true
-    void packages.refresh()
   }))
   $('cancel-scan').addEventListener('click', () => void run(async () => {
     const { job: current } = await json('/api/index/jobs/' + job.id + '/cancel', post({}))

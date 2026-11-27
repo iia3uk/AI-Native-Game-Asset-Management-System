@@ -154,17 +154,17 @@ void startDesktop(root, { showWindow: false }).then(async ({ window, origin }) =
   await waitFor("document.querySelector('#index-name').textContent === 'fixture-package.obj' && !document.querySelector('#index-preview').disabled")
   await webContents.executeJavaScript("document.querySelector('#index-preview').click()")
   await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('1 треугольник')")
-  await verifyPackageWatch(webContents, waitFor, fixtures)
   const bundle = process.env.ASSET_VIEWER_SMOKE_BUNDLE
-  if (bundle) await verifyUnityBundle(webContents, waitFor, bundle)
   const pak = process.env.ASSET_VIEWER_SMOKE_PAK === '1'
+  await verifyPackageWatch(webContents, waitFor, fixtures, { bundle, pak })
+  if (bundle) await verifyUnityBundle(webContents, waitFor, bundle)
   if (pak) await verifyUnrealPak(webContents, waitFor, fixtures)
   await verifyStartupWithoutInterface()
   assert.deepEqual(externalRequests, [])
   assert.equal(window.isVisible(), false)
   console.log('Desktop startup, demo, library watching, thumbnail cache, analysis, metadata, manual and watched Unity import, PBR material preview and renderer isolation passed.')
-  if (bundle) console.log('UnityFS inspection, queued import, artifact report and indexed GLB preview passed.')
-  if (pak) console.log('Unreal Pak inspection, queued import, artifact report and indexed GLB preview passed.')
+  if (bundle) console.log('UnityFS folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
+  if (pak) console.log('Unreal Pak folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
   app.quit()
 }).catch(error => {
   console.error(error)

@@ -110,7 +110,7 @@ export class ProcessingWorker {
     const watched = this.index.jobs.watchedImportSource(job.id)
     const source = watched ? await watchedPackageSource(watched) : await packageSource(this.index.jobs.importSource(job.id))
     await stagePackage(this.importDirectory, source, job, {
-      signal, onProgress,
+      signal, onProgress, expectedFormat: job.trigger === 'watch' ? watched?.format : undefined,
       publish: (result, move, hasAssets) => {
         signal.throwIfAborted()
         return this.index.jobs.completeImport(job.id, this.#id, () => {

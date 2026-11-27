@@ -55,15 +55,21 @@ Inspection lists the archive and Unity versions and up to 500 serialized objects
 
 The report marks unsupported layouts and classes. Meshes with skinning, blend shapes, mesh compression, extra vertex attributes or multiple vertex streams are outside the current decoder. Streamed textures, additional pixel formats, material bindings and bundle dependency analysis remain pending. A repeated import with the same SHA-256, output formats and tool versions reuses verified results.
 
-## Automatically import a Unity package folder
+## Automatically import packages from a folder
 
-Open **Индекс**, connect the folder with incoming `.unitypackage` files, select it under **Библиотека** and enable **Автоимпорт Unity**. Existing archives and new or changed files in subfolders are picked up while the app or local server is running. The importer extracts originals and requests FBX and GLB exports for supported models. This mode runs without Unity Editor and uses Blender where available. Follow progress and reports in **Импорт пакетов Unity и Unreal**. Results are indexed in managed libraries.
+Open **Индекс**, connect the incoming folder, select it under **Библиотека**, then expand **Автоимпорт пакетов** and enable the formats you want. The app checks existing files and new or changed files in subfolders while it is running. It confirms the format from the contents before extracting anything. Results are indexed in managed libraries, and progress and reports appear in **Импорт пакетов Unity и Unreal**.
 
-Turning off **Автоимпорт Unity** cancels active automatic imports for that source. Use **Повторить** in a job row to retry a failed, interrupted or cancelled import. The setting and the archive SHA-256 history survive restarts.
+- **.unitypackage** extracts the originals and requests FBX and GLB for supported models.
+- **UnityFS** watches `.bundle` and `.unity3d`, decodes supported textures and static meshes, and requests FBX where Blender is available.
+- **Unreal Pak** watches `.pak` and extracts supported original files using the independent CUE4Parse worker.
+
+Turning off a format cancels its active automatic imports for that folder. The settings and SHA-256 history survive restarts. Use **Повторить** in a job row to retry a failed, interrupted or cancelled import. For a renamed archive, use manual inspection to detect the format by contents.
 
 ```sh
 npm run cli -- libraries --json
 npm run cli -- watch-packages <library-id> on --json
+npm run cli -- watch-packages <library-id> on --format unityfs --json
+npm run cli -- watch-packages <library-id> on --format unreal-pak --json
 npm run cli -- jobs --type package-import --json
 ```
 

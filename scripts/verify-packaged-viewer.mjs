@@ -22,6 +22,8 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'core/library/local-folders.mjs',
     'core/index/schema/package-watch.mjs',
     'core/processing/package-watch.mjs',
+    'core/packages/watch-formats.mjs',
+    'public/library/package-watch.js',
     'core/materials/unity/folder-bindings.mjs',
     'core/materials/unity/preview-bindings.mjs',
     'core/materials/unity/yaml.mjs',

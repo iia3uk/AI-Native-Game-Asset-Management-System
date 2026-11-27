@@ -13,8 +13,7 @@ import { packageWorkspaceRoot } from '../../workspace.mjs'
 import { inspectUnrealFile } from '../inspect.mjs'
 import { unrealSource } from '../source.mjs'
 import { pakMethod, pakRecipe, readPakCache } from './cache.mjs'
-
-const maxInput = 2 * 1024 ** 3
+import { maxPakInput } from './limits.mjs'
 
 async function saveOutputs(workspace, source, result, hash, signal) {
   const output = join(workspace, 'publish')
@@ -44,7 +43,7 @@ export async function processUnrealPak({ root: sourceRoot, path, name }, { direc
   signal, onProgress, publish = (result, move) => { move(); return result } }) {
   const file = await fileInfo(sourceRoot, path)
   if (!file) return { status: 'failed', issue: 'unreal-pak-changed' }
-  if (file.info.size > maxInput) return { status: 'failed', issue: 'unreal-pak-size-limit' }
+  if (file.info.size > maxPakInput) return { status: 'failed', issue: 'unreal-pak-size-limit' }
   const source = { root: sourceRoot, file, name, type: 'pak' }
   const header = await inspectUnrealFile(sourceRoot, source, signal)
   if (header.storage !== 'container') return { status: 'failed', issue: header.issue }

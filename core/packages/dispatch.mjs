@@ -60,8 +60,11 @@ export function packageOptions(format, input) {
   return { ...options, formats: formats || (options.mode === 'engineless' ? '' : 'fbx,glb') }
 }
 
-export async function stagePackage(directory, source, job, { signal, onProgress, publish }) {
+export async function stagePackage(directory, source, job, { signal, onProgress, publish, expectedFormat }) {
   const format = await detectPackage(source, { signal })
+  if (expectedFormat && expectedFormat !== format) {
+    throw new IndexInputError('Содержимое файла не соответствует формату автоимпорта (' + expectedFormat + ').')
+  }
   if (format === 'unitypackage') {
     return stageUnityPackage(directory, source, job.sourceKey, {
       signal, onProgress, formats: job.exportFormats, mode: job.engineMode, editorVersion: job.editorVersion,

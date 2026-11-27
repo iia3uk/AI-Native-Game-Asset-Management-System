@@ -94,7 +94,7 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
       if (method === 'POST' && resource === 'libraries' && ['watch', 'package-watch'].includes(action)) {
         const input = await body(request).catch(() => null)
         const library = action === 'watch' ? index.setWatching(id, input?.enabled) :
-          index.setPackageWatching(id, input?.enabled, ignoredWatchPaths)
+          index.setPackageWatching(id, input?.enabled, ignoredWatchPaths, input?.format)
         watcher?.refresh()
         return json(response, 200, { library })
       }

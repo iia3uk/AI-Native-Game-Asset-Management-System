@@ -5,6 +5,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
 import { test } from 'node:test'
 import { AssetIndex } from '../core/index/asset-index.mjs'
+import { removePackageWatchSchema } from './fixtures/index-schema.mjs'
+import { packageWatch } from '../core/index/schema/package-watch.mjs'
 import { ProcessingWorker } from '../core/processing/processing-worker.mjs'
 import { fixtureTexture, unityEntries, writeUnityFixture } from './fixtures/unitypackage.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
@@ -159,8 +161,8 @@ test('Schema 9 migration preserves libraries and existing jobs with package watc
   await index.close()
   const legacy = new DatabaseSync(database)
   try {
-    legacy.exec(`DROP TABLE package_watch_imports; DROP TABLE package_watch_libraries; DROP INDEX live_unity_packages;
-      PRAGMA user_version = 9;`)
+    removePackageWatchSchema(legacy)
+    legacy.exec('PRAGMA user_version = 9;')
   } finally {
     legacy.close()
   }
@@ -170,7 +172,97 @@ test('Schema 9 migration preserves libraries and existing jobs with package watc
     assert.equal(library.id, id)
     assert.equal(library.watching, true)
     assert.equal(library.packageWatching, false)
+    assert.deepEqual(library.packageWatchFormats, [])
     assert.equal(index.jobs.get(jobId).status, 'pending')
+  } finally {
+    await index.close()
+  }
+})
+
+test('Schema 10 migration keeps existing Unity opt-ins and automatic job history', async t => {
+  const root = await testDirectory(t)
+  const database = join(root, 'index.sqlite')
+  await packageAsset(join(root, 'Legacy.unitypackage'), 'texture.png')
+  let index = await AssetIndex.open(database)
+  const { id } = await index.connect(root)
+  await index.scan(id)
+  index.setPackageWatching(id, true)
+  assert.equal(index.jobs.refillWatchedImports([]), 1)
+  const [before] = index.jobs.list({ type: 'package-import' })
+  await index.close()
+
+  const legacy = new DatabaseSync(database)
+  try {
+    legacy.exec(`ALTER TABLE package_watch_libraries RENAME TO settings_v11;
+      ALTER TABLE package_watch_imports DROP COLUMN format;
+      DROP INDEX live_watched_packages;
+      ${packageWatch}
+      INSERT INTO package_watch_libraries SELECT library_id FROM settings_v11;
+      DROP TABLE settings_v11;
+      PRAGMA user_version = 10;`)
+  } finally {
+    legacy.close()
+  }
+
+  index = await AssetIndex.open(database)
+  try {
+    const [library] = index.libraries()
+    assert.equal(library.packageWatching, true)
+    assert.deepEqual(library.packageWatchFormats, ['unitypackage'])
+    assert.deepEqual(index.jobs.get(before.id), before)
+    assert.equal(index.jobs.watchedImportSource(before.id).format, 'unitypackage')
+    assert.equal(index.jobs.refillWatchedImports([]), 0)
+    index.setPackageWatching(id, false)
+    assert.equal(index.jobs.get(before.id).status, 'cancelled')
+  } finally {
+    await index.close()
+  }
+})
+
+test('Enabled formats share scan results while cancellation and content validation stay format-specific', async t => {
+  const root = await testDirectory(t)
+  const input = join(root, 'incoming')
+  await mkdir(input)
+  await packageAsset(join(input, 'Legacy.unitypackage'), 'texture.png')
+  await packageAsset(join(input, 'Wrong.pak'), 'wrong.png')
+  await writeFile(join(input, 'Sample.unity3d'), 'not UnityFS')
+  await writeFile(join(input, 'Other.BUNDLE'), 'not UnityFS either')
+  const index = await AssetIndex.open(':memory:')
+  try {
+    const { id } = await index.connect(input)
+    await index.scan(id)
+    assert.equal(index.jobs.refillWatchedImports([]), 0)
+    assert.deepEqual(index.setPackageWatching(id, true, [], 'unreal-pak').packageWatchFormats, ['unreal-pak'])
+    assert.equal(index.jobs.refillWatchedImports([]), 1)
+    index.setPackageWatching(id, true, [], 'unityfs')
+    assert.equal(index.jobs.refillWatchedImports([]), 2)
+    assert.deepEqual(index.libraries()[0].packageWatchFormats, ['unityfs', 'unreal-pak'])
+    assert.equal(index.libraries()[0].assets, 4)
+    assert.equal(index.libraries()[0].packageWatching, false)
+    const scan = index.jobs.enqueue(id, { trigger: 'watch' })
+    assert.ok(scan)
+
+    index.setPackageWatching(id, false, [], 'unityfs')
+    assert.equal(index.jobs.get(scan.id).status, 'pending')
+    const jobs = index.jobs.list({ type: 'package-import' })
+    const wrong = jobs.find(job => job.packageName === 'Wrong.pak')
+    assert.equal(wrong.status, 'pending')
+    assert.equal(wrong.exportFormats, undefined)
+    assert.deepEqual(jobs.filter(job => job.status === 'cancelled').map(job => job.packageName).sort(), ['Other.BUNDLE', 'Sample.unity3d'])
+    assert.deepEqual(jobs.find(job => job.packageName === 'Sample.unity3d').exportFormats, ['fbx', 'glb'])
+
+    const worker = new ProcessingWorker(index, { type: 'package-import', importDirectory: join(root, 'imports') })
+    try {
+      const finished = await worker.wait(wrong.id, AbortSignal.timeout(5000))
+      assert.equal(finished.status, 'failed')
+      assert.match(finished.error, /не соответствует формату автоимпорта \(unreal-pak\)/)
+      assert.equal(index.libraries().length, 1)
+    } finally {
+      await worker.stop()
+    }
+    index.setPackageWatching(id, false, [], 'unreal-pak')
+    assert.equal(index.jobs.get(scan.id).status, 'cancelled')
+    assert.deepEqual(index.watchedLibraries(), [])
   } finally {
     await index.close()
   }

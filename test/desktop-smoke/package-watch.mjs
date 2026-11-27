@@ -1,7 +1,9 @@
+import { copyFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fixtureTexture, unityEntries, writeUnityFixture } from '../fixtures/unitypackage.mjs'
+import { makePak, wavTone } from '../fixtures/unreal-pak.mjs'
 
-export async function verifyPackageWatch(webContents, waitFor, fixtures) {
+export async function verifyPackageWatch(webContents, waitFor, fixtures, { bundle, pak }) {
   await webContents.executeJavaScript("document.querySelector('#index-mode').click()")
   await waitFor("document.querySelector('#index-dialog').open && !document.querySelector('#index-library').disabled")
   await webContents.executeJavaScript(`{
@@ -12,10 +14,25 @@ export async function verifyPackageWatch(webContents, waitFor, fixtures) {
     select.dispatchEvent(new Event('change'))
   }`)
   await waitFor("!document.querySelector('#index-package-watch').disabled && document.querySelector('#index-watch').getAttribute('aria-pressed') === 'false'")
-  await webContents.executeJavaScript("document.querySelector('#index-package-watch').click()")
-  await waitFor("document.querySelector('#index-package-watch').getAttribute('aria-pressed') === 'true'")
+  await webContents.executeJavaScript("document.querySelector('#index-package-autoimport summary').click()")
+  async function toggle(id, enabled) {
+    await webContents.executeJavaScript(`document.querySelector('#index-${id}').click()`)
+    await waitFor(`document.querySelector('#index-${id}').getAttribute('aria-pressed') === '${enabled}'`)
+  }
+  await toggle('package-watch', true)
   await writeUnityFixture(join(fixtures, 'watch-ui.unitypackage'), unityEntries('9'.repeat(32), 'Assets/watch-texture.png', fixtureTexture))
   await waitFor("document.querySelector('#package-jobs').textContent.includes('watch-ui.unitypackage · Автоимпорт · Обработан · В индексе')")
-  await webContents.executeJavaScript("document.querySelector('#index-package-watch').click()")
-  await waitFor("document.querySelector('#index-package-watch').getAttribute('aria-pressed') === 'false'")
+  if (bundle) await toggle('bundle-watch', true)
+  if (pak) await toggle('pak-watch', true)
+  await toggle('package-watch', false)
+  if (bundle) {
+    await copyFile(bundle, join(fixtures, 'watch-ui.unity3d'))
+    await waitFor("document.querySelector('#package-jobs').textContent.includes('watch-ui.unity3d · Автоимпорт · Обработан · В индексе')")
+    await toggle('bundle-watch', false)
+  }
+  if (pak) {
+    await writeFile(join(fixtures, 'watch-ui.pak'), makePak([{ path: 'Audio/Watch-Tone.wav', content: wavTone() }]))
+    await waitFor("document.querySelector('#package-jobs').textContent.includes('watch-ui.pak · Автоимпорт · Обработан · В индексе')")
+    await toggle('pak-watch', false)
+  }
 }
