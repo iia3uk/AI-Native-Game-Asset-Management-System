@@ -49,7 +49,20 @@ npm run cli -- engines --unity-project "/absolute/path/UnityProject" --json
 npm run cli -- engines --unreal-project "/absolute/path/Game.uproject" --json
 ```
 
-The Unity check reports an exact project version if installed, or a candidate from the same release series. The Unreal check reports an installation matching the project association. Unreal Editor export remains pending.
+The Unity check reports an exact project version if installed, or a candidate from the same release series. The Unreal check reports an installation matching the project association.
+
+## Inspect and export Unreal content
+
+Use `unreal-inspect` with a `.uproject`, its `Content` folder or an individual Unreal file. The inspection classifies supported loose package headers as editor, cooked, unversioned or unknown, recognizes standard Pak and IoStore headers and lists companion files. Project inspection reads up to 30,000 directory entries and returns counts and the first 500 matches. The command does not require Unreal Editor.
+
+```sh
+npm run cli -- unreal-inspect "/absolute/path/Project.uproject" --json
+npm run cli -- unreal-export "/absolute/path/Project.uproject" --unreal-version 5.7 --json
+```
+
+`unreal-export` is an opt-in CLI preview for trusted editor content. Select a `.uproject` or a `Content` folder. It needs a locally discovered Unreal Editor 5.1 or newer and selects the associated build when available. For a folder without an association, it can use the latest compatible detected Editor. You can override the version. The temporary project uses bundled Python and only stages eligible assets under `/Game`. It reports missing dependencies and unsupported resources.
+
+The bridge requests FBX for static meshes, skeletal meshes and animation sequences, PNG for supported textures and WAV for audio. Materials and standalone skeletons produce JSON metadata. Verified outputs publish under the app's managed import folder and discoverable files are added to the shared index. The manifest records source paths and hashes. GLB previews, cooked extraction and background queue support are pending. Native Unreal export still needs end-to-end validation.
 
 Set `ASSET_VIEWER_UNITY` or `ASSET_VIEWER_BLENDER` to an absolute executable path. Set `ASSET_VIEWER_UNITY_ROOTS` or `ASSET_VIEWER_UNREAL_ROOTS` to absolute installation directories using the operating system's PATH separator. Start or restart the app with those settings.
 

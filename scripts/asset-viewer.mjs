@@ -12,6 +12,8 @@ import { packageSource } from '../core/packages/unity/paths.mjs'
 import { engineInventory } from '../core/engines/inventory.mjs'
 import { packageExportFormats } from '../core/conversion/formats.mjs'
 import { unityImportOptions } from '../core/engines/unity/options.mjs'
+import { inspectUnreal } from '../core/packages/unreal/inspect.mjs'
+import { exportUnrealWithEditor } from '../core/packages/unreal/export.mjs'
 
 const string = { type: 'string' }
 const flag = { type: 'boolean' }
@@ -28,6 +30,8 @@ const commands = {
   'package-inspect': { args: ['absolute-path'], options: {} },
   'package-import': { args: ['absolute-path'], options: { 'dry-run': flag, queue: flag, export: string,
     mode: string, 'unity-version': string } },
+  'unreal-inspect': { args: ['absolute-path'], options: {} },
+  'unreal-export': { args: ['absolute-path'], options: { 'unreal-version': string } },
   engines: { args: [], options: { 'unity-project': string, 'unreal-project': string } },
   'thumbnail-cache': { args: [], options: { clear: flag, 'dry-run': flag } },
   profiles: { args: [], options: {} },
@@ -84,6 +88,29 @@ async function waitForJob(index, id, options) {
   } finally {
     await worker.stop()
     for (const signal of ['SIGINT', 'SIGTERM']) process.off(signal, abort)
+  }
+}
+
+async function unrealExport(paths, input, unrealVersion) {
+  const stop = new AbortController()
+  const abort = () => stop.abort()
+  for (const event of ['SIGINT', 'SIGTERM']) process.once(event, abort)
+  try {
+    const report = await exportUnrealWithEditor(input, { directory: paths.imports,
+      unrealVersion, signal: stop.signal })
+    if (!report.output) {
+      process.exitCode = 1
+      return report
+    }
+    const index = await AssetIndex.open(paths.database)
+    try {
+      const library = index.registerLibrary(report.output, 'Unreal · ' + report.sourceName)
+      return { ...report, library, scan: await index.scan(library.id, { signal: stop.signal }) }
+    } finally {
+      await index.close()
+    }
+  } finally {
+    for (const event of ['SIGINT', 'SIGTERM']) process.off(event, abort)
   }
 }
 
@@ -175,6 +202,10 @@ async function main([command, ...args]) {
   if (command === 'engines') return print(await engineInventory({
     unityProject: values['unity-project'], unrealProject: values['unreal-project'],
   }), values.json)
+  if (command === 'unreal-inspect') {
+    return print(await inspectUnreal(input, { signal: AbortSignal.timeout(120_000) }), values.json)
+  }
+  if (command === 'unreal-export') return print(await unrealExport(paths, input, values['unreal-version']), values.json)
   if (command === 'package-inspect' || command === 'package-import') {
     if (values.queue && values['dry-run']) throw new IndexInputError('Use only one of --queue or --dry-run.')
     const options = unityImportOptions(values.mode, values['unity-version'])

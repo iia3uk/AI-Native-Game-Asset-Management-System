@@ -2,6 +2,7 @@ import { createRequire } from 'node:module'
 import { access } from 'node:fs/promises'
 import { join, normalize } from 'node:path'
 import { bridgeScripts } from '../core/engines/unity/bridge/project.mjs'
+import { unrealBridgeScripts } from '../core/engines/unreal/bridge/project.mjs'
 
 const require = createRequire(import.meta.url)
 const builderRequire = createRequire(require.resolve('electron-builder'))
@@ -19,6 +20,7 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'core/engines/inventory.mjs',
     'core/engines/blender/preview.mjs',
     ...bridgeScripts.map(file => 'core/engines/unity/bridge/editor/' + file),
+    ...unrealBridgeScripts.map(file => 'core/engines/unreal/bridge/editor/' + file),
     'public/package-importer/index.js',
     'node_modules/three/build/three.module.js',
     'node_modules/three/examples/jsm/controls/OrbitControls.js',
