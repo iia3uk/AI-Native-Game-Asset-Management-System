@@ -12,10 +12,11 @@ export async function testDirectory(t) {
   return path
 }
 
-export async function startServer(directory, env = {}) {
+export async function startServer(directory, env = {}, { executable = process.execPath,
+  entry = fileURLToPath(new URL('../server.mjs', import.meta.url)) } = {}) {
   const fab = join(directory, 'fab')
   await mkdir(fab, { recursive: true })
-  const child = spawn(process.execPath, [fileURLToPath(new URL('../server.mjs', import.meta.url))], {
+  const child = spawn(executable, [entry], {
     env: { ...process.env, ASSET_VIEWER_PORT: '0', FAB_ASSETS_ROOT: fab, ASSET_VIEWER_FOLDER: '',
       ASSET_VIEWER_DATA_DIR: join(directory, 'data'), ...env },
     stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,

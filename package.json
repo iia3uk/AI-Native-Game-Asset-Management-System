@@ -19,7 +19,7 @@
     "test:desktop": "electron test/desktop-smoke",
     "build:cue4parse": "node scripts/build-cue4parse.mjs",
     "build:unity-bundle": "node scripts/build-unity-bundle.mjs",
-    "prebuild:windows": "npm run build:unity-bundle -- win-x64",
+    "prebuild:windows": "npm run build:unity-bundle -- win-x64 && npm run build:cue4parse -- win-x64",
     "build:windows": "electron-builder --win nsis portable --x64 --publish never && node scripts/release-checksums.mjs",
     "cli": "node scripts/asset-viewer.mjs",
     "check": "node scripts/check-syntax.mjs",
@@ -71,6 +71,14 @@
         {
           "from": "release/unity-bundle/win-x64",
           "to": "unity-bundle",
+          "filter": [
+            "**/*",
+            "!**/*.pdb"
+          ]
+        },
+        {
+          "from": "release/cue4parse/win-x64",
+          "to": "cue4parse",
           "filter": [
             "**/*",
             "!**/*.pdb"

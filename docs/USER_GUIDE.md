@@ -98,7 +98,9 @@ npm run cli -- unreal-export "/absolute/path/Project.uproject" --unreal-version 
 
 The bridge requests FBX for static meshes, skeletal meshes and animation sequences, PNG for supported textures and WAV for audio. Materials and standalone skeletons produce JSON metadata. Verified outputs publish under the app's managed import folder and discoverable files are added to the shared index. The manifest records source paths and hashes. The Editor bridge still needs end-to-end validation with a native Unreal installation.
 
-Use **Индекс → Импорт пакетов Unity и Unreal** to inspect a stock Pak with a supported unencrypted index. The desktop window accepts files selected or dropped into the importer. The same path works in the CLI. Make the separate CUE4Parse executable available with the [worker build instructions](BUILD.md). Inspection lists up to 500 entries. Click **Обработать и добавить в индекс** to queue extraction into `imports/unreal-pak-v1/`. The job shows status, opens the report and links to the indexed files when available.
+Use **Индекс → Импорт пакетов Unity и Unreal** to inspect a stock Pak with a supported unencrypted index. Select a file or drop it into the importer. Inspection lists up to 500 entries. Click **Обработать и добавить в индекс** to queue extraction into `imports/unreal-pak-v1/`. The job shows status, opens the report and links to the indexed files when available.
+
+The Windows installer and portable app include the Pak decoder. For the CLI from source, build the worker once. [Build instructions](BUILD.md).
 
 ```sh
 npm run cli -- package-inspect "/absolute/path/example.pak" --json

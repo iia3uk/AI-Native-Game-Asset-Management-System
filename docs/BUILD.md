@@ -10,7 +10,7 @@ npm run desktop
 npm run build:windows
 ```
 
-`build:windows` uses the .NET 10 SDK to build the bundled UnityFS worker, then writes the NSIS installer, portable executable and `SHA256SUMS.txt` to `release/`. It runs with publishing disabled. Running the desktop app from the source tree may download the pinned Electron runtime on first launch. Packaging may download additional Windows build tools.
+`build:windows` uses the .NET 10 SDK to build the UnityFS and Unreal Pak workers, then writes the NSIS installer, portable executable and `SHA256SUMS.txt` to `release/`. Both workers are self-contained and included in both desktop builds. The build runs with publishing disabled. Running the desktop app from the source tree may download the pinned Electron runtime on first launch. Packaging may download additional Windows build tools.
 
 The Windows build validates that the package includes the thumbnail worker, Three.js loaders, decoder binaries and optional Blender script.
 
@@ -18,11 +18,17 @@ The default installer targets the current user. A desktop shortcut is created, a
 
 Pushing an intentional version tag matching `package.json` runs checks and prepares a draft GitHub Release. The owner reviews the artifact hashes and publishes the draft. Updating installed apps is manual.
 
-## Build the optional Unreal Pak worker
+## Build the Unreal Pak worker from source
 
 Install the .NET 10 SDK on the build machine and run `npm run build:cue4parse`. The script restores locked dependencies and writes a self-contained executable and its runtime to `release/cue4parse/win-x64/` or `release/cue4parse/linux-x64/`. Run `npm run build:cue4parse -- linux-x64` or specify `win-x64` to select a target explicitly.
 
-Keep the published files together. Runtime use does not require a .NET SDK or Unreal Editor. Linux still needs the platform libraries required by .NET, including ICU. The source CLI discovers the published worker automatically. For a different location, set `ASSET_VIEWER_CUE4PARSE` to the absolute path of the worker executable. The default Electron installer does not include this optional worker.
+Keep the published files together, including `Notices/`. The source CLI discovers the published worker automatically. For a different location, set `ASSET_VIEWER_CUE4PARSE` to its absolute executable path. The Windows desktop app finds its own copy under `resources/cue4parse/` and runs without Unreal Editor or a system .NET installation. A separate Linux worker still uses .NET's platform libraries, including ICU.
+
+The packaged worker includes the CUE4Parse license and upstream notice, the pinned NuGet dependency inventory and the .NET notices. The build checks the inventory against the packaged dependency graph. The Windows package smoke test runs a watched Pak import with the bundled worker and compares the indexed WAV to the source fixture.
+
+```sh
+node --test test/packaged-smoke/unreal-pak.mjs
+```
 
 ## Build the Unity AssetBundle worker from source
 

@@ -1,0 +1,20 @@
+<Project>
+  <ItemGroup>
+    <None Update="Notices/*.txt" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="CopyWorkerNotices" AfterTargets="Publish" Condition="'$(SelfContained)' == 'true'">
+    <ItemGroup>
+      <DotNetRuntimePack Include="@(ResolvedRuntimePack)" Condition="'%(ResolvedRuntimePack.FrameworkName)' == 'Microsoft.NETCore.App'" />
+      <PackageNotice Include="$(NuGetPackageRoot)bouncycastle.cryptography/2.6.2/LICENSE.md" TargetName="BouncyCastle-LICENSE.md" />
+      <PackageNotice Include="$(NuGetPackageRoot)communitytoolkit.highperformance/8.4.2/License.md" TargetName="CommunityToolkit-LICENSE.md" />
+      <PackageNotice Include="$(NuGetPackageRoot)communitytoolkit.highperformance/8.4.2/ThirdPartyNotices.txt" TargetName="CommunityToolkit-NOTICE.txt" />
+      <PackageNotice Include="$(NuGetPackageRoot)fixedmathsharp/4.0.1/LICENSE" TargetName="FixedMathSharp-LICENSE.txt" />
+      <PackageNotice Include="$(NuGetPackageRoot)fixedmathsharp/4.0.1/NOTICE" TargetName="FixedMathSharp-NOTICE.txt" />
+      <PackageNotice Include="$(NuGetPackageRoot)microsoft.bcl.memory/10.0.9/THIRD-PARTY-NOTICES.TXT" TargetName="DotNetPackages-NOTICE.txt" />
+      <PackageNotice Include="$(NuGetPackageRoot)newtonsoft.json/13.0.4/LICENSE.md" TargetName="Newtonsoft.Json-LICENSE.md" />
+    </ItemGroup>
+    <Copy SourceFiles="%(DotNetRuntimePack.PackageDirectory)/LICENSE.TXT;%(DotNetRuntimePack.PackageDirectory)/THIRD-PARTY-NOTICES.TXT"
+          DestinationFolder="$(PublishDir)/Notices" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(PackageNotice)" DestinationFiles="@(PackageNotice->'$(PublishDir)/Notices/%(TargetName)')" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

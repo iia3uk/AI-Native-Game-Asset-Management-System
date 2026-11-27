@@ -3,6 +3,7 @@ import { access } from 'node:fs/promises'
 import { join, normalize } from 'node:path'
 import { bridgeScripts } from '../core/engines/unity/bridge/project.mjs'
 import { unrealBridgeScripts } from '../core/engines/unreal/bridge/project.mjs'
+import { verifyUnrealWorker } from './packaging/verify-unreal-worker.mjs'
 
 const require = createRequire(import.meta.url)
 const builderRequire = createRequire(require.resolve('electron-builder'))
@@ -73,6 +74,7 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
   ]) {
     await access(join(resources, 'unity-bundle', path))
   }
+  await verifyUnrealWorker(join(resources, 'cue4parse'))
   for (const script of ['batch.py', 'stage_inputs.py']) {
     await access(join(resources, 'app.asar.unpacked', 'core', 'engines', 'blender', 'scripts', script))
   }
