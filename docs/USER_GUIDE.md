@@ -35,7 +35,7 @@ The job result shows the managed output directory. **Отчёт об импор�
 
 The Unity bridge exports whole prefabs and their mesh renderers as individual FBX files, standalone transform animations as FBX, supported readable textures as PNG and material texture bindings as JSON. GLB previews of Unity geometry use Blender. Unity scenes, binary Unity assets, assets with custom serialized components and shader graphs remain source files or diagnostic entries.
 
-The reports are `manifest.json`, `dependencies.json` and `conversion-report.json`. They record source paths, GUIDs, available file IDs, hashes, dependency status and how each artifact was made. An unchanged archive with the same mode, formats and tool installations reuses verified output. Custom destination folders and Fab package import remain pending.
+The reports are `manifest.json`, `dependencies.json` and `conversion-report.json`. They record source paths, GUIDs, available file IDs, hashes, dependency status and how each artifact was made. An unchanged archive with the same mode, formats and tool installations reuses verified output. Fab package import remains pending.
 
 ```sh
 npm run cli -- package-inspect "/absolute/path/example.unitypackage" --json
@@ -47,6 +47,17 @@ npm run cli -- jobs --type package-import --json
 ```
 
 The default CLI command waits for extraction and indexing. Add `--queue` to hand processing to the running desktop app or loopback server.
+
+## Save completed imports to a folder
+
+In **Отчёт об импорте**, open **Экспортировать в папку** for the whole package. For one resource, click **Показать файлы** and use **Выбрать для экспорта** on its row. Choose an existing destination outside connected libraries. Click **Составить план** to review files, size and known missing links. **Экспортировать** creates a new subdirectory with the artifacts and three reports. A single-resource export includes known linked resources with their relative paths. UnityFS and Pak reports show when dependency coverage is limited.
+
+The CLI returns a plan by default. Add `--asset <offset>` for a resource's zero-based position in the manifest. Use the same arguments with `--plan-key` followed by the returned key to publish the export.
+
+```sh
+npm run cli -- package-export <job-id> "/absolute/existing/output" --json
+npm run cli -- package-export <job-id> "/absolute/existing/output" --plan-key <key> --json
+```
 
 ## Inspect and import a Unity AssetBundle
 

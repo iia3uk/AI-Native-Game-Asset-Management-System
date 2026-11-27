@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
@@ -99,6 +99,20 @@ test('universal Pak import verifies source, reuses validated output and exposes 
       const exported = manifest.assets.find(entry => entry.format === 'glb')
       assert.deepEqual(await readFile(join(imported.result.directory, exported.artifact.path)), model)
       assert.equal(manifest.assets.find(entry => entry.path.endsWith('/Encrypted.wav')).status, 'skipped')
+      const destination = join(root, 'exports')
+      await mkdir(destination)
+      const asset = manifest.assets.findIndex(entry => entry.path.endsWith('/Tone.wav'))
+      const exportRoute = '/api/index/jobs/' + imported.id
+      const preview = await server.post(exportRoute + '/export-plan', { destination, asset })
+      assert.equal(preview.status, 200)
+      const exportPlan = await preview.json()
+      assert.equal(exportPlan.dependencyStatus, 'unavailable')
+      const publication = await server.post(exportRoute + '/export', { destination, asset, key: exportPlan.key })
+      assert.equal(publication.status, 201)
+      const { directory } = await publication.json()
+      assert.deepEqual(await readFile(join(directory, manifest.assets[asset].artifact.path)), audio)
+      const deliverable = JSON.parse(await readFile(join(directory, 'manifest.json'), 'utf8'))
+      assert.deepEqual(deliverable.entries, [manifest.assets[asset]])
       const { assets } = await (await server.request('/api/index/search?library=' + imported.result.library.id)).json()
       assert.deepEqual(assets.map(asset => asset.ext).sort(), ['glb', 'wav'])
       const opened = await server.post('/api/index/assets/' + assets.find(asset => asset.ext === 'glb').id + '/open', {})

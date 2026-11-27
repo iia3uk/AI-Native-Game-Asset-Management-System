@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { app } from 'electron'
 import { startDesktop } from '../../desktop/bootstrap.mjs'
 import { generateFixtures } from '../../scripts/generate-fixtures.mjs'
+import { verifyPackageExport } from './package-export.mjs'
 import { verifyPackageFolder } from './package-folder.mjs'
 import { verifyPackageWatch } from './package-watch.mjs'
 import { verifyStartupWithoutInterface } from './startup.mjs'
@@ -155,6 +156,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   await waitFor("document.querySelector('#package-jobs').textContent.includes('GLB · Оригинал · Previews/')")
   await waitFor("document.querySelector('#package-jobs').textContent.includes('Привязки материала · standard · Materials/')")
   await waitFor("document.querySelector('#package-jobs').textContent.includes('Запрошенная версия Unity недоступна')")
+  await verifyPackageExport(webContents, waitFor)
   await webContents.executeJavaScript("Array.from(document.querySelectorAll('#package-jobs button')).find(button => button.textContent === 'Показать в индексе').click()")
   await waitFor("document.querySelector('#index-results').textContent.includes('fixture-package.obj')")
   await webContents.executeJavaScript("Array.from(document.querySelectorAll('#index-results button')).find(button => button.textContent.startsWith('fixture-package.obj')).click()")
@@ -179,7 +181,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   await verifyStartupWithoutInterface()
   assert.deepEqual(externalRequests, [])
   assert.equal(window.isVisible(), false)
-  console.log('Desktop startup, demo, library watching, thumbnail cache, analysis, metadata, single-file, folder and watched Unity import, PBR material preview and renderer isolation passed.')
+  console.log('Desktop startup, demo, library watching, thumbnail cache, analysis, metadata, package import and export, PBR material preview and renderer isolation passed.')
   if (bundle) console.log('UnityFS folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
   if (sprites) console.log('UnityFS sprite inspection, queued import, dependency reporting and indexed PNG preview passed.')
   if (audio) console.log('UnityFS PCM inspection, queued import, local byte ranges and indexed WAV playback passed.')

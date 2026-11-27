@@ -9,9 +9,10 @@ import { ThumbnailCache } from '../thumbnails/thumbnail-cache.mjs'
 import { assetThumbnail } from '../thumbnails/thumbnail-service.mjs'
 import { packageRoutes } from './package-routes.mjs'
 import { packageManifestPage } from '../packages/manifest-page.mjs'
+import { exportPackageResult } from '../packages/export/publish.mjs'
 import { engineInventory } from '../engines/inventory.mjs'
 
-export function indexRoutes({ database, thumbnailDirectory, importDirectory, ignoredWatchPaths = [],
+export function indexRoutes({ database, thumbnailDirectory, importDirectory, ignoredWatchPaths = [], exportProtectedRoots = [],
   json, body, allowsWrite, openFolder, invalidateFolder }) {
   let pendingIndex
   let worker
@@ -118,6 +119,13 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
           const page = await packageManifestPage(importDirectory, index.jobs.get(id),
             Number(params.get('offset') ?? 0), Number(params.get('limit') ?? 50))
           if (page) return json(response, 200, page)
+        }
+        if (method === 'POST' && id && ['export-plan', 'export'].includes(action)) {
+          const roots = [...exportProtectedRoots, ...index.libraries().map(library => library.root)]
+          const input = await body(request).catch(() => null)
+          const result = await exportPackageResult(importDirectory, roots, index.jobs.get(id), input,
+            { preview: action === 'export-plan', signal: shutdown.signal })
+          if (result) return json(response, action === 'export-plan' ? 200 : 201, result)
         }
         if (method === 'POST' && id && action === 'cancel') {
           const job = index.jobs.cancel(id)

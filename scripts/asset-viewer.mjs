@@ -15,6 +15,7 @@ import { inspectUnreal } from '../core/packages/unreal/inspect.mjs'
 import { exportUnrealWithEditor } from '../core/packages/unreal/export.mjs'
 import { extractUnrealPak } from '../core/packages/unreal/pak/import.mjs'
 import { runPackageFolder } from './cli/package-folder.mjs'
+import { runPackageExport } from './cli/package-export.mjs'
 
 const string = { type: 'string' }
 const flag = { type: 'boolean' }
@@ -34,6 +35,7 @@ const commands = {
     mode: string, 'unity-version': string } },
   'package-import': { args: ['absolute-path'], options: { 'dry-run': flag, queue: flag, export: string,
     mode: string, 'unity-version': string } },
+  'package-export': { args: ['job-id', 'destination'], options: { asset: string, 'plan-key': string } },
   'unity-bundle': { args: ['absolute-path'], options: { inspect: flag, fbx: flag } },
   'unreal-inspect': { args: ['absolute-path'], options: {} },
   'unreal-export': { args: ['absolute-path'], options: { 'unreal-version': string } },
@@ -166,6 +168,7 @@ async function execute(index, paths, command, [input, setting], values) {
       if (!values['dry-run'] && !values.status && !['available', 'pending', 'running'].includes(result.status)) process.exitCode = 1
       return result
     }
+    case 'package-export': return runPackageExport(index, paths, input, setting, values)
     case 'jobs': {
       if (input) {
         const job = values.cancel ? index.jobs.cancel(input) : values.retry ? index.jobs.retry(input) : index.jobs.get(input)

@@ -31,6 +31,8 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | POST | `/api/index/packages/inspect` | An absolute file `path` or a folder result's `root` and relative `path`. Returns the detected format, SHA-256, entry count and up to 500 preview entries |
 | POST | `/api/index/packages/import` | Send the same absolute `path` or folder `root` and relative `path` as for inspection, along with the inspection `hash` and optional `formats` such as `["fbx","glb"]`. Returns 202 and the new or active import job. The default mode `engineless` extracts originals when formats are omitted. Optional `mode` values `auto` and `engine-assisted` allow Unity for native objects and default to both formats. Optional `editorVersion` specifies the preferred Unity version in these modes |
 | GET | `/api/index/jobs/:id/manifest?limit=50&offset=0` | Lists a completed package's assets with per-format output statuses, relative paths, method and hashes. Returns `assets`, `total` and `nextOffset`. The maximum limit is 100 |
+| POST | `/api/index/jobs/:id/export-plan` | `{"destination":"<absolute local folder>"}` previews a whole package export. Optional `asset` selects one item by zero-based manifest offset |
+| POST | `/api/index/jobs/:id/export` | Send the same destination and selection with the plan's `key`. Returns 201 and the new `directory` |
 | GET | `/api/index/engines` | Lists detected Unity, Unreal and Blender executables and available version metadata without starting an editor |
 | POST | `/api/demo` | Creates and opens a separate procedural demo session on demand |
 
@@ -51,6 +53,8 @@ Automatic scans use the same queue. An explicit scan request promotes the active
 Automatic archive imports have `type: "package-import"` and `trigger: "watch"`. An identical explicit import promotes the active job to manual priority. Turning off a format cancels queued automatic imports and requests cancellation of a running automatic import for that format in the source library. An unchanged failed or cancelled archive remains in job history for an explicit retry.
 
 The package import result contains `directory`, `report`, `reused`, `library` and `scanJobId`. Check the scan job for indexing completion. `library` and `scanJobId` are null when all items were excluded. The package path is used locally and the job list exposes its basename. With Unity allowed, `report.export.unity` records the Editor outcome and available versions. Per-file export entries distinguish prefab, component, mesh, animation, texture and material roles.
+
+Export plans contain the resolved `destination`, output name `prefix`, `scope`, totals for `assets`, `files` and `bytes`, and the first 100 relative `paths`. Selection plans report the number of known `unresolved` links. `dependencyStatus` is included when the underlying importer marks its dependency coverage. A stale plan or an artifact that fails verification returns 409. An unavailable import returns 404.
 
 Thumbnail requests deduplicate active jobs for the same asset version. The thumbnail route reports `available`, `missing`, `stale`, `unsupported`, `unavailable`, `limited`, or a job status. A stale source requires a new scan. The image route returns 404 when the asset, cache entry or source version is no longer available. Queued or running jobs can populate the cache after a clear.
 

@@ -291,6 +291,17 @@ test('native Unity Player companions decode, index and invalidate a stale inspec
     assert.equal((await waitForJob(server, job.result.scanJobId)).status, 'completed')
     const page = await server.request('/api/index/jobs/' + job.id + '/manifest')
     assert.equal(page.status, 200)
+    const { assets } = await page.json()
+    const asset = assets.findIndex(entry => entry.name === 'StereoPcm')
+    const route = '/api/index/jobs/' + job.id
+    const preview = await server.post(route + '/export-plan', { destination: root, asset })
+    assert.equal(preview.status, 200)
+    const { key } = await preview.json()
+    const publication = await server.post(route + '/export', { destination: root, asset, key })
+    assert.equal(publication.status, 201)
+    const saved = await publication.json()
+    assert.deepEqual(await readFile(join(saved.directory, assets[asset].artifact.path)),
+      await readFile(join(root, 'PlayerProject', 'Assets', 'Resources', 'StereoPcm.wav')))
     await verifyPlayerExports(root, files, plan, job, client(join(root, 'data')))
     const cached = await waitForImport(server, files.primary, plan.hash)
     assert.equal(cached.status, 'completed', cached.error)

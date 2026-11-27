@@ -3,6 +3,7 @@ import { mountPackageFolder } from './folder.js'
 import { formatLabel, isUnityBinary } from './formats.js'
 import { appendManifest, assetLabel, describeIssue } from './report.js'
 import { mountImportOptions } from './import-options.js'
+import { mountPackageExport } from './export.js'
 
 const $ = name => document.getElementById('package-' + name)
 const jobsRoute = '/api/index/jobs'
@@ -130,7 +131,10 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
       const unity = record.result.report.export?.unity
       if (unity?.status === 'completed') details.append(element('p', 'Unity Editor ' + unity.editorVersion))
       else if (unity?.issue) details.append(element('p', 'Unity Editor · ' + describeIssue(unity.issue)))
-      appendManifest({ details, record, json, element, button, assetStatus })
+      const exporter = (!scan || !active(scan)) && mountPackageExport({ record, json, post,
+        chooseFolder: bridge?.chooseFolder, element, button })
+      if (exporter) details.append(exporter.panel)
+      appendManifest({ details, record, json, element, button, assetStatus, selectAsset: exporter?.selectAsset })
       row.append(details)
     }
     row.append(controls)

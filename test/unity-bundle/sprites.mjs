@@ -48,6 +48,17 @@ export async function verifyBundleSprites(root, data, query) {
   const repeated = await query('unity-bundle', input)
   assert.deepEqual([repeated.reused, repeated.output], [true, exported.output])
 
+  const { job } = await query('package-import', input)
+  const ordinal = String(manifest.assets.findIndex(asset => asset.name === 'LowerSprite'))
+  const plan = await query('package-export', job.id, root, '--asset', ordinal)
+  assert.deepEqual([plan.assets, plan.dependencyStatus, plan.unresolved], [2, 'partial', 0])
+  const saved = await query('package-export', job.id, root, '--asset', ordinal, '--plan-key', plan.key)
+  const selection = JSON.parse(await readFile(join(saved.directory, 'manifest.json'), 'utf8'))
+  assert.deepEqual(selection.assets.map(asset => asset.name), ['LowerSprite', 'SpriteSheet'])
+  for (const { artifact } of selection.assets) {
+    assert.deepEqual(await readFile(join(saved.directory, artifact.path)), await readFile(join(exported.output, artifact.path)))
+  }
+
   const native = await readFile(join(root, 'Bundles', 'uncompressed', 'sprites.bundle'))
   const fields = [1, 0, 3, 4, 0, 0, -1, -1]
   const rect = Buffer.alloc(32)

@@ -4,8 +4,8 @@ import { IndexInputError } from '../index/index-errors.mjs'
 
 export const packageHashPattern = /^[0-9a-f]{64}$/
 
-export function validPackageSegment(segment) {
-  return segment.length > 0 && segment.length <= 180 && !/[\x00-\x1f\x7f\\:*?"<>|]/.test(segment) &&
+export function validPackageSegment(segment, maximumLength = 180) {
+  return segment.length > 0 && segment.length <= maximumLength && !/[\x00-\x1f\x7f\\:*?"<>|]/.test(segment) &&
     !/[. ]$/.test(segment) && !/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³]|conin\$|conout\$)(?:[. ]|$)/i.test(segment) &&
     !/^[^~.]{1,6}~\d+(?:\.|$)/i.test(segment)
 }

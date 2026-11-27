@@ -196,6 +196,10 @@ textarea { resize: vertical; min-height: 60px; padding: 7px 8px; font-size: 13px
 .index-analysis summary { cursor: pointer; }
 .index-analysis ul { padding-inline-start: 20px; font-size: 13px; overflow-wrap: anywhere; }
 .index-analysis ul:empty, .index-analysis dl:empty { display: none; }
+.package-export { margin-block: 10px; }
+.package-export label { display: grid; gap: 4px; }
+.package-export input { width: 100%; }
+.package-export [role=status] { overflow-wrap: anywhere; }
 .index-quality { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; }
 .index-quality h3 { margin: 0; }
 .index-quality-label, .index-quality label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }

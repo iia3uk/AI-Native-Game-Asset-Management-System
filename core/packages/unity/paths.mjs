@@ -5,7 +5,9 @@ const decoder = new TextDecoder('utf-8', { fatal: true })
 
 export function segments(path) {
   const parts = path.split('/')
-  if (path.length > 1024 || parts.length > 32 || !parts.every(validPackageSegment)) throw invalid('опасный путь в архиве.')
+  if (path.length > 1024 || parts.length > 32 || !parts.every(part => validPackageSegment(part))) {
+    throw invalid('опасный путь в архиве.')
+  }
   return parts
 }
 

@@ -60,7 +60,7 @@ export function assetLabel(asset) {
     [asset.member, asset.pathId].filter(Boolean).join(' #')].filter(Boolean).join(' · ')
 }
 
-export function appendManifest({ details, record, json, element, button, assetStatus }) {
+export function appendManifest({ details, record, json, element, button, assetStatus, selectAsset }) {
   const list = element('ul')
   const more = button('Показать файлы', () => void load())
   let offset = 0
@@ -70,8 +70,10 @@ export function appendManifest({ details, record, json, element, button, assetSt
     loading = more.disabled = true
     try {
       const page = await json('/api/index/jobs/' + record.id + '/manifest?offset=' + offset)
-      for (const asset of page.assets) {
-        const row = element('li', assetLabel(asset) + ' · ' + (assetStatus[asset.status] ?? asset.status))
+      for (const [index, asset] of page.assets.entries()) {
+        const name = assetLabel(asset)
+        const ordinal = offset + index
+        const row = element('li', name + ' · ' + (assetStatus[asset.status] ?? asset.status))
         const issues = [asset.issue, ...(asset.issues ?? [])].filter(issue => /^(unity|unreal)-/.test(issue))
         if (issues.length) row.append(element('p', issues.map(describeIssue).join(' · ')))
         if (asset.materialDescription) {
@@ -89,6 +91,13 @@ export function appendManifest({ details, record, json, element, button, assetSt
             ].filter(Boolean).join(' · ')))
           }
           row.append(results)
+        }
+        if (selectAsset && (asset.output || asset.metadata || asset.preview || asset.materialDescription ||
+            asset.artifact?.path || asset.exports?.some(item => item.path))) {
+          const actions = element('div')
+          actions.className = 'index-toolbar'
+          actions.append(button('Выбрать для экспорта', () => selectAsset(ordinal, name)))
+          row.append(actions)
         }
         list.append(row)
       }
