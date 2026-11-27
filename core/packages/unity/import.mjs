@@ -6,6 +6,7 @@ import { checkedPath, fileInfo, readBoundedText, sameFile } from '../../files/as
 import { readPackage } from './inspect.mjs'
 import { hashPattern, invalid, MiB, packageLimits, unityPackageVersion } from './policy.mjs'
 import { packageDocuments } from './report.mjs'
+import { verifyMaterialOutputs } from './material-outputs.mjs'
 import { locateBatchBlender } from '../../engines/blender/batch.mjs'
 import { packageExportVersion } from '../../conversion/formats.mjs'
 import { exportRecipe, verifyExports } from '../../conversion/cache.mjs'
@@ -23,7 +24,7 @@ async function importRoot(directory, exportEnabled) {
   return version
 }
 
-async function reuse(root, key, hash, formats, signal) {
+async function reuse(root, key, hash, formats, signal, limits) {
   const directory = join(root, key)
   const existing = await lstat(directory).catch(error => {
     if (error.code === 'ENOENT') return null
@@ -41,6 +42,9 @@ async function reuse(root, key, hash, formats, signal) {
     if (metadata.source.sha256 !== hash || metadata.version !== unityPackageVersion ||
         recorded.version !== unityPackageVersion || !Number.isSafeInteger(recorded.written) ||
         !await fileInfo(directory, 'dependencies.json')) throw new Error('Invalid import manifest')
+    if (!await verifyMaterialOutputs(directory, metadata.assets, recorded.materials?.written ?? 0, limits.dependencyBytes, signal)) {
+      throw new Error('Invalid material descriptions')
+    }
     if (formats.length && (recorded.export?.version !== packageExportVersion ||
         recorded.export.formats?.join(',') !== formats.join(',') ||
         !await verifyExports(directory, metadata.assets, signal))) throw new Error('Invalid export manifest')
@@ -70,7 +74,7 @@ export async function stageUnityPackage(directory, source, hash, {
       await rm(target, { recursive: true, force: true })
     }
   }
-  const cached = await reuse(root, key, hash, formats, signal)
+  const cached = await reuse(root, key, hash, formats, signal, limits)
   if (cached) {
     await verifyPackageHash(source, hash, limits, signal)
     signal?.throwIfAborted()

@@ -2,15 +2,16 @@ import { mkdir, open, rename, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import { readBoundedText } from '../../files/asset-files.mjs'
 import { unityDataFormats as unityData } from '../../files/formats.mjs'
+import { parseUnityMaterial, unityReference } from '../../materials/unity/yaml.mjs'
+import { unityTextureImporter } from '../../materials/unity/texture-importer.mjs'
+import { writeMaterialOutputs } from './material-outputs.mjs'
 import { invalid, unityPackageVersion } from './policy.mjs'
 
 function extractReferences(text) {
   const refs = []
   for (const [mapping] of text.matchAll(/\{[^{}\r\n]{1,240}\}/g)) {
-    const fileID = mapping.match(/[{,][ \t]*fileID:[ \t]*(-?\d{1,20})(?=[ \t]*[,}])/)?.[1]
-    if (!fileID || fileID === '0') continue
-    const guid = mapping.match(/[,][ \t]*guid:[ \t]*([0-9a-f]{32})(?=[ \t]*[,}])/i)?.[1]?.toLowerCase()
-    refs.push({ guid: guid ?? null, fileID })
+    const reference = unityReference(mapping)
+    if (reference && reference.fileID !== '0') refs.push(reference)
   }
   return refs
 }
@@ -18,6 +19,8 @@ function extractReferences(text) {
 export async function packageDocuments(packageInfo, output, signal, limits, onProgress, createExports, mode = 'engineless') {
   const descriptions = []
   const byId = new Map()
+  const materialSources = new Map()
+  const textureImporters = new Map()
   let textBudget = limits.dependencyBytes
   let remainingReferences = limits.dependencies
   for (const asset of packageInfo.assets) {
@@ -73,6 +76,15 @@ export async function packageDocuments(packageInfo, output, signal, limits, onPr
     entry.references = extractReferences(metadataText).concat(extractReferences(text))
     if (entry.references.length > remainingReferences) throw invalid('превышено число ссылок Unity.')
     remainingReferences -= entry.references.length
+    if (entry.kind === 'material' && text) {
+      const material = parseUnityMaterial(text)
+      if (material) materialSources.set(entry.id, material)
+      else entry.issues.push('unity-material-yaml-unrecognized')
+    }
+    if (entry.kind === 'texture' && metadataText) {
+      const importer = unityTextureImporter(metadataText)
+      if (importer) textureImporters.set(entry.id, importer)
+    }
     byId.set(entry.id, entry)
     descriptions.push(entry)
   }
@@ -103,13 +115,14 @@ export async function packageDocuments(packageInfo, output, signal, limits, onPr
   }
   signal?.throwIfAborted()
   const exports = await createExports?.(descriptions)
+  const materials = await writeMaterialOutputs(output, byId, materialSources, textureImporters, limits.dependencyBytes, signal)
   const source = { format: packageInfo.format, sha256: packageInfo.hash, size: packageInfo.size }
   const manifest = { version: unityPackageVersion, source, engineVersion: null, assets: descriptions,
     ...(exports?.unity?.editorVersion && { conversionEditorVersion: exports.unity.editorVersion }) }
   const counts = Object.create(null)
   for (const { status } of descriptions) counts[status] = (counts[status] ?? 0) + 1
   const written = descriptions.filter(entry => entry.output || entry.metadata).length
-  const report = { version: unityPackageVersion, mode, method: 'unitypackage-direct', counts, written,
+  const report = { version: unityPackageVersion, mode, method: 'unitypackage-direct', counts, written, materials,
     converted: exports?.modelsConverted ?? 0, ...(exports && { export: exports }),
     limitations: ['native-unity-decoding-unavailable', ...(!exports ? ['no-generated-model-export'] : []),
       'material-graphs-not-converted'] }

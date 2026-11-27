@@ -19,6 +19,8 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'public/catalog/file-list.js',
     'core/library/local-folders.mjs',
     'core/materials/unity/folder-bindings.mjs',
+    'core/materials/unity/yaml.mjs',
+    'core/packages/unity/material-outputs.mjs',
     'public/library/index-thumbnail.js',
     'public/preview/stage.js',
     'public/preview/loaders/model.js',

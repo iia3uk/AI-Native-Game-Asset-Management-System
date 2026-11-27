@@ -135,6 +135,7 @@ void startDesktop(root).then(async ({ window, origin }) => {
     Array.from(document.querySelectorAll('#package-jobs button')).find(button => button.textContent === 'Показать файлы').click()
   `)
   await waitFor("document.querySelector('#package-jobs').textContent.includes('GLB · Оригинал · Previews/')")
+  await waitFor("document.querySelector('#package-jobs').textContent.includes('Привязки материала · standard · Materials/')")
   await waitFor("document.querySelector('#package-jobs').textContent.includes('Запрошенная версия Unity недоступна')")
   await webContents.executeJavaScript("Array.from(document.querySelectorAll('#package-jobs button')).find(button => button.textContent === 'Показать в индексе').click()")
   await waitFor("document.querySelector('#index-results').textContent.includes('fixture-package.obj')")

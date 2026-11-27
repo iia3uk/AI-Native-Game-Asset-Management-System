@@ -1,9 +1,9 @@
 import { readBoundedText } from '../../files/asset-files.mjs'
 import { prefabMeshes } from './prefabs.mjs'
+import { baseColorSlots } from './shaders.mjs'
+import { parseUnityMaterial, unquote } from './yaml.mjs'
 
 const textureFormats = new Set(['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'tga', 'tif', 'tiff', 'avif'])
-const colorSlots = ['_BaseMap', '_BaseColorMap', '_MainTex', '_AlbedoMap']
-const unquote = value => value.trim().replace(/^(['"])(.*)\1$/, '$2')
 const materialKey = value => unquote(value).toLowerCase()
 const modelStem = file => file.name.replace(/\.[^.]+$/, '').replace(/[ _.-]low$/i, '').toLowerCase()
 
@@ -28,16 +28,15 @@ function add(map, key, value) {
 
 function textureBinding(entry, textures) {
   const { file, content } = entry
+  const material = parseUnityMaterial(content, { legacy: true })
+  if (!material) return
   const slots = new Map()
-  for (const match of content.matchAll(/^ +-[ \t]+(\w+):[ \t]*\r?\n([ \t]+m_Texture:[^\r\n]*(?:\r?\n[ \t]+m_(?:Scale|Offset):[^\r\n]*)*)/gm)) {
-    const [, slot, fields] = match
-    const guid = fields.match(/\bguid:[ \t]*([\da-f]{32})\b/i)?.[1]?.toLowerCase()
-    const texture = nearby(textures.get(guid) ?? [], file)
-    if (!texture) continue
-    const vector = name => fields.match(new RegExp(`m_${name}:[ \\t]*\\{x:[ \\t]*([^,]+), y:[ \\t]*([^}]+)\\}`))?.slice(1).map(Number)
-    slots.set(slot, { url: texture.file.url, scale: vector('Scale'), offset: vector('Offset') })
+  for (const { property, reference, scale, offset } of material.textures) {
+    if (!baseColorSlots.includes(property) || !reference?.guid || reference.fileID === '0') continue
+    const texture = nearby(textures.get(reference.guid) ?? [], file)
+    if (texture) slots.set(property, { url: texture.file.url, scale: scale ?? undefined, offset: offset ?? undefined })
   }
-  const binding = colorSlots.map(slot => slots.get(slot)).find(Boolean)
+  const binding = baseColorSlots.map(slot => slots.get(slot)).find(Boolean)
   if (!binding) return
   if (/_ALPHATEST_ON|^[ \t]*-[ \t]+_AlphaClip:[ \t]*1\s*$/m.test(content)) {
     binding.alphaTest = Number(content.match(/^[ \t]*-[ \t]+(?:_Cutoff|_AlphaCutoff):[ \t]*([\d.]+)/m)?.[1] ?? .5)

@@ -95,6 +95,8 @@ export function mountPackageImporter({ dialog, json, post, openLibrary }) {
         element('p', Object.entries(record.result.report.counts).map(([key, value]) =>
           (assetStatus[key] ?? key) + ' · ' + value).join(' / ')),
         element('p', record.result.directory))
+      const materials = record.result.report.materials
+      if (materials?.written) details.append(element('p', 'Описаний материалов · ' + materials.written))
       if (record.result.report.export) {
         details.append(element('p', 'Моделей сконвертировано · ' + record.result.report.converted))
       }

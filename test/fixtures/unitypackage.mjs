@@ -53,10 +53,18 @@ export function unityFixtureEntries(extra = []) {
     ...unityEntries(ids.model, 'Assets/Imported/fixture-package.obj', fixtureModel, { preview: fixtureTexture }),
     ...unityEntries(ids.material, 'Assets/Imported/fixture.mat', [
       '%YAML 1.1', '--- !u!21 &2100000', 'Material:', '  m_Name: Fixture',
-      '  m_TexEnvs:', '  - _MainTex:', '      m_Texture: ' + reference('2800000', ids.texture),
-      '  - _Missing:', '      m_Texture: ' + reference('987654321012345678', 'a'.repeat(32)), '',
+      '  m_Shader: {fileID: 46, guid: 0000000000000000f000000000000000, type: 0}',
+      '  m_ValidKeywords:', '  - _METALLICGLOSSMAP',
+      '  m_SavedProperties:', '    m_TexEnvs:', '    - _MainTex:', '        m_Texture: ' + reference('2800000', ids.texture),
+      '        m_Scale: {x: 2, y: 3}', '        m_Offset: {y: 0.75, x: -0.25}',
+      '    - _MetallicGlossMap:', '        m_Texture: ' + reference('2800000', ids.texture),
+      '    - _Missing:', '        m_Texture: ' + reference('987654321012345678', 'a'.repeat(32)),
+      '    m_Floats:', '    - _GlossMapScale: 0.65',
+      '    m_Colors:', '    - _Color: {r: 1, g: 0.5, b: 0.25, a: 1}', '',
     ].join('\n')),
-    ...unityEntries(ids.texture, 'Assets/Imported/albedo.png', fixtureTexture),
+    ...unityEntries(ids.texture, 'Assets/Imported/albedo.png', fixtureTexture, {
+      meta: 'TextureImporter:\n  mipmaps:\n    sRGBTexture: 1\n  flipGreenChannel: 0\n  textureType: 0\n',
+    }),
     ...unityEntries(ids.prefab, 'Assets/Imported/fixture.prefab', [
       '%YAML 1.1', '--- !u!1 &100100000', 'GameObject:', '  m_Component: {fileID: 3300000}',
       '--- !u!33 &3300000', 'MeshFilter:', '  m_Mesh: ' + reference('4300000', ids.model),

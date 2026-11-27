@@ -5,6 +5,8 @@ const artifactStatus = {
 }
 
 const unityIssues = {
+  'unity-material-yaml-unrecognized': 'Не удалось разобрать описание материала Unity',
+  'unity-material-output-limit': 'Достигнут лимит описаний материалов',
   'unity-version-unavailable': 'Запрошенная версия Unity недоступна',
   'unity-editor-unavailable': 'Подходящий Unity Editor не найден',
   'unity-editor-timeout': 'Истекло время ожидания Unity Editor',
@@ -36,6 +38,10 @@ export function appendManifest({ details, record, json, element, button, assetSt
         const row = element('li', asset.sourcePath + ' · ' + (assetStatus[asset.status] ?? asset.status))
         const issues = (asset.issues ?? []).filter(issue => issue.startsWith('unity-'))
         if (issues.length) row.append(element('p', issues.map(describeIssue).join(' · ')))
+        if (asset.materialDescription) {
+          const { path, shader } = asset.materialDescription
+          row.append(element('p', ['Привязки материала', shader, path].filter(Boolean).join(' · ')))
+        }
         const artifacts = (asset.exports ?? []).filter(item => item.format !== 'meta')
         if (artifacts.length) {
           const results = element('ul')
