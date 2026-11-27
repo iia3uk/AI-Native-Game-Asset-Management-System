@@ -7,6 +7,10 @@ export const portablePath = path => path.split(sep).join('/')
 
 export class ScanChangeError extends Error {}
 
+export function sameFile(a, b) {
+  return a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs
+}
+
 export function inside(base, target) {
   const path = relative(base, target)
   return path !== '..' && !path.startsWith('..' + sep) && !isAbsolute(path)

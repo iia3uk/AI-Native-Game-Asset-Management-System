@@ -2,7 +2,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, rename, rm } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { backup, DatabaseSync } from 'node:sqlite'
-import { checkedPath, discoverAssets, folderPath, pathKey } from './asset-files.mjs'
+import { checkedPath, discoverAssets, folderPath, identifyAsset, pathKey, sameFile } from './asset-files.mjs'
+import { analysisVersion, analyzeAsset, dependencyLimit, supportsAnalysis } from './asset-analysis.mjs'
 import { migrate, schemaVersion, transaction } from './index-schema.mjs'
 import { ProcessingJobs } from './processing-jobs.mjs'
 
@@ -20,10 +21,6 @@ const content = (path, metadata = {}) =>
 const shape = asset => asset && { ...asset, tags: JSON.parse(asset.tags) }
 
 export class IndexInputError extends Error {}
-
-function sameFile(a, b) {
-  return a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs
-}
 
 async function hashFile(root, file, signal) {
   const handle = await open(file.absolute, 'r')
@@ -162,7 +159,10 @@ export class AssetIndex {
   async #scan(id, signal, onProgress, beforeCommit, onCommit) {
     const library = this.#db.prepare('SELECT * FROM libraries WHERE id = ? AND enabled = 1').get(id)
     if (!library) throw new IndexInputError('Библиотека не подключена.')
-    const previous = this.#db.prepare('SELECT * FROM assets WHERE library_id = ?').all(id)
+    const previous = this.#db.prepare(`
+      SELECT a.*, p.processor_version FROM assets a LEFT JOIN asset_analysis p ON p.asset_id = a.id
+      WHERE a.library_id = ?
+    `).all(id)
     const byPath = new Map(previous.map(item => [item.path_key, item]))
     const discovered = new Map()
     let hashed = 0
@@ -183,8 +183,11 @@ export class AssetIndex {
         hash = await hashFile(library.root, file, signal)
         hashed++
       }
+      const canReuse = existing?.processor_version === analysisVersion && existing.path === file.path &&
+        (hash !== null ? existing.hash === hash : existing.size === size && existing.mtime === mtime && existing.ctime === ctime)
+      const analysis = supportsAnalysis(file.ext) && !canReuse ? await analyzeAsset(library.root, file, signal) : null
       discovered.set(key, { path: file.path, name: basename(file.path), ext: file.ext,
-        kind: file.kind, size, mtime, ctime, hash })
+        kind: file.kind, size, mtime, ctime, hash, analysis })
       onProgress?.(discovered.size)
     }
     signal?.throwIfAborted()
@@ -222,29 +225,44 @@ export class AssetIndex {
     const version = this.#db.prepare('INSERT INTO asset_versions(asset_id, path, size, mtime, hash, recorded_at) VALUES (?, ?, ?, ?, ?, ?)')
     const markMissing = this.#db.prepare('UPDATE assets SET missing_since = ? WHERE id = ?')
     const fields = this.#db.prepare('SELECT category, tags, note, license FROM assets WHERE id = ?')
+    const deleteAnalysis = this.#db.prepare('DELETE FROM asset_analysis WHERE asset_id = ?')
+    const saveAnalysis = this.#db.prepare('INSERT INTO asset_analysis (asset_id, processor_version, report) VALUES (?, ?, ?)')
+    const saveDependency = this.#db.prepare(`
+      INSERT INTO asset_dependencies (asset_id, ordinal, role, location, path, path_key, dimensions) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `)
     for (const [key, file] of discovered) {
       const data = [file.path, key, file.name, file.ext, file.kind, file.size, file.mtime, file.ctime, file.hash]
       const present = byPath.get(key)
       const before = present ?? moves.get(file.hash)
+      const assetId = before?.id ?? randomUUID()
       if (before) {
         const changed = before.size !== file.size || before.hash !== file.hash || before.mtime !== file.mtime || before.path !== file.path
-        if (!changed && !before.missing_since && before.ctime === file.ctime) continue
-        // A review can be edited while hashing runs. Read its latest search fields under the write lock.
-        const metadata = fields.get(before.id)
-        update.run(...data, content(file.path, metadata), before.id)
-        if (changed || before.missing_since) version.run(before.id, file.path, file.size, file.mtime, file.hash, now)
-        if (present) {
-          summary.changed++
-        } else {
-          summary.moved++
-          moves.delete(file.hash)
-          before.moved = true
+        if (changed || before.missing_since || before.ctime !== file.ctime) {
+          // A review can be edited while hashing runs. Read its latest search fields under the write lock.
+          const metadata = fields.get(assetId)
+          update.run(...data, content(file.path, metadata), assetId)
+          if (changed || before.missing_since) version.run(assetId, file.path, file.size, file.mtime, file.hash, now)
+          if (present) {
+            summary.changed++
+          } else {
+            summary.moved++
+            moves.delete(file.hash)
+            before.moved = true
+          }
         }
       } else {
-        const assetId = randomUUID()
         insert.run(assetId, id, ...data, now, content(file.path))
         version.run(assetId, file.path, file.size, file.mtime, file.hash, now)
         summary.added++
+      }
+      if (file.analysis || (before?.processor_version && !supportsAnalysis(file.ext))) deleteAnalysis.run(assetId)
+      if (file.analysis) {
+        const { dependencies, ...report } = file.analysis
+        saveAnalysis.run(assetId, analysisVersion, JSON.stringify(report))
+        for (const [order, item] of dependencies.entries()) {
+          saveDependency.run(assetId, order, item.role, item.location, item.path, item.key,
+            item.dimensions ? JSON.stringify(item.dimensions) : null)
+        }
       }
     }
     for (const file of unmatched) if (!file.moved) {
@@ -299,6 +317,65 @@ export class AssetIndex {
       SELECT ${readable}, l.root, l.generation FROM assets a JOIN libraries l ON a.library_id = l.id
       WHERE a.id = ? AND l.enabled = 1
     `).get(id))
+  }
+
+  inspect(id, { libraryIds } = {}) {
+    const asset = this.asset(id)
+    if (!asset || (libraryIds !== undefined && !libraryIds.includes(asset.libraryId))) return undefined
+    return { asset, versions: this.versions(id), analysis: this.#analysis(asset) }
+  }
+
+  #analysis(asset) {
+    const saved = this.#db.prepare('SELECT report FROM asset_analysis WHERE asset_id = ?').get(asset.id)
+    if (!saved) return { status: supportsAnalysis(asset.ext) ? 'pending' : 'unsupported', metrics: {},
+      issues: [], dependencies: [], dependenciesTruncated: false }
+    const report = JSON.parse(saved.report)
+    const read = this.#db.prepare(`
+      SELECT d.role, d.location, d.path, d.dimensions, b.id AS targetId, b.path AS targetPath, p.report
+      FROM asset_dependencies d
+      LEFT JOIN assets b ON b.library_id = ? AND b.path_key = d.path_key AND b.missing_since IS NULL
+      LEFT JOIN asset_analysis p ON p.asset_id = b.id
+      WHERE d.asset_id = ? ORDER BY d.ordinal
+    `)
+    const dependencies = []
+    const materialLibraries = new Map()
+    let completeMaterials = true
+    function add(rows, via = null) {
+      for (const { role, location, path, dimensions, targetId, targetPath, report: targetReport } of rows) {
+        if (dependencies.length >= dependencyLimit) {
+          report.dependenciesTruncated = true
+          break
+        }
+        const target = targetReport ? JSON.parse(targetReport) : null
+        dependencies.push({ role, path, via, targetId,
+          status: location === 'local' ? (targetId ? 'available' : identifyAsset(path) ? 'unavailable' : 'unindexed') : location,
+          dimensions: dimensions ? JSON.parse(dimensions) : target?.metrics.width && target?.metrics.height
+            ? { width: target.metrics.width, height: target.metrics.height } : null })
+        if (!via && role === 'material-library') {
+          if (targetId) materialLibraries.set(targetId, targetPath)
+          completeMaterials &&= target?.status === 'analyzed'
+          if (target?.dependenciesTruncated) report.dependenciesTruncated = true
+          if (target?.status === 'invalid' && !report.issues.includes('invalid-material-library')) {
+            report.issues.push('invalid-material-library')
+            if (report.status === 'analyzed') report.status = 'partial'
+          }
+        }
+      }
+    }
+    add(read.all(asset.libraryId, asset.id))
+    for (const [id, path] of materialLibraries) {
+      if (dependencies.length >= dependencyLimit) {
+        report.dependenciesTruncated = true
+        break
+      }
+      add(read.all(asset.libraryId, id), path)
+    }
+    if (asset.ext === 'obj' && report.status !== 'invalid' && report.status !== 'limited') {
+      const images = dependencies.filter(item => item.role === 'image')
+      report.metrics.textures = completeMaterials && !report.dependenciesTruncated && images.every(item => item.path)
+        ? new Set(images.map(item => pathKey(item.path))).size : null
+    }
+    return { ...report, dependencies }
   }
 
   updateAsset(id, change) {

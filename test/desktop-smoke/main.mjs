@@ -61,6 +61,8 @@ void startDesktop(root).then(async ({ window, origin }) => {
       .find(button => button.textContent.startsWith('woodland-cabin.glb')).click()
   `)
   await waitFor("!document.querySelector('#index-metadata').hidden && !document.querySelector('#index-watch').disabled")
+  await webContents.executeJavaScript("document.querySelector('#index-analysis summary').click()")
+  await waitFor("document.querySelector('#index-analysis').open && document.querySelector('#index-metrics').textContent.includes('Треугольники252')")
   await webContents.executeJavaScript(`
     document.querySelector('#index-metadata').elements.note.value = 'Unsaved smoke test note'
     document.querySelector('#index-watch').click()
@@ -70,10 +72,11 @@ void startDesktop(root).then(async ({ window, origin }) => {
   await waitFor("document.querySelector('#index-count').textContent.includes('11 файлов')")
   await waitFor("document.querySelector('#index-results').textContent.includes('watched-cabin.glb') && !document.querySelector('#index-watch').disabled")
   assert.equal(await webContents.executeJavaScript("document.querySelector('#index-metadata').elements.note.value"), 'Unsaved smoke test note')
+  assert.equal(await webContents.executeJavaScript("document.querySelector('#index-analysis').open"), true)
   await webContents.executeJavaScript("document.querySelector('#index-watch').click()")
   await waitFor("document.querySelector('#index-watch').getAttribute('aria-pressed') === 'false'")
   assert.deepEqual(externalRequests, [])
-  console.log('Desktop demo, library scanning and watching, metadata draft, Node utility process, sandbox, folder bridge and session token passed.')
+  console.log('Desktop demo, library scanning and watching, technical analysis, metadata draft, Node utility process, sandbox, folder bridge and session token passed.')
   app.quit()
 }).catch(error => {
   console.error(error)

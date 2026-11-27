@@ -18,6 +18,7 @@ npm start
 Open [Asset Viewer](http://127.0.0.1:8177/). Choose **Демобиблиотека** for the included procedural demo. Choose **Индекс** and enter an absolute folder path to create a persistent library, scan files, and search by name, path, format, or saved metadata. The current viewer interface is in Russian.
 
 Select a connected library and turn on **Следить за папкой** to pick up file changes automatically while Asset Viewer is open.
+Open **Технический анализ** in an indexed file's details to inspect supported model metrics and their texture or buffer dependencies.
 
 Use `npm run desktop` for the Electron app. Use `npm run build:windows` to create a Windows x64 installer and portable executable with bundled Node.js. See [BUILD.md](docs/BUILD.md).
 

@@ -30,6 +30,8 @@ test('v2 migration defaults to off and disabling watch preserves an explicitly r
   await index.close()
   const raw = new DatabaseSync(database)
   raw.exec(`
+    DROP TABLE asset_dependencies;
+    DROP TABLE asset_analysis;
     DROP INDEX watched_libraries;
     ALTER TABLE libraries DROP COLUMN watch_enabled;
     ALTER TABLE processing_jobs DROP COLUMN trigger;

@@ -89,7 +89,27 @@ const watching = `
   CREATE INDEX watched_libraries ON libraries (id) WHERE enabled = 1 AND watch_enabled = 1;
 `
 
-export const schemaVersion = 3
+const analysis = `
+  CREATE TABLE asset_analysis (
+    asset_id TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+    processor_version INTEGER NOT NULL,
+    report TEXT NOT NULL CHECK (json_valid(report))
+  ) STRICT;
+
+  CREATE TABLE asset_dependencies (
+    asset_id TEXT NOT NULL REFERENCES asset_analysis(asset_id) ON DELETE CASCADE,
+    ordinal INTEGER NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('buffer', 'image', 'material-library')),
+    location TEXT NOT NULL CHECK (location IN ('local', 'embedded', 'outside', 'external', 'unresolved')),
+    path TEXT,
+    path_key TEXT,
+    dimensions TEXT CHECK (dimensions IS NULL OR json_valid(dimensions)),
+    PRIMARY KEY (asset_id, ordinal),
+    CHECK ((location = 'local') = (path IS NOT NULL AND path_key IS NOT NULL))
+  ) STRICT;
+`
+
+export const schemaVersion = 4
 
 export function transaction(db, write) {
   db.exec('BEGIN IMMEDIATE')
@@ -114,6 +134,7 @@ export function migrate(db) {
     if (lockedVersion === 0) db.exec(initial)
     if (lockedVersion < 2) db.exec(processing)
     if (lockedVersion < 3) db.exec(watching)
+    if (lockedVersion < 4) db.exec(analysis)
     db.exec('PRAGMA user_version = ' + schemaVersion)
   })
 }

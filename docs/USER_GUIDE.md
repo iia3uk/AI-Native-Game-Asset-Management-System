@@ -22,6 +22,14 @@ Watching runs while Asset Viewer or its local server is open. On startup, watche
 
 Use `npm run cli -- libraries` to find the library ID. Set its preference with `npm run cli -- watch <library-id> on` or `npm run cli -- watch <library-id> off`. The running server picks up CLI changes within a few seconds.
 
+## Inspect a model and its textures
+
+Select a result in **Индекс** and expand **Технический анализ**. For glTF 2.0, GLB, binary VRM and polygonal OBJ you can see geometry counts and known bounds, UVs, materials, texture dependencies, animation or skin information, and LOD and collision hints. LOD and collision hints can come from names. glTF bounds enclose the static scene using the position accessor bounds and node transforms. Bounds for skinned, morphed or instanced geometry may be unknown. OBJ triangle counts describe the triangulation of authored polygon faces. [glTF 2.0 accessor bounds](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#accessors-bounds)
+
+Texture dimensions come from supported headers in PNG, JPEG, GIF, WebP, DDS and KTX2. Dependencies show whether each file is indexed, embedded, unavailable or external. An unavailable entry describes the current index snapshot. A manual or watched scan updates that snapshot. For older libraries, run **Пересканировать** to backfill analysis data. **Открыть во вьювере** remains available for supported preview formats.
+
+To get the same report as JSON, use `npm run cli -- inspect <asset-id> --json`.
+
 ## Data, backups and export
 
 On Windows, the database and backups live under `%APPDATA%\AssetViewer`. Demo assets and cache data live under `%LOCALAPPDATA%\AssetViewer`. Other platforms use their application data and cache directories. `ASSET_VIEWER_DATA_DIR` overrides data paths with an absolute directory for source or desktop sessions.

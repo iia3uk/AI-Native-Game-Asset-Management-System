@@ -60,6 +60,14 @@ export async function startMcp(database, env = process.env) {
     const { root, generation, ...asset } = find(id)
     return asset
   })
+  tool('get_asset_analysis', 'Read technical metrics and a page of indexed dependencies for an asset.',
+    { id: uuid, limit: z.number().int().min(1).max(10).default(10), offset }, ({ id, limit, offset }) => {
+      const details = index.inspect(id, { libraryIds })
+      if (!details) throw new Error('Asset unavailable.')
+      const { dependencies, ...analysis } = details.analysis
+      const nextOffset = offset + limit < dependencies.length ? offset + limit : null
+      return { ...analysis, dependencies: dependencies.slice(offset, offset + limit), nextOffset }
+    })
   tool('list_duplicate_groups', 'List available groups of byte-identical files. Use an exact SHA-256 to find the files.',
     paging, ({ limit, offset }) => ({ groups: index.duplicates(limit, offset, libraryIds) }))
   tool('find_identical_assets', 'Find available indexed files with exactly this SHA-256.', { ...paging, hash },

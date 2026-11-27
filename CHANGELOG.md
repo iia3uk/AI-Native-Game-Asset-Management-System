@@ -7,5 +7,6 @@
 - Added SQLite libraries, incremental scanning, version history, metadata and search.
 - Added durable scan jobs with progress, cancellation and retry.
 - Added opt-in folder watching, event coalescing and incremental reconciliation on startup and periodically.
+- Added persistent technical inspection and local dependencies for glTF 2.0, GLB, VRM and OBJ/MTL, plus image dimensions from supported headers.
 - Added a CLI, local read-only MCP tools, Electron desktop shell and Windows build targets.
 - Added CI jobs and a tag-triggered draft release workflow.

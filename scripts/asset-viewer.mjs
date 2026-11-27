@@ -65,9 +65,9 @@ async function execute(index, paths, command, [input, setting], values) {
     }
     case 'search': return index.search({ q: input, kind: values.kind, libraryId: values.library, hash: values.hash, ...page(values) })
     case 'inspect': {
-      const asset = index.asset(input)
-      if (!asset) throw new Error('Asset unavailable.')
-      return { asset, versions: index.versions(input) }
+      const details = index.inspect(input)
+      if (!details) throw new Error('Asset unavailable.')
+      return details
     }
     case 'duplicates': {
       const { limit, offset } = page(values)

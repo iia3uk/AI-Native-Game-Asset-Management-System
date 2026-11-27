@@ -17,7 +17,7 @@ test('stdio MCP exposes bounded read-only tools and filters the configured libra
     for (const place of ['visible', 'hidden']) {
       const folder = join(directory, place)
       await mkdir(folder)
-      await writeFile(join(folder, 'sample.obj'), 'synthetic model')
+      await writeFile(join(folder, 'sample.obj'), 'mtllib first.mtl second.mtl\nv 0 0 0\n')
       const { id } = await index.connect(folder)
       await index.scan(id)
       if (place === 'visible') allowed = id
@@ -36,7 +36,7 @@ test('stdio MCP exposes bounded read-only tools and filters the configured libra
   try {
     await client.connect(transport)
     const { tools } = await client.listTools()
-    assert.equal(tools.length, 7)
+    assert.equal(tools.length, 8)
     assert.ok(tools.every(tool => tool.annotations.readOnlyHint))
     const call = async (name, args = {}) => {
       const response = await client.callTool({ name, arguments: args })
@@ -50,10 +50,18 @@ test('stdio MCP exposes bounded read-only tools and filters the configured libra
     const { assets: [asset] } = await call('search_assets', { q: 'sample' })
     assert.equal(asset.libraryId, allowed)
     assert.equal((await call('get_asset_metadata', { id: asset.id })).root, undefined)
+    const analysis = await call('get_asset_analysis', { id: asset.id, limit: 1 })
+    assert.equal(analysis.metrics.vertices, 1)
+    assert.deepEqual(analysis.dependencies.map(item => item.path), ['first.mtl'])
+    assert.equal(analysis.nextOffset, 1)
+    const remaining = await call('get_asset_analysis', { id: asset.id, offset: analysis.nextOffset })
+    assert.deepEqual(remaining.dependencies.map(item => item.path), ['second.mtl'])
+    assert.equal(remaining.nextOffset, null)
     assert.deepEqual((await call('list_duplicate_groups')).groups, [])
     assert.equal((await call('find_identical_assets', { hash: asset.hash })).assets.length, 1)
     const denied = await client.callTool({ name: 'get_asset', arguments: { id: hiddenAsset.id } })
     assert.equal(denied.isError, true)
+    assert.equal((await client.callTool({ name: 'get_asset_analysis', arguments: { id: hiddenAsset.id } })).isError, true)
     const invalid = await client.callTool({ name: 'list_assets', arguments: { limit: 200 } })
     assert.equal(invalid.isError, true)
   } finally { await client.close() }

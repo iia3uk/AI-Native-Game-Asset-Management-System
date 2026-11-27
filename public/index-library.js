@@ -1,5 +1,80 @@
 const $ = id => document.getElementById('index-' + id)
 const number = new Intl.NumberFormat('ru')
+const decimal = new Intl.NumberFormat('ru', { maximumFractionDigits: 4 })
+
+const analysisStatus = {
+  analyzed: 'Анализ выполнен.',
+  partial: 'Часть данных недоступна.',
+  invalid: 'Ошибка в структуре файла или неподдерживаемая версия формата.',
+  limited: 'Часть файла недоступна для анализа.',
+  pending: 'Данные появятся после следующего сканирования.',
+  unsupported: 'Технический анализ для этого формата пока недоступен.',
+}
+const analysisIssue = {
+  'incomplete-geometry': 'Не удалось определить часть геометрии.',
+  'invalid-material-reference': 'В модели есть ссылка на отсутствующий материал.',
+  'invalid-material-library': 'У файла материалов повреждена структура.',
+  'invalid-skin-reference': 'В скелете есть ссылка на отсутствующий узел.',
+  'invalid-geometry-reference': 'В модели есть некорректные координаты или индексы вершин.',
+  'invalid-uv-reference': 'В модели есть некорректные ссылки на UV-координаты.',
+  'unsupported-obj-surfaces': 'Файл содержит кривые или поверхности, для которых число граней неизвестно.',
+  'unreadable-texture-reference': 'Не удалось разобрать часть ссылок на текстуры.',
+  'analysis-size-limit': 'Файл превысил ограничение размера для технического анализа.',
+  'image-dimensions-unknown': 'В доступной части заголовка размер изображения не найден.',
+}
+const dependencyStatus = {
+  available: 'в индексе', unavailable: 'отсутствует в индексе', unindexed: 'формат вне индекса',
+  embedded: 'встроен', outside: 'вне библиотеки', external: 'внешний адрес', unresolved: 'не удалось разрешить',
+}
+const dependencyRole = { image: 'Изображение', buffer: 'Буфер', 'material-library': 'Библиотека материалов' }
+
+function addTerms(list, terms) {
+  for (const [label, value] of terms) {
+    const term = document.createElement('dt')
+    const description = document.createElement('dd')
+    term.textContent = label
+    description.textContent = value
+    list.append(term, description)
+  }
+}
+
+function renderAnalysis(analysis, { keepOpen = false } = {}) {
+  const panel = $('analysis')
+  const metrics = $('metrics')
+  const dependencies = $('dependencies')
+  metrics.replaceChildren()
+  dependencies.replaceChildren()
+  if (!keepOpen) panel.open = false
+  if (!analysis) return
+  const { status, issues, metrics: values, dependenciesTruncated } = analysis
+  $('analysis-status').textContent = [analysisStatus[status], ...issues.map(issue => analysisIssue[issue]).filter(Boolean),
+    dependenciesTruncated ? 'Показана часть зависимостей.' : ''].filter(Boolean).join(' ')
+  const labels = {
+    vertices: 'Вершины', triangles: 'Треугольники', meshes: 'Меши', materials: 'Материалы', textures: 'Текстуры',
+    hasUV: 'UV', skins: 'Скелеты', bones: 'Кости', animations: 'Клипы', lod: 'Признаки LOD',
+    collisionNamed: 'Признаки коллизий по именам',
+  }
+  const valueText = value => value === null ? 'Неизвестно' : typeof value === 'boolean' ?
+    value ? 'Обнаружены' : 'Не обнаружены' : number.format(value)
+  addTerms(metrics, Object.entries(labels).filter(([key]) => key in values)
+    .map(([key, label]) => [label, valueText(values[key])]))
+  if (values.width && values.height) addTerms(metrics, [['Размер изображения', values.width + ' × ' + values.height + ' px']])
+  if ('bounds' in values) {
+    const axis = value => value.map(component => decimal.format(component)).join(' × ')
+    const box = values.bounds
+    const label = box?.kind === 'scene-aabb' ? 'Охватывающие габариты сцены' : 'Габариты'
+    addTerms(metrics, [[label, box ? axis(box.size) : 'Неизвестно']])
+    if (box) addTerms(metrics, [['Границы XYZ', '[' + axis(box.min) + '] … [' + axis(box.max) + ']']])
+  }
+  for (const { role, status, path, via, dimensions } of analysis.dependencies) {
+    const item = document.createElement('li')
+    const source = path ? ' — ' + path : ''
+    const viaText = via ? ' через ' + via : ''
+    const size = dimensions ? ' · ' + dimensions.width + ' × ' + dimensions.height + ' px' : ''
+    item.textContent = dependencyRole[role] + source + viaText + ' · ' + dependencyStatus[status] + size
+    dependencies.append(item)
+  }
+}
 
 export function mountIndex({ json, post, openPreview, currentFolder }) {
   const dialog = $('dialog')
@@ -68,18 +143,12 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
     $('name').textContent = record.name
     const info = $('file-info')
     info.replaceChildren()
-    for (const [label, value] of [
+    addTerms(info, [
       ['Путь', record.path],
       ['Размер', number.format(record.size) + ' Б'],
       ['SHA-256', record.hash ?? 'Не рассчитан'],
       ['Доступность', record.missingSince ? 'Исходный файл отсутствует' : 'В индексе'],
-    ]) {
-      const term = document.createElement('dt')
-      const description = document.createElement('dd')
-      term.textContent = label
-      description.textContent = value
-      info.append(term, description)
-    }
+    ])
     for (const field of ['category', 'license', 'note', 'review']) details.elements[field].value = record[field]
     details.elements.tags.value = record.tags.join(', ')
   }
@@ -160,6 +229,10 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
           // Automatic scans must not dismiss metadata fields while the user is editing them.
           const automatic = job.trigger === 'watch'
           await search(automatic ? offset : 0, { preserveAsset: automatic })
+          if (automatic && asset) {
+            const { analysis } = await json('/api/index/assets/' + asset.id)
+            renderAnalysis(analysis, { keepOpen: true })
+          }
         }
       } catch (error) {
         clearTimeout(pollTimer)
@@ -234,8 +307,9 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
   results.addEventListener('click', event => {
     const id = event.target.closest('button')?.dataset.id
     if (id) void run(async () => {
-      const { asset: record } = await json('/api/index/assets/' + id)
+      const { asset: record, analysis } = await json('/api/index/assets/' + id)
       setAsset(record)
+      renderAnalysis(analysis)
       details.scrollIntoView({ block: 'nearest' })
     })
   })

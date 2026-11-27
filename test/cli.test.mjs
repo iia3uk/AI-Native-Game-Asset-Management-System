@@ -37,7 +37,9 @@ test('CLI uses the shared index and dry runs leave the database unchanged', asyn
   assert.equal((await cli('scan', id)).hashed, 1)
   const hit = (await cli('search', 'test', '--kind', 'model')).assets[0]
   assert.equal(hit.name, 'test.obj')
-  assert.equal((await cli('inspect', hit.id)).versions.length, 1)
+  const inspected = await cli('inspect', hit.id)
+  assert.equal(inspected.versions.length, 1)
+  assert.equal(inspected.analysis.metrics.vertices, 1)
   assert.equal((await cli('export', '--library', id)).assets[0].id, hit.id)
   assert.equal((await cli('doctor')).ok, true)
   assert.ok((await stat((await cli('backup')).path)).size > 0)

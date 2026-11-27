@@ -100,8 +100,8 @@ export function indexRoutes({ database, ignoredWatchPaths, json, body, allowsWri
       }
       if (resource === 'assets' && id && !action) {
         if (method === 'POST') return json(response, 200, { asset: index.updateAsset(id, await body(request).catch(() => null)) })
-        const asset = index.asset(id)
-        if (asset) return json(response, 200, { asset, versions: index.versions(id) })
+        const details = index.inspect(id)
+        if (details) return json(response, 200, details)
       }
       if (method === 'POST' && resource === 'assets' && id && action === 'open') {
         const asset = index.asset(id)

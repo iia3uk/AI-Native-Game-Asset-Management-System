@@ -10,6 +10,8 @@ The SQLite job queue records scan progress and permits one active scan job per l
 
 `LibraryWatcher` registers native recursive notifications for roots with an explicit SQLite opt-in. It groups nearby events into incremental scan jobs and retains changes received during a running scan for a follow-up. It reconciles at startup, when an unavailable root returns, and every 15 minutes. Reconciliation also covers filesystems without usable native notifications. Automatic jobs run at a lower queue priority than manual jobs and share the same discovery and path checks.
 
+The scan reads bounded glTF/GLB/VRM and Wavefront OBJ/MTL data and supported image headers outside the SQLite transaction. It reuses existing analysis when the processor version, path and content still match. Technical metrics and explicit dependency rows commit with the asset updates and scan result. Dependencies resolve within the same library's committed index. OBJ texture links resolve one step through indexed material libraries, so changing a texture or MTL updates the next report without rewriting the OBJ.
+
 The CLI and stdio MCP interfaces call `AssetIndex` directly. The MCP connector opens the database read-only and applies a library scope to every query.
 
 The Electron main process launches the loopback server in a UtilityProcess and injects an ephemeral authorization header in its dedicated browser session. The isolated renderer has a single folder-picker bridge. The desktop app prefers port 8178, permits a configured port, and can fall back to an ephemeral port. Indexed user metadata stays independent of the browser port.
