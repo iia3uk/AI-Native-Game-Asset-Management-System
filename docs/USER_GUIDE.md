@@ -85,6 +85,7 @@ Open **Индекс**, connect the incoming folder, select it under **Библи
 
 - **.unitypackage** extracts the originals and requests FBX and GLB for supported models.
 - **UnityFS** watches `.bundle` and `.unity3d`, decodes supported textures, sprites, static meshes and audio, and requests FBX where Blender is available.
+- **Бинарные Unity** watches `.asset`, `.assets` and `.sharedAssets` with a supported binary header. Keep the primary file and its matching `.resS` and `.resource` files together. A new or changed companion queues a new import, even when the primary file stays the same. The switch applies to binary files and leaves Unity YAML assets out of the queue.
 - **Unreal Pak** watches `.pak` and extracts supported original files using the independent CUE4Parse worker.
 
 Turning off a format cancels its active automatic imports for that folder. The settings and SHA-256 history survive restarts. Use **Повторить** in a job row to retry a failed, interrupted or cancelled import. For a renamed archive, use manual inspection to detect the format by contents.
@@ -93,6 +94,7 @@ Turning off a format cancels its active automatic imports for that folder. The s
 npm run cli -- libraries --json
 npm run cli -- watch-packages <library-id> on --json
 npm run cli -- watch-packages <library-id> on --format unityfs --json
+npm run cli -- watch-packages <library-id> on --format unity-serialized --json
 npm run cli -- watch-packages <library-id> on --format unreal-pak --json
 npm run cli -- jobs --type package-import --json
 ```

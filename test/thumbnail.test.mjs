@@ -176,7 +176,7 @@ test('schema 5 scan records survive migration and a queued thumbnail resumes aft
   index = await AssetIndex.open(database)
   let queued
   try {
-    assert.equal(index.integrity().schemaVersion, 11)
+    assert.equal(index.integrity().schemaVersion, 12)
     assert.equal(index.jobs.get(scan.id).createdAt, scan.createdAt)
     assert.equal(index.asset(model.id).note, 'Keep reviewed model')
     queued = index.jobs.enqueueThumbnail(index.thumbnailSource(model.id))

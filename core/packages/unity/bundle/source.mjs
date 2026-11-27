@@ -1,7 +1,7 @@
 import { open } from 'node:fs/promises'
 import { basename, dirname, isAbsolute } from 'node:path'
 import { inputLimit } from '../../../engines/unity/bundle/run.mjs'
-import { sameSource } from '../../../engines/unity/bundle/stage-file.mjs'
+import { sameSource } from '../../../files/hash.mjs'
 import { companionSizeAllowed, findSerializedCompanions } from '../../../engines/unity/serialized/companions.mjs'
 import { isSerializedUnity, serializedProbeSize } from '../../../engines/unity/serialized/header.mjs'
 import { checkedPath, fileInfo, folderPath } from '../../../files/asset-files.mjs'

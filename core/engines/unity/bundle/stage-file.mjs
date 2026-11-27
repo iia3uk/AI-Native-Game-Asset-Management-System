@@ -1,9 +1,8 @@
 import { createWriteStream } from 'node:fs'
 import { open, stat, writeFile } from 'node:fs/promises'
 import { pipeline } from 'node:stream/promises'
-import { fileInfo, sameFile } from '../../../files/asset-files.mjs'
-
-export const sameSource = (a, b) => sameFile(a, b) && a.dev === b.dev && a.ino === b.ino
+import { fileInfo } from '../../../files/asset-files.mjs'
+import { sameSource } from '../../../files/hash.mjs'
 
 export async function stageFile(root, file, destination, signal) {
   const handle = await open(file.path, 'r').catch(error => {

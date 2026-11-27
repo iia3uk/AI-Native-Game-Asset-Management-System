@@ -2,16 +2,24 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { artifactHash } from '../../../conversion/artifacts.mjs'
 
-export async function bundleFingerprint(workspace, source, signal) {
-  const contentsSha256 = await artifactHash(join(workspace, 'input.bundle'), signal)
-  if (!source.resources.length) return { sha256: contentsSha256 }
-  const resources = []
-  for (const { name, role, staged, file } of source.resources) {
-    resources.push({ name, role: role === 'texture' ? 'texture' : 'audio', size: file.info.size,
-      sha256: await artifactHash(join(workspace, staged), signal) })
-  }
+export function companionDigest({ name, role, file }, sha256) {
+  return { name, role: role === 'texture' ? 'texture' : 'audio', size: file.info.size, sha256 }
+}
+
+export function serializedFingerprint(name, contentsSha256, resources) {
+  if (!resources.length) return { sha256: contentsSha256 }
   const sha256 = createHash('sha256')
-    .update(JSON.stringify(['unity-serialized-companions-v1', source.name, contentsSha256, resources]))
+    .update(JSON.stringify(['unity-serialized-companions-v1', name, contentsSha256, resources]))
     .digest('hex')
   return { sha256, contentsSha256, resources }
+}
+
+export async function bundleFingerprint(workspace, source, signal) {
+  const contentsSha256 = await artifactHash(join(workspace, 'input.bundle'), signal)
+  const resources = []
+  for (const resource of source.resources) {
+    const hash = await artifactHash(join(workspace, resource.staged), signal)
+    resources.push(companionDigest(resource, hash))
+  }
+  return serializedFingerprint(source.name, contentsSha256, resources)
 }

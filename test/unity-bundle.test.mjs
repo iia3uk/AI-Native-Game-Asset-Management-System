@@ -19,6 +19,7 @@ import { startServer, testDirectory } from './server-fixture.mjs'
 import { verifyBundleAudio } from './unity-bundle/audio.mjs'
 import { readTexture } from './unity-bundle/png.mjs'
 import { verifyPlayerExports, verifyPlayerMalformed } from './unity-bundle/player.mjs'
+import { verifyPlayerWatch } from './unity-bundle/player-watch.mjs'
 import { verifyStandaloneUnity } from './unity-bundle/serialized.mjs'
 import { verifyBundleSprites } from './unity-bundle/sprites.mjs'
 
@@ -312,6 +313,7 @@ test('native Unity Player companions decode, index and invalidate a stale inspec
       }
     }
     await verifyPlayerMalformed(files, inspect)
+    await verifyPlayerWatch(root, files, plan, server)
   } finally {
     await server.close()
   }

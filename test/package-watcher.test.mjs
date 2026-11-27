@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { test } from 'node:test'
 import { AssetIndex } from '../core/index/asset-index.mjs'
 import { removePackageWatchSchema } from './fixtures/index-schema.mjs'
-import { packageWatch } from '../core/index/schema/package-watch.mjs'
+import { packageWatch, packageWatchByFormat } from '../core/index/schema/package-watch.mjs'
 import { ProcessingWorker } from '../core/processing/processing-worker.mjs'
 import { fixtureTexture, unityEntries, writeUnityFixture } from './fixtures/unitypackage.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
@@ -195,6 +195,7 @@ test('Schema 10 migration keeps existing Unity opt-ins and automatic job history
   try {
     legacy.exec(`ALTER TABLE package_watch_libraries RENAME TO settings_v11;
       ALTER TABLE package_watch_imports DROP COLUMN format;
+      DROP TABLE serialized_package_sources;
       DROP INDEX live_watched_packages;
       ${packageWatch}
       INSERT INTO package_watch_libraries SELECT library_id FROM settings_v11;
@@ -214,6 +215,54 @@ test('Schema 10 migration keeps existing Unity opt-ins and automatic job history
     assert.equal(index.jobs.refillWatchedImports([]), 0)
     index.setPackageWatching(id, false)
     assert.equal(index.jobs.get(before.id).status, 'cancelled')
+  } finally {
+    await index.close()
+  }
+})
+
+test('Schema 11 migration keeps every previous format and its automatic job history', async t => {
+  const root = await testDirectory(t)
+  const database = join(root, 'index.sqlite')
+  const formats = ['unitypackage', 'unityfs', 'unreal-pak']
+  await writeFile(join(root, 'Legacy.unitypackage'), 'archive')
+  await writeFile(join(root, 'Sample.bundle'), 'bundle')
+  await writeFile(join(root, 'Sample.pak'), 'pak')
+  let index = await AssetIndex.open(database)
+  const { id } = await index.connect(root)
+  await index.scan(id)
+  for (const format of formats) index.setPackageWatching(id, true, [], format)
+  assert.equal(index.jobs.refillWatchedImports([]), formats.length)
+  const jobs = index.jobs.list({ type: 'package-import' })
+  const sources = jobs.map(job => index.jobs.watchedImportSource(job.id))
+  await index.close()
+
+  const legacy = new DatabaseSync(database)
+  try {
+    legacy.exec(`
+      CREATE TEMP TABLE saved_formats AS SELECT * FROM package_watch_libraries;
+      CREATE TEMP TABLE saved_imports AS SELECT * FROM package_watch_imports;
+    `)
+    removePackageWatchSchema(legacy)
+    legacy.exec(`
+      ${packageWatch}
+      ${packageWatchByFormat}
+      INSERT INTO package_watch_libraries (library_id, format) SELECT library_id, format FROM saved_formats;
+      INSERT INTO package_watch_imports (library_id, path_key, source_path, source_key, job_id, format)
+        SELECT library_id, path_key, source_path, source_key, job_id, format FROM saved_imports;
+      PRAGMA user_version = 11;
+    `)
+  } finally {
+    legacy.close()
+  }
+
+  index = await AssetIndex.open(database)
+  try {
+    const [library] = index.libraries()
+    assert.deepEqual(new Set(library.packageWatchFormats), new Set(formats))
+    assert.deepEqual(jobs.map(job => index.jobs.get(job.id)), jobs)
+    assert.deepEqual(jobs.map(job => index.jobs.watchedImportSource(job.id)), sources)
+    assert.equal(index.jobs.refillWatchedImports([]), 0)
+    assert.equal(index.integrity().schemaVersion, 12)
   } finally {
     await index.close()
   }

@@ -7,7 +7,7 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | GET | `/api/index/libraries` | Returns connected libraries with indexed file counts, `watching`, `packageWatchFormats` and the `.unitypackage` compatibility flag `packageWatching` |
 | POST | `/api/index/libraries` | `{"path":"<absolute local folder>"}` returns a durable library identity |
 | POST | `/api/index/libraries/:id/watch` | `{"enabled":true}` or `{"enabled":false}` persists the setting and returns `{library}` |
-| POST | `/api/index/libraries/:id/package-watch` | `{"enabled":true,"format":"unityfs"}` enables or disables one format and returns `{library}`. Formats are `unitypackage` (default), `unityfs` and `unreal-pak` |
+| POST | `/api/index/libraries/:id/package-watch` | `{"enabled":true,"format":"unityfs"}` enables or disables one format and returns `{library}`. Formats are `unitypackage` (default), `unityfs`, `unity-serialized` and `unreal-pak` |
 | POST | `/api/index/libraries/:id/scan` | Empty object. Returns added, changed, moved, missing, hashed, reused and skipped hash counts |
 | POST | `/api/index/libraries/:id/jobs` | Empty object. Returns 202 and the new or active scan job |
 | GET | `/api/index/jobs` | Optional `library`, `type` (`scan`, `thumbnail`, or `package-import`), `limit` (1–200) and `offset`. Returns active jobs first |

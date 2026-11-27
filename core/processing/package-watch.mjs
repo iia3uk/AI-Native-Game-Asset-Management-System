@@ -15,12 +15,18 @@ export function queueWatchedPackages(db, slots, ignoredPaths, enqueue) {
     const extensions = settings.all(id).flatMap(({ format }) => watchedPackageRecipe(format).extensions)
     const prefixes = ignoredPaths.filter(path => inside(root, path)).map(path => pathKey(portablePath(relative(root, path))) + '/')
     const exclusions = prefixes.map(() => ' AND substr(a.path_key, 1, length(?)) <> ?').join('')
-    const find = db.prepare(`SELECT a.rowid, a.path_key AS pathKey, a.path, a.hash, a.ext FROM assets a
-      WHERE a.library_id = ? AND a.ext IN ('unitypackage', 'bundle', 'unity3d', 'pak')
+    const find = db.prepare(`WITH candidates AS (
+      SELECT a.rowid, a.library_id, a.path_key, a.path, a.ext,
+        CASE WHEN a.ext IN ('asset', 'assets', 'sharedassets') THEN s.source_key ELSE a.hash END AS source_key
+      FROM assets a LEFT JOIN serialized_package_sources s ON s.asset_id = a.id
+      WHERE a.library_id = ? AND a.ext IN ('unitypackage', 'bundle', 'unity3d', 'pak', 'asset', 'assets', 'sharedassets')
         AND a.ext IN (${extensions.map(() => '?').join(', ')}) AND a.missing_since IS NULL AND a.hash IS NOT NULL
-        AND a.rowid > ?${exclusions} AND NOT EXISTS (
-          SELECT 1 FROM package_watch_imports w WHERE w.library_id = a.library_id AND w.path_key = a.path_key AND w.source_key = a.hash
-        ) ORDER BY a.rowid LIMIT ?`)
+        AND a.rowid > ?${exclusions}
+    )
+    SELECT c.rowid, c.path_key AS pathKey, c.path, c.source_key AS sourceKey, c.ext FROM candidates c
+    WHERE c.source_key IS NOT NULL AND NOT EXISTS (
+      SELECT 1 FROM package_watch_imports w WHERE w.library_id = c.library_id AND w.path_key = c.path_key AND w.source_key = c.source_key
+    ) ORDER BY c.rowid LIMIT ?`)
     const exclusionsArgs = prefixes.flatMap(prefix => [prefix, prefix])
     let cursor = 0
     while (queued < slots) {
@@ -29,9 +35,9 @@ export function queueWatchedPackages(db, slots, ignoredPaths, enqueue) {
       for (const candidate of candidates) {
         cursor = candidate.rowid
         const format = watchedFormatByExtension.get(candidate.ext)
-        const job = enqueue(join(root, candidate.path), candidate.hash, watchedPackageRecipe(format).formats)
+        const job = enqueue(join(root, candidate.path), candidate.sourceKey, watchedPackageRecipe(format).formats)
         if (!job) continue
-        remember.run(id, candidate.pathKey, candidate.path, candidate.hash, job.id, format)
+        remember.run(id, candidate.pathKey, candidate.path, candidate.sourceKey, job.id, format)
         queued++
       }
     }

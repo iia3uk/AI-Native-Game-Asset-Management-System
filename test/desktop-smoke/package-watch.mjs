@@ -1,9 +1,9 @@
 import { copyFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fixtureTexture, unityEntries, writeUnityFixture } from '../fixtures/unitypackage.mjs'
 import { makePak, wavTone } from '../fixtures/unreal-pak.mjs'
 
-export async function verifyPackageWatch(webContents, waitFor, fixtures, { bundle, pak }) {
+export async function verifyPackageWatch(webContents, waitFor, fixtures, { bundle, player, pak }) {
   await webContents.executeJavaScript("document.querySelector('#index-mode').click()")
   await waitFor("document.querySelector('#index-dialog').open && !document.querySelector('#index-library').disabled")
   await webContents.executeJavaScript(`{
@@ -29,6 +29,14 @@ export async function verifyPackageWatch(webContents, waitFor, fixtures, { bundl
     await copyFile(bundle, join(fixtures, 'watch-ui.unity3d'))
     await waitFor("document.querySelector('#package-jobs').textContent.includes('watch-ui.unity3d · Автоимпорт · Обработан · В индексе')")
     await toggle('bundle-watch', false)
+  }
+  if (player) {
+    for (const name of ['resources.assets', 'resources.assets.resS', 'resources.resource']) {
+      await copyFile(join(dirname(player), name), join(fixtures, name))
+    }
+    await toggle('serialized-watch', true)
+    await waitFor("document.querySelector('#package-jobs').textContent.includes('resources.assets · Автоимпорт · Обработан · В индексе')")
+    await toggle('serialized-watch', false)
   }
   if (pak) {
     await writeFile(join(fixtures, 'watch-ui.pak'), makePak([{ path: 'Audio/Watch-Tone.wav', content: wavTone() }]))

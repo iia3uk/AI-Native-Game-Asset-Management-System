@@ -1,6 +1,6 @@
 import { watch } from 'node:fs'
 import { stat } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { extname, resolve } from 'node:path'
 import { checkedPath, identifyAsset, inside } from '../files/asset-files.mjs'
 
 export class LibraryWatcher {
@@ -107,7 +107,8 @@ export class LibraryWatcher {
         if (filename) {
           const target = resolve(state.root, filename)
           if (!inside(state.root, target) || this.ignoredPaths.some(path => inside(path, target))) return
-          if (event === 'change' && !identifyAsset(filename)) return
+          if (event === 'change' && !identifyAsset(filename) &&
+              !['.ress', '.resource'].includes(extname(filename).toLowerCase())) return
         }
         this.#dirty(state)
       })

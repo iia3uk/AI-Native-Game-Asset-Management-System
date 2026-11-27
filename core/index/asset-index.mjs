@@ -1,8 +1,9 @@
-import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, open, rename, rm } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { mkdir, rename, rm } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { backup, DatabaseSync } from 'node:sqlite'
-import { checkedPath, discoverAssets, folderPath, identifyAsset, inside, pathKey, sameFile } from '../files/asset-files.mjs'
+import { checkedPath, discoverAssets, folderPath, identifyAsset, inside, pathKey } from '../files/asset-files.mjs'
+import { hashFile } from '../files/hash.mjs'
 import { analysisVersion, analyzeAsset, dependencyLimit, supportsAnalysis } from '../analysis/asset-analysis.mjs'
 import { migrate, schemaVersion, transaction } from './index-schema.mjs'
 import { IndexInputError } from './index-errors.mjs'
@@ -10,7 +11,8 @@ import { ProcessingJobs } from '../processing/processing-jobs.mjs'
 import { QualityProfiles, validateQuality } from '../analysis/quality-profiles.mjs'
 import { thumbnailPlan } from '../thumbnails/thumbnail-input.mjs'
 import { maxPakInput } from '../packages/unreal/pak/limits.mjs'
-import { watchedPackageRecipe } from '../packages/watch-formats.mjs'
+import { watchedFormatByExtension, watchedPackageRecipe } from '../packages/watch-formats.mjs'
+import { watchSerializedSource } from '../packages/unity/bundle/watch-source.mjs'
 
 const readable = 'a.id, a.library_id AS libraryId, l.name AS library, a.path, a.name, a.ext, a.kind,' +
   ' a.size, a.mtime, a.hash, a.first_seen AS firstSeen, a.missing_since AS missingSince,' +
@@ -26,22 +28,6 @@ const content = (path, metadata = {}) =>
 const shape = asset => asset && { ...asset, tags: JSON.parse(asset.tags) }
 
 export { IndexInputError } from './index-errors.mjs'
-
-async function hashFile(root, file, signal) {
-  const handle = await open(file.absolute, 'r')
-  try {
-    const opened = await handle.stat()
-    const changed = () => new IndexInputError('Файл изменился во время индексации. Повторите сканирование.')
-    if (!opened.isFile() || !sameFile(opened, file.info) || !await checkedPath(root, file.absolute)) throw changed()
-    const hash = createHash('sha256')
-    const stream = handle.createReadStream({ autoClose: false, signal })
-    for await (const bytes of stream) hash.update(bytes)
-    if (!sameFile(opened, await handle.stat())) throw changed()
-    return hash.digest('hex')
-  } finally {
-    await handle.close()
-  }
-}
 
 function countHashes(files) {
   const counts = new Map()
@@ -204,7 +190,9 @@ export class AssetIndex {
     const library = this.#db.prepare('SELECT * FROM libraries WHERE id = ? AND enabled = 1').get(id)
     if (!library) throw new IndexInputError('Библиотека не подключена.')
     const previous = this.#db.prepare(`
-      SELECT a.*, p.processor_version FROM assets a LEFT JOIN asset_analysis p ON p.asset_id = a.id
+      SELECT a.*, p.processor_version, s.source_key AS serialized_key, s.resources AS serialized_resources
+      FROM assets a LEFT JOIN asset_analysis p ON p.asset_id = a.id
+      LEFT JOIN serialized_package_sources s ON s.asset_id = a.id
       WHERE a.library_id = ?
     `).all(id)
     const byPath = new Map(previous.map(item => [item.path_key, item]))
@@ -224,14 +212,16 @@ export class AssetIndex {
         hash = existing.hash
         reused++
       } else {
-        hash = await hashFile(library.root, file, signal)
+        hash = await hashFile(library.root, file.absolute, file.info, signal)
         hashed++
       }
       const canReuse = existing?.processor_version === analysisVersion && existing.path === file.path &&
         (hash !== null ? existing.hash === hash : existing.size === size && existing.mtime === mtime && existing.ctime === ctime)
       const analysis = supportsAnalysis(file.ext) && !canReuse ? await analyzeAsset(library.root, file, signal) : null
+      const serialized = hash && watchedFormatByExtension.get(file.ext) === 'unity-serialized' ?
+        await watchSerializedSource(library.root, file, hash, existing?.serialized_resources, signal) : null
       discovered.set(key, { path: file.path, name: basename(file.path), ext: file.ext,
-        kind: file.kind, size, mtime, ctime, hash, analysis })
+        kind: file.kind, size, mtime, ctime, hash, analysis, serialized })
       onProgress?.(discovered.size)
     }
     signal?.throwIfAborted()
@@ -268,6 +258,9 @@ export class AssetIndex {
     `)
     const version = this.#db.prepare('INSERT INTO asset_versions(asset_id, path, size, mtime, hash, recorded_at) VALUES (?, ?, ?, ?, ?, ?)')
     const markMissing = this.#db.prepare('UPDATE assets SET missing_since = ? WHERE id = ?')
+    const removeSerialized = this.#db.prepare('DELETE FROM serialized_package_sources WHERE asset_id = ?')
+    const saveSerialized = this.#db.prepare(`INSERT INTO serialized_package_sources (asset_id, source_key, resources)
+      VALUES (?, ?, ?) ON CONFLICT(asset_id) DO UPDATE SET source_key = excluded.source_key, resources = excluded.resources`)
     const fields = this.#db.prepare('SELECT category, tags, note, license FROM assets WHERE id = ?')
     const deleteAnalysis = this.#db.prepare('DELETE FROM asset_analysis WHERE asset_id = ?')
     const saveAnalysis = this.#db.prepare('INSERT INTO asset_analysis (asset_id, processor_version, report) VALUES (?, ?, ?)')
@@ -298,6 +291,11 @@ export class AssetIndex {
         insert.run(assetId, id, ...data, now, content(file.path))
         version.run(assetId, file.path, file.size, file.mtime, file.hash, now)
         summary.added++
+      }
+      if (file.serialized && (file.serialized.key !== before?.serialized_key || file.serialized.resources !== before?.serialized_resources)) {
+        saveSerialized.run(assetId, file.serialized.key, file.serialized.resources)
+      } else if (!file.serialized && before?.serialized_key) {
+        removeSerialized.run(assetId)
       }
       if (file.analysis || (before?.processor_version && !supportsAnalysis(file.ext))) deleteAnalysis.run(assetId)
       if (file.analysis) {

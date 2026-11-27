@@ -1,9 +1,10 @@
 import { mkdir, statfs, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileInfo } from '../../../files/asset-files.mjs'
+import { sameSource } from '../../../files/hash.mjs'
 import { findWorker, runJsonWorker } from '../../worker-process.mjs'
 import { findSerializedCompanions, serializedCompanionNames } from '../serialized/companions.mjs'
-import { sameSource, stageFile } from './stage-file.mjs'
+import { stageFile } from './stage-file.mjs'
 
 const MiB = 1024 ** 2
 export const inputLimit = 128 * MiB

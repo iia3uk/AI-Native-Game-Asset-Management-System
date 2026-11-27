@@ -1,6 +1,7 @@
 const recipes = {
   unitypackage: { extensions: ['unitypackage'], formats: 'fbx,glb' },
   unityfs: { extensions: ['bundle', 'unity3d'], formats: 'fbx,glb' },
+  'unity-serialized': { extensions: ['asset', 'assets', 'sharedassets'], formats: 'fbx,glb' },
   'unreal-pak': { extensions: ['pak'], formats: '' },
 }
 

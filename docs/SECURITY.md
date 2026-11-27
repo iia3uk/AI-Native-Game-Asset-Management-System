@@ -22,6 +22,8 @@ The queued UnityFS path verifies the staged copy against the SHA-256 from inspec
 
 Standalone Unity decoding checks the exact staged length, little-endian format 22 or 23 and metadata location. It reads embedded type trees where available. The Windows Player layouts require a matching editor version, platform, class and type hash, and each read fits within the declared object. Companion discovery is limited to matching `.resS` and `.resource` files in the primary file's directory. Each companion is limited to 256 MiB and the group to 512 MiB. Staging checks canonical paths, file identity, length and modification time. The worker maps flat references to fixed staged filenames and bounds each slice by the staged file size. Queue and cache checks use the combined fingerprint whenever companion files are present.
 
+Watched standalone imports use the same fingerprint and size limits as manual imports. A scan hashes companions through bounded reads inside the connected library. Changes between the scan and staging invalidate the queued version before decoding or cache reuse.
+
 For streamed texture data, the worker accepts a reference to the serialized owner's `.resS` entry in the validated bundle directory. It checks the declared offset and size against that entry, reads only the bytes required for the highest-resolution mip and rejects output that would exceed the remaining budget before expanding the texture. The resource resolver has no filesystem path lookup.
 
 Sprite decoding follows Texture2D references only within the same validated serialized member. It checks the crop rectangle against the source dimensions and the remaining output budget. Each reader retains at most one source texture for repeated crops.
