@@ -1,7 +1,9 @@
 import { readBoundedText } from '../../files/asset-files.mjs'
+import { unityPreviewBinding } from './preview-bindings.mjs'
+import { unityTextureImporter } from './texture-importer.mjs'
 import { prefabMeshes } from './prefabs.mjs'
 import { baseColorSlots } from './shaders.mjs'
-import { parseUnityMaterial, unquote } from './yaml.mjs'
+import { parseUnityMaterial, unityReference, unquote } from './yaml.mjs'
 
 const textureFormats = new Set(['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'tga', 'tif', 'tiff', 'avif'])
 const materialKey = value => unquote(value).toLowerCase()
@@ -36,12 +38,29 @@ function textureBinding(entry, textures) {
     const texture = nearby(textures.get(reference.guid) ?? [], file)
     if (texture) slots.set(property, { url: texture.file.url, scale: scale ?? undefined, offset: offset ?? undefined })
   }
-  const binding = baseColorSlots.map(slot => slots.get(slot)).find(Boolean)
-  if (!binding) return
+  const pbr = unityPreviewBinding(material, reference => {
+    const candidates = textures.get(reference.guid)
+    if (reference.fileID !== '2800000' || candidates?.length !== 1) return null
+    const [texture] = candidates
+    return { status: 'file-resolved', url: texture.file.url, importer: texture.importer }
+  })
+  const albedo = baseColorSlots.map(slot => slots.get(slot)).find(Boolean)
+  if (!albedo && !pbr) return
+  const binding = { ...albedo, ...(pbr && { pbr }) }
+  entry.fileID = material.fileID
   if (/_ALPHATEST_ON|^[ \t]*-[ \t]+_AlphaClip:[ \t]*1\s*$/m.test(content)) {
     binding.alphaTest = Number(content.match(/^[ \t]*-[ \t]+(?:_Cutoff|_AlphaCutoff):[ \t]*([\d.]+)/m)?.[1] ?? .5)
   }
   return binding
+}
+
+function referencedMaterial(materialsByGuid, reference, source) {
+  const candidates = materialsByGuid.get(reference?.guid) ?? []
+  const entry = nearby(candidates, source)
+  if (!entry) return null
+  if (candidates.length === 1 && reference.fileID && entry.fileID === reference.fileID) return entry.binding
+  const { pbr, ...albedo } = entry.binding
+  return albedo.url ? albedo : null
 }
 
 export async function connectUnityMaterials(root, files) {
@@ -66,7 +85,10 @@ export async function connectUnityMaterials(root, files) {
   const models = entries.filter(entry => entry.file.ext === 'fbx')
   const modelGuids = new Set(models.map(entry => entry.guid).filter(Boolean))
   const prefabByModel = new Map()
-  for (const entry of entries) if (textureFormats.has(entry.file.ext)) add(textures, entry.guid, entry)
+  for (const entry of entries) if (textureFormats.has(entry.file.ext)) {
+    entry.importer = unityTextureImporter(entry.meta)
+    add(textures, entry.guid, entry)
+  }
   for (const entry of entries.filter(entry => entry.file.ext === 'mat')) {
     entry.binding = textureBinding(entry, textures)
     if (!entry.binding) continue
@@ -90,23 +112,24 @@ export async function connectUnityMaterials(root, files) {
       const material = nearby(materialsByName.get(materialKey(name)) ?? [], file)
       if (material) bindings.set(materialKey(name), material.binding)
     }
-    for (const match of meta.matchAll(/type:[ \t]*UnityEngine(?:\.[\w.]+)?:Material[ \t]*\r?\n(?:[ \t]+assembly:[^\r\n]*\r?\n)?[ \t]+name:[ \t]*([^\r\n]+)\r?\n[ \t]+second:[^\r\n]*\bguid:[ \t]*([\da-f]{32})\b/gi)) {
-      const key = materialKey(match[1])
-      const material = nearby(materialsByGuid.get(match[2].toLowerCase()) ?? [], file)
-      if (material) bindings.set(key, { ...material.binding, remap: true })
+    for (const [, name, reference] of meta.matchAll(/type:[ \t]*UnityEngine(?:\.[\w.]+)?:Material[ \t]*\r?\n(?:[ \t]+assembly:[^\r\n]*\r?\n)?[ \t]+name:[ \t]*([^\r\n]+)\r?\n[ \t]+second:[ \t]*([^\r\n]*)/gi)) {
+      const binding = referencedMaterial(materialsByGuid, unityReference(reference), file)
+      if (binding) bindings.set(materialKey(name), { ...binding, remap: true })
     }
     if (bindings.size) file.materialTextures = Object.fromEntries(bindings)
     const matchingPrefabs = (prefabByModel.get(guid) ?? []).filter(entry => modelStem(entry.file) === modelStem(file))
     const prefab = nearby(matchingPrefabs, file)
     if (!prefab) continue
-    const slots = Array.from(prefab.materials, key => {
-      const material = nearby(materialsByGuid.get(key) ?? [], prefab.file)
-      return material?.binding ?? null
-    })
+    const slots = Array.from(prefab.materials, reference => referencedMaterial(materialsByGuid, reference, prefab.file))
     if (!slots.some(Boolean)) continue
     const names = new Map([...meta.matchAll(/^ +(-?\d+):[ \t]*([^\r\n]+)/gm)].map(([, id, name]) => [id, unquote(name)]))
     file.prefabTextures = { mesh: names.get(prefab.meshId), slots }
   }
-  return Object.fromEntries([...materialsByName].map(([name, entries]) => [name,
-    entries.map(entry => ({ ...entry.binding, path: entry.file.path }))]))
+  return Object.fromEntries([...materialsByName].flatMap(([name, entries]) => {
+    const candidates = entries.flatMap(entry => {
+      const { pbr, ...binding } = entry.binding
+      return binding.url ? [{ ...binding, path: entry.file.path }] : []
+    })
+    return candidates.length ? [[name, candidates]] : []
+  }))
 }

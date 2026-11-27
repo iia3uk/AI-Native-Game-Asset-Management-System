@@ -4,6 +4,7 @@ import { closest } from '../resource-proximity.js'
 import { findColorTexture, materialStem } from './color-selection.js'
 import { hasTextureImage } from './texture-image.js'
 import { missingColorMaps, textureUrl, textureUrls } from './texture-references.js'
+import { unityPreviewMaterial } from './unity-preview.js'
 import { colorSuffix, companionTexture, copyTextureMapping, idSuffix, isSingleChannelSignal, opacitySuffix, resemblesVertexMask, textureName } from './textures.js'
 
 export async function applyExternalTextures(model, file, files, unityMaterials, manager) {
@@ -14,6 +15,7 @@ export async function applyExternalTextures(model, file, files, unityMaterials, 
   const materialMeshes = new Map()
   const replacedTextures = new Set()
   const variantGroups = []
+  const upgradedMaterials = new Map()
   model.traverseVisible(mesh => {
     if (!mesh.isMesh || !mesh.geometry.hasAttribute('uv') || !mesh.geometry.attributes.position?.count) return
     meshes.push(mesh)
@@ -61,6 +63,16 @@ export async function applyExternalTextures(model, file, files, unityMaterials, 
     const key = material.name.trim().toLowerCase()
     const explicit = Object.hasOwn(bindings, key) ? bindings[key] : null
     const uses = materialMeshes.get(material)
+    const prefabBinding = prefabTextures.get(material)
+    const provenBinding = explicit?.remap ? explicit : prefabBinding
+    if (provenBinding?.pbr && file.ext === 'fbx' && (!file.previewFormat || file.previewFormat === 'fbx')) {
+      const upgraded = await unityPreviewMaterial(material, provenBinding.pbr, imagesByUrl, manager)
+      if (upgraded) {
+        upgradedMaterials.set(material, upgraded.material)
+        for (const texture of upgraded.replacedTextures) replacedTextures.add(texture)
+        return
+      }
+    }
     const [owner] = uses
     const meshNames = !Array.isArray(owner.material) ? new Set([...uses].map(mesh => mesh.name)) : new Set()
     const meshName = meshNames.size && new Set([...meshNames].map(materialStem)).size === 1 ? owner.name : ''
@@ -90,7 +102,7 @@ export async function applyExternalTextures(model, file, files, unityMaterials, 
     }
     const getNamed = name => Object.hasOwn(unityMaterials, name) ? unityMaterials[name] : []
     const named = closest(getNamed(key), file) ?? (key.startsWith('mi_') ? closest(getNamed('m_' + key.slice(3)), file) : null)
-    const unityBinding = explicit ?? prefabTextures.get(material) ?? named
+    const unityBinding = explicit?.url || explicit?.variants?.length ? explicit : prefabBinding?.url ? prefabBinding : named
     const binding = unityBinding ?? findByName()
     if (!binding) return
     try {
@@ -108,7 +120,7 @@ export async function applyExternalTextures(model, file, files, unityMaterials, 
       if (material.map) replacedTextures.add(material.map)
       material.map = texture
       material.color?.setHex(0xffffff)
-      // Unity shaders can use vertex colors as masks. The preview only has the flat albedo map.
+      // Unity shaders can use vertex colors as masks. This fallback applies a flat color texture.
       if ((unityBinding && file.ext === 'fbx') || isVertexMask(material, uses, colorUrl, variants)) material.vertexColors = false
       if (binding.alphaUrl && !hasTextureImage(material.alphaMap)) {
         const alpha = await loadTexture(binding.alphaUrl).catch(() => null)
@@ -128,6 +140,13 @@ export async function applyExternalTextures(model, file, files, unityMaterials, 
       if (variants.length > 1) variantGroups.push({ material, files: variants, loadTexture, index: defaultIndex })
     } catch { /* keep the original material when its external texture cannot be decoded */ }
   }))
+  if (upgradedMaterials.size) {
+    const replacement = material => upgradedMaterials.get(material) ?? material
+    for (const mesh of meshes) {
+      mesh.material = Array.isArray(mesh.material) ? mesh.material.map(replacement) : replacement(mesh.material)
+    }
+    model.userData.replacedMaterials = new Set(upgradedMaterials.keys())
+  }
   for (const texture of replacedTextures) model.userData.replacedTextures.add(texture)
   return variantGroups
 }

@@ -15,6 +15,7 @@ import { inspectUnityPackage } from '../core/packages/unity/inspect.mjs'
 import { packageSource } from '../core/packages/unity/paths.mjs'
 import { packageLimits } from '../core/packages/unity/policy.mjs'
 import { ProcessingWorker } from '../core/processing/processing-worker.mjs'
+import { writeUnityPreviewPackage } from './fixtures/unity-preview.mjs'
 import { archiveBytes, fixtureModel, fixtureTexture, ids, tarMember, unityEntries, writeUnityFixture } from './fixtures/unitypackage.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 
@@ -37,6 +38,37 @@ async function waitForJob(server, id) {
   }
   throw new Error('Job did not reach a terminal state: ' + id)
 }
+
+test('Imported Unity FBX resolves its authored PBR maps through the index viewer route', async t => {
+  const directory = await testDirectory(t)
+  const path = await writeUnityPreviewPackage(join(directory, 'package-source'))
+  const server = await startServer(directory)
+  try {
+    const queued = await server.post('/api/index/packages/import', { path, hash: sha(await readFile(path)) })
+    assert.equal(queued.status, 202)
+    const job = await waitForJob(server, (await queued.json()).job.id)
+    assert.equal(job.status, 'completed', job.error)
+    assert.equal((await waitForJob(server, job.result.scanJobId)).status, 'completed')
+    const { assets } = await (await server.request('/api/index/search?q=Panel&kind=model')).json()
+    assert.equal(assets.length, 1)
+    const opened = await server.post('/api/index/assets/' + assets[0].id + '/open', {})
+    assert.equal(opened.status, 200)
+    const { folder, fileId } = await opened.json()
+    const { materialTextures } = folder.resources.find(file => file.id === fileId)
+    const { pbr, remap } = materialTextures.fixtureslot
+    assert.equal(remap, true)
+    assert.equal(pbr.profile, 'hdrp-lit')
+    const packed = folder.resources.find(file => file.path === 'Assets/Packed.png')
+    assert.deepEqual([pbr.maps.metallic.url, pbr.maps.roughness.url, pbr.maps.ambientOcclusion.url], Array(3).fill(packed.url))
+    assert.deepEqual([pbr.maps.metallic.channels, pbr.maps.roughness.channels, pbr.maps.ambientOcclusion.channels], ['r', 'a', 'g'])
+    assert.equal(pbr.maps.normal.flipGreen, true)
+    const texture = await server.request(packed.url)
+    assert.equal(texture.status, 200)
+    assert.deepEqual(Buffer.from(await texture.arrayBuffer()), await readFile(join(directory, 'package-source', 'Assets', 'Packed.png')))
+  } finally {
+    await server.close()
+  }
+})
 
 test('Unity packages import through the durable HTTP queue and open in the existing viewer', async t => {
   const directory = await testDirectory(t)

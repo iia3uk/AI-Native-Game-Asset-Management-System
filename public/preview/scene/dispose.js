@@ -8,11 +8,13 @@ export function disposeModel(object) {
     if (item.geometry) geometry.add(item.geometry)
     if (item.skeleton) skeletons.add(item.skeleton)
     for (const material of Array.isArray(item.material) ? item.material : item.material ? [item.material] : []) {
-      if (!material) continue
-      materials.add(material)
-      for (const value of Object.values(material)) if (value?.isTexture) textures.add(value)
+      if (material) materials.add(material)
     }
+    for (const material of item.userData.replacedMaterials ?? []) materials.add(material)
   })
+  for (const material of materials) {
+    for (const value of Object.values(material)) if (value?.isTexture) textures.add(value)
+  }
   for (const item of [...geometry, ...materials, ...textures, ...skeletons]) item.dispose()
   if (typeof ImageBitmap !== 'undefined') {
     const bitmaps = new Set([...textures].map(texture => texture.image).filter(image => image instanceof ImageBitmap))

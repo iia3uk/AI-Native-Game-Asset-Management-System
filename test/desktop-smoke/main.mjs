@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { app } from 'electron'
 import { startDesktop } from '../../desktop/bootstrap.mjs'
 import { generateFixtures } from '../../scripts/generate-fixtures.mjs'
+import { verifyUnityPreview } from './unity-preview.mjs'
 import { unityEntries, unityFixtureEntries, writeUnityFixture } from '../fixtures/unitypackage.mjs'
 
 const screenshot = process.env.ASSET_VIEWER_SMOKE_SCREENSHOT
@@ -14,7 +15,7 @@ if (!process.env.ASSET_VIEWER_DATA_DIR) throw new Error('Provide isolated ASSET_
 process.env.ASSET_VIEWER_PORT ||= '0'
 app.commandLine.appendSwitch('use-angle', 'swiftshader')
 
-void startDesktop(root).then(async ({ window, origin }) => {
+void startDesktop(root, { showWindow: false }).then(async ({ window, origin }) => {
   const { webContents } = window
   const externalRequests = []
   webContents.session.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, ({ url }, respond) => {
@@ -44,8 +45,9 @@ void startDesktop(root).then(async ({ window, origin }) => {
   await waitFor("document.querySelectorAll('#pack-list img').length === 3")
   if (screenshot) {
     await mkdir(dirname(screenshot), { recursive: true })
-    await writeFile(screenshot, (await webContents.capturePage()).toPNG())
+    await writeFile(screenshot, (await webContents.capturePage(undefined, { stayHidden: true })).toPNG())
   }
+  await verifyUnityPreview(webContents, join(process.env.ASSET_VIEWER_DATA_DIR, 'unity-preview-fixture'))
   const fixtures = join(process.env.ASSET_VIEWER_DATA_DIR, 'smoke-fixtures')
   await generateFixtures(fixtures, { includeErrors: true })
   await webContents.executeJavaScript("document.querySelector('#index-mode').click()")
@@ -144,7 +146,8 @@ void startDesktop(root).then(async ({ window, origin }) => {
   await webContents.executeJavaScript("document.querySelector('#index-preview').click()")
   await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('1 треугольник')")
   assert.deepEqual(externalRequests, [])
-  console.log('Desktop demo, library watching, thumbnail cache, technical analysis, metadata, Unity package import and renderer isolation passed.')
+  assert.equal(window.isVisible(), false)
+  console.log('Desktop demo, library watching, thumbnail cache, technical analysis, metadata, Unity package import, PBR material preview and renderer isolation passed.')
   app.quit()
 }).catch(error => {
   console.error(error)

@@ -1,10 +1,13 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { TGALoader } from 'three/addons/loaders/TGALoader.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { geometryBounds, PreviewParts } from './scene/parts.js'
 import { disposeModel } from './scene/dispose.js'
 import { animatedTranslationRoot } from './scene/animation-motion.js'
 import { resolveResources } from './loaders/resources.js'
+import { ViewerTiffLoader } from './loaders/fbx-images.js'
+import { convertedImages } from './loaders/image-preview.js'
 import { loadModel } from './loaders/model.js'
 import { applyGltfTexture } from './materials/gltf-texture.js'
 import { applyExternalTextures } from './materials/external-textures.js'
@@ -146,7 +149,7 @@ export class ModelStage {
       model.userData.replacedTextures = new Set()
       if (request === this.request) {
         if (type === 'fbx') normalizeFbx(model)
-        if ((type === 'fbx' || type === 'glb' || type === 'gltf' || local) && files.some(item => item.kind === 'image')) {
+        if ((type === 'fbx' || type === 'glb' || type === 'gltf' || local) && (file.materialTextures || file.prefabTextures || files.some(item => item.kind === 'image'))) {
           variantGroups = await applyExternalTextures(model, file, files, unityMaterials, manager)
         }
         if (type === 'fbx') normalizeFbxVertexColors(model)

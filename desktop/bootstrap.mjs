@@ -31,7 +31,7 @@ function trustedExternal(url) {
   }
 }
 
-export async function startDesktop(applicationRoot = app.getAppPath()) {
+export async function startDesktop(applicationRoot = app.getAppPath(), { showWindow = true } = {}) {
   app.setName('Asset Viewer')
   const paths = dataPaths()
   const electronData = join(paths.data, 'electron')
@@ -124,7 +124,7 @@ export async function startDesktop(applicationRoot = app.getAppPath()) {
     dialog.showErrorBox('Asset Viewer', 'The local server stopped (' + code + '). Restart the app to reopen the index.')
     app.quit()
   })
-  window.once('ready-to-show', () => window.show())
+  if (showWindow) window.once('ready-to-show', () => window.show())
   await window.loadURL(origin + '/')
   return { window, origin, paths }
 }
