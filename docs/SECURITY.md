@@ -1,0 +1,9 @@
+# Local security model
+
+The HTTP listener binds to IPv4 loopback, accepts only its active port with `127.0.0.1` or `localhost`, validates supplied browser Origins and requires same-origin JSON for writes. Normal browser navigation can open the app from a link. The app uses CSP, type sniffing protection, resource isolation and a separate sandbox policy for asset SVG.
+
+Library roots are explicit selections. Paths to child files are checked against the canonical root; symlinks and junctions under it are skipped. Fab metadata and Unity text reads are bounded. Source assets remain read-only. The legacy Fab selection document is an intentional metadata write through atomic replacement.
+
+The desktop user and other processes on the same account are inside the trust boundary. Portable path checks reduce link substitution risk; fully concurrent filesystem changes require stronger native isolation. Browser loaders and Blender native importers are still exposed to malformed inputs. Blender uses an argument vector, factory startup and disabled script auto-execution, with limits on concurrency, input size, timeout and captured output. Its internal dependency resolution runs with the user's OS permissions.
+
+For protocol, format and packaging work, see the open verification items in [AUDIT.md](AUDIT.md).

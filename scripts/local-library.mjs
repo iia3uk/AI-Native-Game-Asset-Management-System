@@ -1,53 +1,23 @@
 import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdtemp, opendir, readdir, realpath, rename, stat } from 'node:fs/promises'
+import { mkdtemp, readdir, rename, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { blenderModels, browserImages, browserModels, formatOrder, imageFormats, modelFormats, previewCandidates, supportFiles } from './formats.mjs'
+import { blenderModels, browserImages, browserModels, formatOrder, previewCandidates } from './formats.mjs'
 import { connectUnityMaterials } from './unity-materials.mjs'
+import { discoverAssets, fileInfo, folderPath, pathKey } from '../core/asset-files.mjs'
 
 const runFile = promisify(execFile)
 const exportScript = fileURLToPath(new URL('./export-blend.py', import.meta.url))
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 24)
 const sortByPath = (a, b) => a.path.localeCompare(b.path, 'ru', { numeric: true })
 const encodePath = path => path.split('/').map(encodeURIComponent).join('/')
-const slash = path => path.split(sep).join('/')
 let cacheDirectory
-
-export function inside(base, target) {
-  const path = relative(base, target)
-  return path !== '..' && !path.startsWith('..' + sep) && !isAbsolute(path)
-}
-
-async function* walk(root) {
-  const stack = [root]
-  while (stack.length) {
-    const folder = stack.pop()
-    let directory
-    try { directory = await opendir(folder) } catch (error) {
-      if (folder !== root && ['EACCES', 'EPERM', 'ENOENT'].includes(error.code)) continue
-      throw error
-    }
-    for await (const entry of directory) {
-      const path = join(folder, entry.name)
-      if (entry.isDirectory()) stack.push(path)
-      else if (entry.isFile()) yield path
-    }
-  }
-}
-
-async function folderPath(path) {
-  const value = typeof path === 'string' ? path.trim().replace(/^"(.*)"$/, '$1') : ''
-  if (!isAbsolute(value) || (process.platform === 'win32' && !/^[a-z]:[\\/]/i.test(value))) {
-    throw new Error('Укажите полный путь к папке на этом компьютере.')
-  }
-  const root = await realpath(value)
-  if (process.platform === 'win32' && !/^[a-z]:[\\/]/i.test(root)) throw new Error('Выберите папку на локальном диске.')
-  if (!(await stat(root)).isDirectory()) throw new Error('Этот путь ведёт к файлу. Выберите папку.')
-  return root
-}
+const previewAbort = new AbortController()
+let conversionTail = Promise.resolve()
+let pendingConversions = 0
 
 export async function browseFolder(path) {
   const root = await folderPath(path || homedir())
@@ -61,17 +31,11 @@ export async function browseFolder(path) {
 export async function scanFolder(path) {
   const root = await folderPath(path)
   const id = randomUUID()
-  const key = hash(process.platform === 'win32' ? root.toLowerCase() : root)
+  const key = hash(pathKey(root))
   const groups = new Map()
   const files = new Map()
   const fileIds = new Map()
-  for await (const absolute of walk(root)) {
-    const ext = extname(absolute).slice(1).toLowerCase()
-    const kind = modelFormats.has(ext) ? 'model' : imageFormats.has(ext) ? 'image' : 'other'
-    if (kind === 'other' && !supportFiles.has(ext)) continue
-    const size = await stat(absolute).then(info => info.isFile() ? info.size : null, () => null)
-    if (size === null) continue
-    const path = slash(relative(root, absolute))
+  for await (const { path, ext, kind, info: { size } } of discoverAssets(root)) {
     const filename = basename(path)
     const url = '/local-files/' + id + '/' + encodePath(path)
     const file = {
@@ -128,8 +92,11 @@ async function blenderCommands() {
 }
 
 async function convertWithBlender(library, file) {
-  const source = await realpath(resolve(library.root, file.path))
-  if (!inside(library.root, source) || !(await stat(source)).isFile()) throw new Error('Исходный файл недоступен.')
+  previewAbort.signal.throwIfAborted()
+  const inputFile = await fileInfo(library.root, file.path)
+  if (!inputFile) throw new Error('Исходный файл недоступен.')
+  if (inputFile.info.size > 512 * 1024 ** 2) throw new Error('Исходный файл превышает лимит преобразования 512 МиБ.')
+  const { path: source } = inputFile
   cacheDirectory ??= mkdtemp(join(tmpdir(), 'asset-viewer-'))
   const target = join(await cacheDirectory, library.id + '-' + file.id + '.glb')
   const partial = target + '.partial.glb'
@@ -139,13 +106,15 @@ async function convertWithBlender(library, file) {
       const input = file.ext === 'blend' ? [source] : []
       await runFile(executable, ['--background', '--factory-startup', '--disable-autoexec', ...input, '--python-exit-code', '1',
         '--python', exportScript, '--', partial, library.root, ...(input.length ? [] : [source])],
-      { timeout: 500_000, windowsHide: true, maxBuffer: 2 * 1024 ** 2 })
+      { timeout: 500_000, windowsHide: true, maxBuffer: 2 * 1024 ** 2, signal: previewAbort.signal })
       await rename(partial, target)
       return target
     } catch (error) {
       if (error.code === 'ENOENT') continue
       console.error('Blender preview:', file.name, error.stderr?.slice(-1200) || error.message)
       throw new Error('Blender не смог подготовить GLB-предпросмотр этого файла.')
+    } finally {
+      await rm(partial, { force: true })
     }
   }
   throw new Error('Для предпросмотра этого формата нужен Blender в PATH или путь в ASSET_VIEWER_BLENDER.')
@@ -153,11 +122,22 @@ async function convertWithBlender(library, file) {
 
 export async function blenderPreview(library, file) {
   if (!library.previews.has(file.id)) {
-    const operation = convertWithBlender(library, file).catch(error => {
+    if (pendingConversions >= 8) throw new Error('Очередь Blender заполнена. Повторите позже.')
+    pendingConversions++
+    const operation = conversionTail.then(() => convertWithBlender(library, file)).catch(error => {
       library.previews.delete(file.id)
       throw error
+    }).finally(() => {
+      pendingConversions--
     })
+    conversionTail = operation.catch(() => undefined)
     library.previews.set(file.id, operation)
   }
   return library.previews.get(file.id)
+}
+
+export async function closePreviews() {
+  previewAbort.abort()
+  await conversionTail
+  if (cacheDirectory) await rm(await cacheDirectory, { recursive: true, force: true })
 }

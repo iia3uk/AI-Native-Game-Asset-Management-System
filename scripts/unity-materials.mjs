@@ -1,5 +1,4 @@
-import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { readBoundedText } from '../core/asset-files.mjs'
 import { prefabMeshes } from './unity-prefabs.mjs'
 
 const textureFormats = new Set(['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'tga', 'tif', 'tiff', 'avif'])
@@ -48,10 +47,7 @@ function textureBinding(entry, textures) {
 
 export async function connectUnityMaterials(root, files) {
   const paths = new Set(files.map(file => file.path))
-  const read = path => readFile(resolve(root, path), 'utf8').catch(error => {
-    if (['ENOENT', 'EACCES', 'EPERM', 'EISDIR'].includes(error.code)) return ''
-    throw error
-  })
+  const read = async path => await readBoundedText(root, path, 4 * 1024 ** 2) ?? ''
   const sources = files.filter(file => paths.has(file.path + '.meta') &&
     (file.ext === 'mat' || file.ext === 'fbx' || textureFormats.has(file.ext)))
   if (!sources.some(file => file.ext === 'mat') || !sources.some(file => file.ext === 'fbx')) return

@@ -1,12 +1,12 @@
 import { createServer } from 'node:http'
-import { createReadStream } from 'node:fs'
-import { createHash } from 'node:crypto'
-import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { lstat, open, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { extname, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { pipeline } from 'node:stream/promises'
 import { parseArgs } from 'node:util'
-import { blenderPreview, browseFolder, inside, scanFolder } from './scripts/local-library.mjs'
+import { blenderPreview, browseFolder, closePreviews, scanFolder } from './scripts/local-library.mjs'
+import { checkedPath, fileInfo, readBoundedText } from './core/asset-files.mjs'
 
 const project = fileURLToPath(new URL('.', import.meta.url))
 try {
@@ -20,10 +20,10 @@ const library = await realpath(resolve(project, process.env.FAB_ASSETS_ROOT || '
 const publicPath = resolve(project, 'public')
 const three = resolve(project, 'node_modules/three')
 const rhino = resolve(project, 'node_modules/rhino3dm')
-const indexPath = library && resolve(library, 'Viewer')
-const reviewPath = indexPath && resolve(indexPath, 'selections.json')
+const reviewPath = 'Viewer/selections.json'
 const port = Number(process.env.ASSET_VIEWER_PORT || 8177)
-const origin = 'http://127.0.0.1:' + port
+if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('ASSET_VIEWER_PORT должен быть от 0 до 65535.')
+const metadataLimit = 64 * 1024 ** 2
 const identifier = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i
 const fileIdentifier = /^[a-f\d]{24}$/
 const statuses = new Set(['candidate', 'later', 'excluded', ''])
@@ -40,15 +40,34 @@ let viewFilesUpdated
 const folders = new Map()
 
 async function safeFile(base, subpath) {
-  const path = resolve(base, subpath)
-  if (!inside(base, path)) return null
-  const actual = await realpath(path).catch(() => null)
-  if (!actual || !inside(base, actual)) return null
-  const info = await stat(actual).catch(error => {
-    if (['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM'].includes(error.code)) return null
+  const file = await fileInfo(base, subpath)
+  return file && { ...file, base }
+}
+
+async function fabJson(path, missing = null) {
+  if (!library) return missing
+  const content = await readBoundedText(library, path, metadataLimit)
+  return content === null ? missing : JSON.parse(content)
+}
+
+async function fileEntryExists(path) {
+  return lstat(path).then(() => true, error => {
+    if (error.code === 'ENOENT') return false
     throw error
   })
-  return info?.isFile() ? { path: actual, size: info.size, modified: info.mtime.toUTCString() } : null
+}
+
+async function writeReview(selection) {
+  const directory = await checkedPath(library, 'Viewer')
+  if (!directory) throw new Error('Каталог Fab Viewer недоступен.')
+  const temporary = resolve(directory, 'selections-' + randomUUID() + '.tmp')
+  try {
+    await writeFile(temporary, JSON.stringify(selection, null, 2) + '\n', { flag: 'wx' })
+    if (!await checkedPath(library, directory)) throw new Error('Каталог Fab Viewer перемещён.')
+    await rename(temporary, resolve(library, reviewPath))
+  } finally {
+    await rm(temporary, { force: true })
+  }
 }
 
 function json(response, code, body) {
@@ -57,16 +76,18 @@ function json(response, code, body) {
 }
 
 async function loadReview() {
-  if (!reviewPath) return { version: 1, entries: {} }
-  return readFile(reviewPath, 'utf8').then(JSON.parse, error => {
-    if (error.code === 'ENOENT') return { version: 1, entries: {} }
-    throw error
-  })
+  const selection = await fabJson(reviewPath)
+  if (selection?.entries && typeof selection.entries === 'object' && !Array.isArray(selection.entries)) return selection
+  // A blocked or unreadable existing review must never be overwritten by an empty selection.
+  if (selection !== null || (library && await fileEntryExists(resolve(library, reviewPath)))) {
+    throw new Error('Невозможно прочитать существующие отметки Fab.')
+  }
+  return { version: 1, entries: {} }
 }
 
 function allowsWrite(request) {
   return request.headers.origin === 'http://' + request.headers.host &&
-    request.headers['content-type']?.startsWith('application/json')
+    request.headers['content-type']?.split(';', 1)[0].trim().toLowerCase() === 'application/json'
 }
 
 async function body(request) {
@@ -91,8 +112,8 @@ async function changeReview(request, response) {
     json(response, 400, { error: 'Некорректная отметка' })
     return
   }
-  const pack = indexPath && await readFile(resolve(indexPath, 'packs', change.pack + '.json'), 'utf8').then(JSON.parse, () => null)
-  const file = pack?.files.find(item => item.id === change.file)
+  const pack = await fabJson('Viewer/packs/' + change.pack + '.json')
+  const file = Array.isArray(pack?.files) && pack.files.find(item => item.id === change.file)
   if (!file) {
     json(response, 404, { error: 'Файл отсутствует в каталоге' })
     return
@@ -104,9 +125,7 @@ async function changeReview(request, response) {
       note: change.note.trim(), updatedAt: new Date().toISOString() }
     if (!record.status && !record.note) delete selection.entries[key]
     else selection.entries[key] = record
-    const temporary = reviewPath + '.tmp'
-    await writeFile(temporary, JSON.stringify(selection, null, 2) + '\n')
-    await rename(temporary, reviewPath)
+    await writeReview(selection)
     return selection
   })
   reviewWrites = operation.catch(() => undefined)
@@ -118,12 +137,12 @@ async function isAsset(path) {
   if (/^(?:Unpacked|Previews)\/[a-f\d-]{36}\//i.test(path)) {
     return !path.split('/').some(part => part.endsWith('.partial') || part === '.extracted.json' || part === 'issues.json')
   }
-  const catalogPath = resolve(library, 'catalog.json')
-  const modified = await stat(catalogPath).then(info => info.mtimeMs, () => null)
-  if (modified === null) return false
+  const catalog = await fileInfo(library, 'catalog.json')
+  if (!catalog) return false
+  const modified = catalog.info.mtimeMs
   if (viewFilesUpdated !== modified) {
-    const catalog = JSON.parse(await readFile(catalogPath, 'utf8'))
-    viewFiles = new Set(catalog.assets.flatMap(asset => asset.files.filter(file => !file.archive).map(file => file.path)))
+    const document = await fabJson('catalog.json')
+    viewFiles = new Set(document?.assets.flatMap(asset => asset.files.filter(file => !file.archive).map(file => file.path)))
     viewFilesUpdated = modified
   }
   return viewFiles.has(path)
@@ -177,34 +196,41 @@ async function sendFile(request, response, file, asset = false) {
     json(response, 404, { error: 'Файл отсутствует' })
     return
   }
-  const extension = extname(file.path).toLowerCase()
-  const safeAssetType = asset && ['.html', '.css', '.js', '.mjs', '.wasm'].includes(extension)
-  const headers = { 'Content-Type': safeAssetType ? 'application/octet-stream' : (mime[extension] ?? 'application/octet-stream'),
-    'Cache-Control': asset ? 'private, max-age=120' : 'no-cache', 'Last-Modified': file.modified, 'Accept-Ranges': 'bytes' }
-  if (asset && extension === '.svg') {
-    headers['Content-Security-Policy'] = "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'"
-  }
-  const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.range ?? '')
-  let start = 0
-  let end = file.size - 1
-  if (range && (range[1] || range[2])) {
-    start = range[1] ? Number(range[1]) : Math.max(0, file.size - Number(range[2]))
-    if (range[1] && range[2]) end = Math.min(end, Number(range[2]))
-    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end) {
-      response.writeHead(416, { 'Content-Range': 'bytes */' + file.size }).end()
-      return
+  const handle = await open(file.path, 'r')
+  try {
+    const info = await handle.stat()
+    if (!info.isFile() || !await checkedPath(file.base, file.path)) return json(response, 404, { error: 'Файл отсутствует' })
+    const { size, mtime } = info
+    const extension = extname(file.path).toLowerCase()
+    const safeAssetType = asset && ['.html', '.css', '.js', '.mjs', '.wasm'].includes(extension)
+    const headers = { 'Content-Type': safeAssetType ? 'application/octet-stream' : (mime[extension] ?? 'application/octet-stream'),
+      'Cache-Control': asset ? 'private, max-age=120' : 'no-cache', 'Last-Modified': mtime.toUTCString(), 'Accept-Ranges': 'bytes' }
+    if (asset && extension === '.svg') {
+      headers['Content-Security-Policy'] = "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'"
     }
-    headers['Content-Range'] = `bytes ${start}-${end}/${file.size}`
+    const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.range ?? '')
+    let start = 0
+    let end = size - 1
+    if (range && (range[1] || range[2])) {
+      start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]))
+      if (range[1] && range[2]) end = Math.min(end, Number(range[2]))
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end) {
+        response.writeHead(416, { 'Content-Range': 'bytes */' + size }).end()
+        return
+      }
+      headers['Content-Range'] = `bytes ${start}-${end}/${size}`
+    }
+    headers['Content-Length'] = Math.max(0, end - start + 1)
+    response.writeHead(headers['Content-Range'] ? 206 : 200, headers)
+    if (request.method === 'HEAD' || !size) response.end()
+    else await pipeline(handle.createReadStream({ start, end }), response).catch(error => {
+      if (error.code !== 'ERR_STREAM_PREMATURE_CLOSE') throw error
+    })
+  } finally {
+    await handle.close()
   }
-  headers['Content-Length'] = Math.max(0, end - start + 1)
-  response.writeHead(headers['Content-Range'] ? 206 : 200, headers)
-  if (request.method === 'HEAD' || !file.size) response.end()
-  else await pipeline(createReadStream(file.path, { start, end }), response).catch(error => {
-    if (error.code !== 'ERR_STREAM_PREMATURE_CLOSE') throw error
-  })
 }
 
-if (indexPath) await mkdir(indexPath, { recursive: true })
 const startupPath = values.folder || process.env.ASSET_VIEWER_FOLDER
 const startupFolder = startupPath ? await openFolder(resolve(startupPath)) : null
 const html = await readFile(resolve(publicPath, 'index.html'), 'utf8')
@@ -216,13 +242,17 @@ const server = createServer(async (request, response) => {
   response.setHeader('Cross-Origin-Resource-Policy', 'same-origin')
   response.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' 'sha256-${importMapHash}' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`)
   try {
-    if (request.headers.host !== new URL(origin).host && request.headers.host !== 'localhost:' + port) {
+    const activePort = server.address()?.port
+    const host = request.headers.host
+    if (![`127.0.0.1:${activePort}`, `localhost:${activePort}`].includes(host) ||
+        (request.headers.origin !== undefined && request.headers.origin !== 'http://' + host) ||
+        request.headers['sec-fetch-site'] === 'cross-site' && request.headers['sec-fetch-mode'] !== 'navigate') {
       json(response, 403, { error: 'Доступ только с локального компьютера' })
       return
     }
     let path
     try {
-      path = decodeURIComponent(new URL(request.url, origin).pathname)
+      path = decodeURIComponent(new URL(request.url, 'http://' + host).pathname)
     } catch {
       json(response, 400, { error: 'Некорректный путь запроса' })
       return
@@ -246,11 +276,11 @@ const server = createServer(async (request, response) => {
     if (path === '/api/review') {
       json(response, 200, await loadReview())
     } else if (path === '/api/library') {
-      const index = indexPath && await safeFile(indexPath, 'index.json')
+      const index = library && await safeFile(library, 'Viewer/index.json')
       if (index) await sendFile(request, response, index)
       else json(response, 200, { packs: [] })
-    } else if (indexPath && path.startsWith('/api/packs/') && identifier.test(path.slice(11))) {
-      await sendFile(request, response, await safeFile(indexPath, 'packs/' + path.slice(11) + '.json'))
+    } else if (library && path.startsWith('/api/packs/') && identifier.test(path.slice(11))) {
+      await sendFile(request, response, await safeFile(library, 'Viewer/packs/' + path.slice(11) + '.json'))
     } else if (path.startsWith('/files/') && await isAsset(path.slice(7))) {
       await sendFile(request, response, await safeFile(library, path.slice(7)), true)
     } else if (path.startsWith('/vendor/three/')) {
@@ -283,4 +313,8 @@ const server = createServer(async (request, response) => {
     console.error(error.message)
   }
 })
-server.listen(port, '127.0.0.1', () => console.log(`Asset Viewer · ${origin}`))
+server.listen(port, '127.0.0.1', () => console.log(`Asset Viewer · http://127.0.0.1:${server.address().port}`))
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
+  server.close()
+  void closePreviews().catch(error => console.error(error.message))
+})

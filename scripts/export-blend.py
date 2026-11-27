@@ -24,9 +24,13 @@ if len(args) > 2:
 
 # Redirect links to files provided with the pack and ignore references outside it.
 local_images = {}
-for file in asset_root.rglob("*"):
-    if file.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".tga", ".exr", ".tif", ".tiff", ".bmp"} and not file.is_symlink() and file.is_file() and file.resolve().is_relative_to(asset_root):
-        local_images.setdefault(file.name.casefold(), []).append(file)
+for directory, subdirs, filenames in os.walk(asset_root):
+    parent = Path(directory)
+    subdirs[:] = [name for name in subdirs if (parent / name).resolve() == parent / name]
+    for name in filenames:
+        file = parent / name
+        if file.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".tga", ".exr", ".tif", ".tiff", ".bmp"} and file.resolve() == file and file.is_file():
+            local_images.setdefault(file.name.casefold(), []).append(file)
 
 source_dir = source.parent
 original_image_names = {}
@@ -39,7 +43,7 @@ for image in bpy.data.images:
     location = Path(os.path.abspath(bpy.path.abspath(normalized, library=image.library)))
     if location.is_relative_to(asset_root):
         resolved = location.resolve()
-        if resolved.is_relative_to(asset_root) and resolved.is_file():
+        if resolved == location and resolved.is_file():
             image.filepath = str(resolved)
             image.reload()
             continue
