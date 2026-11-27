@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, rename, rm } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { backup, DatabaseSync } from 'node:sqlite'
-import { checkedPath, discoverAssets, folderPath, identifyAsset, pathKey, sameFile } from '../files/asset-files.mjs'
+import { checkedPath, discoverAssets, folderPath, identifyAsset, inside, pathKey, sameFile } from '../files/asset-files.mjs'
 import { analysisVersion, analyzeAsset, dependencyLimit, supportsAnalysis } from '../analysis/asset-analysis.mjs'
 import { migrate, schemaVersion, transaction } from './index-schema.mjs'
 import { IndexInputError } from './index-errors.mjs'
@@ -116,17 +116,21 @@ export class AssetIndex {
 
   libraries() {
     return this.#db.prepare(`
-      SELECT l.id, l.root, l.name, l.indexed_at AS indexedAt, l.watch_enabled AS watching, COUNT(a.id) AS assets,
+      SELECT l.id, l.root, l.name, l.indexed_at AS indexedAt, l.watch_enabled AS watching, w.library_id IS NOT NULL AS packageWatching,
+        COUNT(a.id) AS assets,
         COUNT(CASE WHEN a.kind = 'model' THEN 1 END) AS models,
         COUNT(CASE WHEN a.kind = 'image' THEN 1 END) AS images,
         COALESCE(SUM(a.size), 0) AS bytes
-      FROM libraries l LEFT JOIN assets a ON a.library_id = l.id AND a.missing_since IS NULL
+      FROM libraries l LEFT JOIN package_watch_libraries w ON w.library_id = l.id
+        LEFT JOIN assets a ON a.library_id = l.id AND a.missing_since IS NULL
       WHERE l.enabled = 1 GROUP BY l.id ORDER BY l.name, l.id
-    `).all().map(library => ({ ...library, watching: Boolean(library.watching) }))
+    `).all().map(library => ({ ...library, watching: Boolean(library.watching), packageWatching: Boolean(library.packageWatching) }))
   }
 
   watchedLibraries() {
-    return this.#db.prepare('SELECT id, root FROM libraries WHERE enabled = 1 AND watch_enabled = 1').all()
+    return this.#db.prepare(`SELECT id, root FROM libraries WHERE enabled = 1 AND (watch_enabled = 1 OR EXISTS (
+      SELECT 1 FROM package_watch_libraries WHERE library_id = libraries.id
+    ))`).all()
   }
 
   setWatching(id, enabled) {
@@ -136,8 +140,27 @@ export class AssetIndex {
       const library = this.#db.prepare('UPDATE libraries SET watch_enabled = ? WHERE id = ? AND enabled = 1 RETURNING id')
         .get(Number(enabled), id)
       if (!library) throw new IndexInputError('Библиотека не подключена.')
-      if (!enabled) this.jobs.cancelWatch(id)
+      if (!enabled && !this.#db.prepare('SELECT 1 FROM package_watch_libraries WHERE library_id = ?').get(id)) this.jobs.cancelWatch(id)
       return { id, watching: enabled }
+    })
+  }
+
+  setPackageWatching(id, enabled, ignoredPaths = []) {
+    validateId(id)
+    if (typeof enabled !== 'boolean') throw new IndexInputError('Укажите, включён ли автоимпорт.')
+    return transaction(this.#db, () => {
+      const library = this.#db.prepare('SELECT root, watch_enabled AS watching FROM libraries WHERE id = ? AND enabled = 1').get(id)
+      if (!library) throw new IndexInputError('Библиотека не подключена.')
+      if (enabled) {
+        if (ignoredPaths.some(path => inside(path, library.root))) throw new IndexInputError('Выберите папку с исходными пакетами вне каталогов результатов и кеша.')
+        this.#db.prepare('INSERT OR IGNORE INTO package_watch_libraries (library_id) VALUES (?)').run(id)
+      }
+      else {
+        this.#db.prepare('DELETE FROM package_watch_libraries WHERE library_id = ?').run(id)
+        this.jobs.cancelPackageWatch(id)
+        if (!library.watching) this.jobs.cancelWatch(id)
+      }
+      return { id, packageWatching: enabled }
     })
   }
 
@@ -149,7 +172,9 @@ export class AssetIndex {
         WHERE id = ? AND enabled = 1
       `).run(id)
       if (changes) {
+        this.#db.prepare('DELETE FROM package_watch_libraries WHERE library_id = ?').run(id)
         this.jobs.cancelWatch(id)
+        this.jobs.cancelPackageWatch(id)
         this.jobs.cancelThumbnails(id)
       }
       return Boolean(changes)

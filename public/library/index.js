@@ -96,15 +96,20 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
   let pollTimer
   const quality = mountQualityProfile({ json, post, run, currentAsset: () => asset?.id })
   const thumbnail = mountIndexThumbnail({ json, post })
-  const packages = mountPackageImporter({ dialog, json, post, openLibrary: id => run(async () => {
-    await refreshLibraries(id)
-    query.value = $('kind').value = ''
-    await search()
-    await refreshJob()
-  }) })
+  const packages = mountPackageImporter({ dialog, json, post,
+    hasWatchedLibraries: () => libraries.some(library => library.packageWatching),
+    openLibrary: id => run(async () => {
+      await refreshLibraries(id)
+      query.value = $('kind').value = ''
+      await search()
+      await refreshJob()
+    }),
+  })
 
   const activeJob = () => ['pending', 'running'].includes(job?.status)
   const watching = () => libraries.some(library => library.id === selection.value && library.watching)
+  const packageWatching = () => libraries.some(library => library.id === selection.value && library.packageWatching)
+  const observing = () => watching() || packageWatching()
 
   function buttons() {
     quality.busy(busy)
@@ -112,8 +117,9 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
     $('pick').disabled = busy
     $('query').querySelector('button').disabled = busy
     selection.disabled = $('kind').disabled = busy
-    for (const id of ['rescan', 'watch', 'disconnect']) $(id).disabled = busy || !selection.value
+    for (const id of ['rescan', 'watch', 'package-watch', 'disconnect']) $(id).disabled = busy || !selection.value
     $('watch').setAttribute('aria-pressed', String(watching()))
+    $('package-watch').setAttribute('aria-pressed', String(packageWatching()))
     $('rescan').disabled ||= activeJob()
     $('cancel-scan').disabled = busy || Boolean(job?.cancelRequested)
     $('retry-scan').disabled = busy
@@ -209,7 +215,7 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
     $('cancel-scan').hidden = !activeJob()
     $('retry-scan').hidden = !['failed', 'interrupted', 'cancelled'].includes(job?.status) || job.attempts >= 3
     buttons()
-    const poll = activeJob() ? 500 : watching() ? 2000 : 0
+    const poll = activeJob() ? 500 : observing() ? 2000 : 0
     if (poll && dialog.open) pollTimer = setTimeout(() => void pollJob(), poll)
     if (!job) return
     const messages = {
@@ -253,7 +259,7 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
         }
       } catch (error) {
         clearTimeout(pollTimer)
-        if ((activeJob() || watching()) && dialog.open) pollTimer = setTimeout(() => void pollJob(), 1500)
+        if ((activeJob() || observing()) && dialog.open) pollTimer = setTimeout(() => void pollJob(), 1500)
         throw error
       }
     }, { clearStatus: false })
@@ -308,6 +314,15 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
       await search(offset, { preserveAsset: true })
     }
     status.textContent = library.watching ? 'Наблюдение за папкой включено.' : 'Наблюдение за папкой выключено.'
+  }))
+  $('package-watch').addEventListener('click', () => void run(async () => {
+    const id = selection.value
+    const { library } = await json('/api/index/libraries/' + id + '/package-watch', post({ enabled: !packageWatching() }))
+    await refreshLibraries(id)
+    await refreshJob()
+    status.textContent = library.packageWatching ? 'Автоимпорт .unitypackage включён. Задания появятся в разделе импорта.' : 'Автоимпорт .unitypackage выключен.'
+    if (library.packageWatching) document.getElementById('package-importer').open = true
+    void packages.refresh()
   }))
   $('cancel-scan').addEventListener('click', () => void run(async () => {
     const { job: current } = await json('/api/index/jobs/' + job.id + '/cancel', post({}))

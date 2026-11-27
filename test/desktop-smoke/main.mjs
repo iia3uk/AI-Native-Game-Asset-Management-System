@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { app } from 'electron'
 import { startDesktop } from '../../desktop/bootstrap.mjs'
 import { generateFixtures } from '../../scripts/generate-fixtures.mjs'
+import { verifyPackageWatch } from './package-watch.mjs'
 import { verifyUnityPreview } from './unity-preview.mjs'
 import { unityEntries, unityFixtureEntries, writeUnityFixture } from '../fixtures/unitypackage.mjs'
 
@@ -145,9 +146,10 @@ void startDesktop(root, { showWindow: false }).then(async ({ window, origin }) =
   await waitFor("document.querySelector('#index-name').textContent === 'fixture-package.obj' && !document.querySelector('#index-preview').disabled")
   await webContents.executeJavaScript("document.querySelector('#index-preview').click()")
   await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('1 треугольник')")
+  await verifyPackageWatch(webContents, waitFor, fixtures)
   assert.deepEqual(externalRequests, [])
   assert.equal(window.isVisible(), false)
-  console.log('Desktop demo, library watching, thumbnail cache, technical analysis, metadata, Unity package import, PBR material preview and renderer isolation passed.')
+  console.log('Desktop demo, library watching, thumbnail cache, technical analysis, metadata, manual and watched Unity import, PBR material preview and renderer isolation passed.')
   app.quit()
 }).catch(error => {
   console.error(error)

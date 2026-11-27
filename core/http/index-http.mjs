@@ -11,7 +11,7 @@ import { packageRoutes } from './package-routes.mjs'
 import { packageManifestPage } from '../packages/unity/manifest-page.mjs'
 import { engineInventory } from '../engines/inventory.mjs'
 
-export function indexRoutes({ database, thumbnailDirectory, importDirectory, ignoredWatchPaths,
+export function indexRoutes({ database, thumbnailDirectory, importDirectory, ignoredWatchPaths = [],
   json, body, allowsWrite, openFolder, invalidateFolder }) {
   let pendingIndex
   let worker
@@ -26,10 +26,19 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
   function openIndex() {
     return pendingIndex ??= AssetIndex.open(database).then(index => {
       if (!shutdown.signal.aborted) {
-        worker = new ProcessingWorker(index, { onScanComplete: invalidateFolder })
+        const queuePackages = () => {
+          if (index.jobs.refillWatchedImports(ignoredWatchPaths)) importer?.wake()
+        }
+        worker = new ProcessingWorker(index, {
+          onScanComplete(id) {
+            invalidateFolder(id)
+            queuePackages()
+          },
+        })
         thumbnails = new ProcessingWorker(index, { type: 'thumbnail', cache })
-        importer = new ProcessingWorker(index, { type: 'package-import', importDirectory, onImportComplete: () => worker.wake() })
-        watcher = new LibraryWatcher(index, () => worker.wake(), { ignoredPaths: ignoredWatchPaths })
+        importer = new ProcessingWorker(index, { type: 'package-import', importDirectory,
+          onImportComplete: () => worker.wake(), onImportSettled: queuePackages })
+        watcher = new LibraryWatcher(index, () => worker.wake(), { ignoredPaths: ignoredWatchPaths, onRefresh: queuePackages })
         void cache.maintain().catch(error => console.error('Thumbnail cache:', error.message))
       }
       return index
@@ -82,9 +91,10 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
         invalidateFolder(id)
         return json(response, 200, { disconnected })
       }
-      if (method === 'POST' && resource === 'libraries' && action === 'watch') {
+      if (method === 'POST' && resource === 'libraries' && ['watch', 'package-watch'].includes(action)) {
         const input = await body(request).catch(() => null)
-        const library = index.setWatching(id, input?.enabled)
+        const library = action === 'watch' ? index.setWatching(id, input?.enabled) :
+          index.setPackageWatching(id, input?.enabled, ignoredWatchPaths)
         watcher?.refresh()
         return json(response, 200, { library })
       }

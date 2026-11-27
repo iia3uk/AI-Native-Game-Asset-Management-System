@@ -1,3 +1,5 @@
+import { packageWatch } from './schema/package-watch.mjs'
+
 const initial = `
   CREATE TABLE libraries (
     id TEXT PRIMARY KEY,
@@ -185,7 +187,7 @@ const engineMode = `
     WHERE type = 'package-import' AND status IN ('pending','running');
 `
 
-export const schemaVersion = 9
+export const schemaVersion = 10
 
 export function transaction(db, write) {
   db.exec('BEGIN IMMEDIATE')
@@ -215,6 +217,7 @@ export function migrate(db) {
     if (lockedVersion < 7) db.exec(packageJobs(lockedVersion))
     if (lockedVersion < 8) db.exec(packageExports)
     if (lockedVersion < 9) db.exec(engineMode)
+    if (lockedVersion < 10) db.exec(packageWatch)
     db.exec('PRAGMA user_version = ' + schemaVersion)
   })
 }

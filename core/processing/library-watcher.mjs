@@ -12,7 +12,7 @@ export class LibraryWatcher {
 
   constructor(index, onQueued, {
     debounceMs = 650, maxDebounceMs = 4000, refreshMs = 5000, reconcileMs = 15 * 60_000,
-    pollMs = 250, ignoredPaths = [],
+    pollMs = 250, ignoredPaths = [], onRefresh,
   } = {}) {
     this.index = index
     this.onQueued = onQueued
@@ -21,6 +21,7 @@ export class LibraryWatcher {
     this.refreshMs = refreshMs
     this.reconcileMs = reconcileMs
     this.ignoredPaths = ignoredPaths
+    this.onRefresh = onRefresh
     this.#timer = setInterval(() => this.#wake(), pollMs)
     this.#timer.unref()
     this.refresh()
@@ -49,6 +50,7 @@ export class LibraryWatcher {
     if (Date.now() >= this.#nextRefresh) {
       this.#nextRefresh = Date.now() + this.refreshMs
       await this.#refreshRoots()
+      if (!this.#stopped) this.onRefresh?.()
     }
     if (this.#stopped) return
     const now = Date.now()

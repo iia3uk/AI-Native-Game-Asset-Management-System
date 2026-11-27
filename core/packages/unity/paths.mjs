@@ -47,3 +47,11 @@ export async function packageSource(input) {
   if (!file) throw invalid('файл не найден или недоступен.')
   return { root, path: file.path, name: basename(file.path) }
 }
+
+export async function watchedPackageSource({ root, path, enabled }) {
+  const name = basename(path)
+  if (!enabled || isAbsolute(path) || !validSegment(name)) throw invalid('недоступный источник автоимпорта.')
+  const file = await fileInfo(root, path)
+  if (!file) throw invalid('архив больше не доступен в наблюдаемой папке.')
+  return { root, path: file.path, name }
+}

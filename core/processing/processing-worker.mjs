@@ -4,7 +4,7 @@ import { Worker } from 'node:worker_threads'
 import { IndexInputError } from '../index/index-errors.mjs'
 import { ScanChangeError } from '../files/asset-files.mjs'
 import { thumbnailCurrent } from '../thumbnails/thumbnail-input.mjs'
-import { packageSource } from '../packages/unity/paths.mjs'
+import { packageSource, watchedPackageSource } from '../packages/unity/paths.mjs'
 import { stageUnityPackage } from '../packages/unity/import.mjs'
 
 const timeouts = { scan: 300_000, thumbnail: 25_000, 'package-import': 600_000 }
@@ -16,7 +16,7 @@ export class ProcessingWorker {
   #task = null
   #timer
 
-  constructor(index, { type = 'scan', cache, importDirectory, targetId, onScanComplete, onImportComplete,
+  constructor(index, { type = 'scan', cache, importDirectory, targetId, onScanComplete, onImportComplete, onImportSettled,
     timeoutMs = timeouts[type], pollMs = 500 } = {}) {
     this.index = index
     this.type = type
@@ -25,6 +25,7 @@ export class ProcessingWorker {
     this.onScanComplete = onScanComplete
     this.importDirectory = importDirectory
     this.onImportComplete = onImportComplete
+    this.onImportSettled = onImportSettled
     this.timeoutMs = timeoutMs
     this.#timer = setInterval(() => this.wake(), pollMs)
     this.#timer.unref()
@@ -99,11 +100,15 @@ export class ProcessingWorker {
     }
     const finished = outcome ? this.index.jobs.finish(job.id, this.#id, outcome) : this.index.jobs.get(job.id)
     if (job.type === 'scan' && finished?.status === 'completed') this.onScanComplete?.(job.libraryId)
-    if (job.type === 'package-import' && finished?.status === 'completed') this.onImportComplete?.(finished.result)
+    if (job.type === 'package-import') {
+      if (finished?.status === 'completed') this.onImportComplete?.(finished.result)
+      if (!this.#stop.signal.aborted) this.onImportSettled?.()
+    }
   }
 
   async #import(job, signal, onProgress) {
-    const source = await packageSource(this.index.jobs.importSource(job.id))
+    const watched = this.index.jobs.watchedImportSource(job.id)
+    const source = watched ? await watchedPackageSource(watched) : await packageSource(this.index.jobs.importSource(job.id))
     await stageUnityPackage(this.importDirectory, source, job.sourceKey, {
       signal, onProgress, formats: job.exportFormats, mode: job.engineMode, editorVersion: job.editorVersion,
       publish: (result, move) => {

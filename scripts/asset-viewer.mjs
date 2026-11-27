@@ -25,6 +25,7 @@ const commands = {
   connect: { args: ['absolute-path'], options: { 'dry-run': flag } },
   scan: { args: ['library-id'], options: { 'dry-run': flag } },
   watch: { args: ['library-id', 'on|off'], options: {} },
+  'watch-packages': { args: ['library-id', 'on|off'], options: {} },
   search: { args: ['query?'], options: { ...paging, library: string, kind: string, hash: string } },
   inspect: { args: ['asset-id'], options: { profile: string } },
   preview: { args: ['asset-id'], options: { 'dry-run': flag, queue: flag, status: flag } },
@@ -122,6 +123,7 @@ async function execute(index, paths, command, [input, setting], values) {
     case 'libraries': return index.libraries()
     case 'connect': return index.connect(input)
     case 'watch': return index.setWatching(input, setting === 'on')
+    case 'watch-packages': return index.setPackageWatching(input, setting === 'on', [paths.cache, paths.backups, paths.imports])
     case 'scan': {
       if (!values['dry-run']) return index.scan(input)
       const library = index.libraries().find(library => library.id === input)
@@ -194,7 +196,7 @@ async function main([command, ...args]) {
     throw new IndexInputError('Incorrect arguments for ' + command + '. Run asset-viewer --help.')
   }
   const [input, setting] = positionals
-  if (command === 'watch' && !['on', 'off'].includes(setting)) {
+  if (['watch', 'watch-packages'].includes(command) && !['on', 'off'].includes(setting)) {
     throw new IndexInputError('Use on or off to set library watching.')
   }
   const modifiesProfile = command === 'profile' && (values.reset || values['set-json'] !== undefined)
@@ -260,7 +262,7 @@ async function main([command, ...args]) {
   const queuesPreview = command === 'preview' && !values.status
   const changesJob = command === 'jobs' && (values.cancel || values.retry)
   if (changesJob && (!input || (values.cancel && values.retry))) throw new IndexInputError('Specify a job ID and one action.')
-  const readOnly = (!['connect', 'scan', 'watch'].includes(command) && !modifiesProfile && !queuesPreview && !changesJob) ||
+  const readOnly = (!['connect', 'scan', 'watch', 'watch-packages'].includes(command) && !modifiesProfile && !queuesPreview && !changesJob) ||
     Boolean(values['dry-run'])
   const index = readOnly ? new AssetIndex(paths.database, { readOnly }) : await AssetIndex.open(paths.database)
   try {

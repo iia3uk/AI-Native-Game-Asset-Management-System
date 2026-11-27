@@ -2,12 +2,14 @@ import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import { transaction } from '../index/index-schema.mjs'
 import { IndexInputError } from '../index/index-errors.mjs'
+import { queueWatchedPackages } from './package-watch.mjs'
 
 const fields = 'id, library_id AS libraryId, type, status, priority, created_at AS createdAt, started_at AS startedAt,' +
   ' finished_at AS finishedAt, attempts, progress, result, error, trigger, cancel_requested AS cancelRequested,' +
   ' asset_id AS assetId, source_key AS sourceKey, package_path AS packagePath, export_formats AS exportFormats,' +
   ' engine_mode AS engineMode, editor_version AS editorVersion'
 const leaseMs = 15_000
+const importLimit = 16
 const now = () => new Date().toISOString()
 function shape(job) {
   if (!job) return job
@@ -54,8 +56,10 @@ export class ProcessingJobs {
   }
 
   #enqueueScan(libraryId, priority, trigger) {
-    const library = this.#db.prepare('SELECT watch_enabled FROM libraries WHERE id = ? AND enabled = 1').get(libraryId)
-    if (!library || (trigger === 'watch' && !library.watch_enabled)) return null
+    const library = this.#db.prepare(`SELECT watch_enabled OR EXISTS (
+      SELECT 1 FROM package_watch_libraries WHERE library_id = libraries.id
+    ) AS watching FROM libraries WHERE id = ? AND enabled = 1`).get(libraryId)
+    if (!library || (trigger === 'watch' && !library.watching)) return null
     const current = this.#db.prepare(`SELECT id, trigger, cancel_requested FROM processing_jobs WHERE library_id = ? AND type = 'scan'
       AND status IN ('pending','running')`).get(libraryId)
     if (current) {
@@ -77,23 +81,39 @@ export class ProcessingJobs {
       AND status IN ('pending','running')`).get(path, key, exportFormats, mode, editorVersion)
   }
 
-  #enforceImportLimit() {
-    const { count } = this.#db.prepare(`SELECT COUNT(*) AS count FROM processing_jobs
-      WHERE type = 'package-import' AND status IN ('pending','running')`).get()
-    if (count >= 16) throw new IndexInputError('Очередь импорта заполнена.')
+  #importCount() {
+    return this.#db.prepare(`SELECT COUNT(*) AS count FROM processing_jobs
+      WHERE type = 'package-import' AND status IN ('pending','running')`).get().count
+  }
+
+  #createImport(path, key, formats, mode, editorVersion, priority, trigger) {
+    const id = randomUUID()
+    this.#db.prepare(`INSERT INTO processing_jobs (id, type, status, priority, created_at, source_key, package_path,
+      export_formats, engine_mode, editor_version, trigger) VALUES (?, 'package-import', 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, priority, now(), key, path, formats, mode, editorVersion, trigger)
+    return this.get(id)
   }
 
   enqueueImport(path, key, exportFormats = '', { mode = 'engineless', editorVersion = '' } = {}) {
     return transaction(this.#db, () => {
       const current = this.#activeImport(path, key, exportFormats, mode, editorVersion)
-      if (current) return this.get(current.id)
-      this.#enforceImportLimit()
-      const id = randomUUID()
-      this.#db.prepare(`INSERT INTO processing_jobs (id, type, status, priority, created_at, source_key, package_path,
-        export_formats, engine_mode, editor_version) VALUES (?, 'package-import', 'pending', 0, ?, ?, ?, ?, ?, ?)`)
-        .run(id, now(), key, path, exportFormats, mode, editorVersion)
-      return this.get(id)
+      if (current) {
+        this.#db.prepare("UPDATE processing_jobs SET trigger = 'manual', priority = MAX(priority, 0) WHERE id = ? AND cancel_requested = 0")
+          .run(current.id)
+        return this.get(current.id)
+      }
+      if (this.#importCount() >= importLimit) throw new IndexInputError('Очередь импорта заполнена.')
+      return this.#createImport(path, key, exportFormats, mode, editorVersion, 0, 'manual')
     })
+  }
+
+  refillWatchedImports(ignoredPaths) {
+    const formats = 'fbx,glb'
+    const mode = 'engineless'
+    return transaction(this.#db, () => queueWatchedPackages(this.#db, importLimit - 1 - this.#importCount(), ignoredPaths, (path, key) => {
+      if (this.#activeImport(path, key, formats, mode, '')) return null
+      return this.#createImport(path, key, formats, mode, '', -10, 'watch')
+    }))
   }
 
   latestThumbnail(assetId, sourceKey) {
@@ -118,6 +138,10 @@ export class ProcessingJobs {
 
   cancelWatch(libraryId) {
     this.#cancelWhere("library_id = ? AND trigger = 'watch'", libraryId)
+  }
+
+  cancelPackageWatch(libraryId) {
+    this.#cancelWhere("trigger = 'watch' AND id IN (SELECT job_id FROM package_watch_imports WHERE library_id = ?)", libraryId)
   }
 
   cancelThumbnails(libraryId) {
@@ -145,7 +169,7 @@ export class ProcessingJobs {
       if (job.type === 'package-import') {
         if (this.#activeImport(this.importSource(job.id), job.sourceKey, job.exportFormats?.join(',') ?? '',
           job.engineMode ?? 'engineless', job.editorVersion ?? '')) return null
-        this.#enforceImportLimit()
+        if (this.#importCount() >= importLimit) throw new IndexInputError('Очередь импорта заполнена.')
       } else {
         const library = this.#db.prepare('SELECT id FROM libraries WHERE id = ? AND enabled = 1').get(job.libraryId)
         const other = job.type === 'scan' ? this.#db.prepare(`SELECT id FROM processing_jobs
@@ -207,6 +231,11 @@ export class ProcessingJobs {
 
   importSource(id) {
     return this.#db.prepare("SELECT package_path FROM processing_jobs WHERE id = ? AND type = 'package-import'").get(id)?.package_path
+  }
+
+  watchedImportSource(id) {
+    return this.#db.prepare(`SELECT l.root, l.enabled, w.source_path AS path
+      FROM package_watch_imports w JOIN libraries l ON l.id = w.library_id WHERE w.job_id = ?`).get(id)
   }
 
   completeImport(id, worker, publish) {

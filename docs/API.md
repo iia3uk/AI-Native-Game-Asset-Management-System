@@ -4,9 +4,10 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 
 | Method | Route | Input and result |
 | --- | --- | --- |
-| GET | `/api/index/libraries` | Returns connected libraries with indexed file counts and the `watching` setting |
+| GET | `/api/index/libraries` | Returns connected libraries with indexed file counts and the `watching` and `packageWatching` settings |
 | POST | `/api/index/libraries` | `{"path":"<absolute local folder>"}` returns a durable library identity |
 | POST | `/api/index/libraries/:id/watch` | `{"enabled":true}` or `{"enabled":false}` persists the setting and returns `{library}` |
+| POST | `/api/index/libraries/:id/package-watch` | `{"enabled":true}` or `{"enabled":false}` persists automatic Unity package import and returns `{library}` |
 | POST | `/api/index/libraries/:id/scan` | Empty object. Returns added, changed, moved, missing, hashed, reused and skipped hash counts |
 | POST | `/api/index/libraries/:id/jobs` | Empty object. Returns 202 and the new or active scan job |
 | GET | `/api/index/jobs` | Optional `library`, `type` (`scan`, `thumbnail`, or `package-import`), `limit` (1–200) and `offset`. Returns active jobs first |
@@ -34,7 +35,9 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 
 Failed scans preserve the last committed index. Disconnection and removal of original files retain history. Search excludes disconnected and missing assets.
 
-Automatic scans use the same queue. An explicit scan request promotes the active automatic job to a manual job if the job is still available. Disabling watching cancels queued automatic jobs and requests cancellation for running automatic jobs.
+Automatic scans use the same queue. An explicit scan request promotes the active automatic job to a manual job if the job is still available. Turning off both watching settings cancels queued automatic scans and requests cancellation for a running automatic scan.
+
+Automatic archive imports have `type: "package-import"` and `trigger: "watch"`. An identical explicit import promotes the active job to manual priority. Turning off package watching cancels queued automatic imports and requests cancellation of a running automatic import from that source library. An unchanged failed or cancelled archive remains in job history for an explicit retry.
 
 The package import result contains `directory`, `report`, `reused`, `library` and `scanJobId`. Check the scan job for indexing completion. `library` and `scanJobId` are null when all items were excluded. The package path is used locally and the job list exposes its basename. With Unity allowed, `report.export.unity` records the Editor outcome and available versions. Per-file export entries distinguish prefab, component, mesh, animation, texture and material roles.
 

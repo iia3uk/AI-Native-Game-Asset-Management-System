@@ -30,7 +30,7 @@ function button(text, action) {
   return node
 }
 
-export function mountPackageImporter({ dialog, json, post, openLibrary }) {
+export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatchedLibraries }) {
   mountEngineStatus({ json })
   const importOptions = mountImportOptions($)
   const section = $('importer')
@@ -43,6 +43,8 @@ export function mountPackageImporter({ dialog, json, post, openLibrary }) {
   const queuedPlans = new Map()
   const bridge = window.assetViewerDesktop
   let timer
+  let refreshVersion = 0
+  let jobRows = new Map()
   let busy = false
 
   const visible = () => dialog.open && section.open
@@ -52,6 +54,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary }) {
 
   async function refresh() {
     clearTimeout(timer)
+    const version = ++refreshVersion
     if (!visible()) return
     try {
       const { jobs: records } = await json(jobsRoute + '?type=package-import&limit=16')
@@ -60,14 +63,23 @@ export function mountPackageImporter({ dialog, json, post, openLibrary }) {
           ? (await json(jobsRoute + '/' + record.result.scanJobId)).job : null
         return { record, scan }
       }))
-      if (!visible()) return
-      jobs.replaceChildren(...rows.map(jobRow))
+      if (!visible() || version !== refreshVersion) return
+      const previous = jobRows
+      jobRows = new Map(rows.map(row => {
+        const { id } = row.record
+        const key = JSON.stringify(row)
+        const cached = previous.get(id)
+        return [id, cached?.key === key ? cached : { key, node: jobRow(row) }]
+      }))
+      const nodes = [...jobRows.values()].map(row => row.node)
+      if (nodes.length !== jobs.children.length || nodes.some((node, index) => jobs.children[index] !== node)) jobs.replaceChildren(...nodes)
       if (rows.some(({ record, scan }) => active(record) || (scan && active(scan)))) {
         timer = setTimeout(() => void refresh(), 1000)
-      }
+      } else if (hasWatchedLibraries()) timer = setTimeout(() => void refresh(), 3000)
     } catch (error) {
+      if (!visible() || version !== refreshVersion) return
       showError(error)
-      if (visible()) timer = setTimeout(() => void refresh(), 3000)
+      timer = setTimeout(() => void refresh(), 3000)
     }
   }
 
@@ -78,7 +90,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary }) {
     if (active(record) && record.cancelRequested) label = 'Отмена запрошена'
     else if (record.status === 'running') label += ' · ' + record.progress + '%'
     if (scan) label += ' · ' + (active(scan) ? 'Индексация' : scan.status === 'completed' ? 'В индексе' : 'Индексация прервана')
-    row.append(element('p', record.packageName + ' · ' + label))
+    row.append(element('p', record.packageName + (record.trigger === 'watch' ? ' · Автоимпорт' : '') + ' · ' + label))
     if (record.error || scan?.error) row.append(element('p', record.error ?? scan.error))
     const controls = element('div')
     controls.className = 'index-toolbar'

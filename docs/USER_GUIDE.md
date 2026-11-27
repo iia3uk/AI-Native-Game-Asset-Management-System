@@ -53,6 +53,18 @@ Inspection lists the archive and Unity versions and up to 500 serialized objects
 
 The report marks unsupported layouts and classes. Meshes with skinning, blend shapes, mesh compression, extra vertex attributes or multiple vertex streams are outside the current decoder. Streamed textures, additional pixel formats, material bindings, dependency analysis, conversion cache and background jobs remain pending.
 
+## Automatically import a Unity package folder
+
+Open **Индекс**, connect the folder with incoming `.unitypackage` files, select it under **Библиотека** and enable **Автоимпорт Unity**. Existing archives and new or changed files in subfolders are picked up while the app or local server is running. The importer extracts originals and requests FBX and GLB exports for supported models. This mode runs without Unity Editor and uses Blender where available. Follow progress and reports in **Импорт пакетов Unity**. Results are indexed in managed libraries.
+
+Turning off **Автоимпорт Unity** cancels active automatic imports for that source. Use **Повторить** in a job row to retry a failed, interrupted or cancelled import. The setting and the archive SHA-256 history survive restarts.
+
+```sh
+npm run cli -- libraries --json
+npm run cli -- watch-packages <library-id> on --json
+npm run cli -- jobs --type package-import --json
+```
+
 ## Detect installed editors and Blender
 
 Use **Найти установленные инструменты** in the Unity package importer, or run the diagnostics from the CLI. Discovery checks standard locations, Unity Hub, Epic Launcher metadata and Steam libraries where applicable. The package importer can still extract supported files when the list is empty.
