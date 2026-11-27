@@ -5,13 +5,16 @@ import { IndexInputError } from '../index/index-errors.mjs'
 
 const fields = 'id, library_id AS libraryId, type, status, priority, created_at AS createdAt, started_at AS startedAt,' +
   ' finished_at AS finishedAt, attempts, progress, result, error, trigger, cancel_requested AS cancelRequested,' +
-  ' asset_id AS assetId, source_key AS sourceKey, package_path AS packagePath'
+  ' asset_id AS assetId, source_key AS sourceKey, package_path AS packagePath, export_formats AS exportFormats'
 const leaseMs = 15_000
 const now = () => new Date().toISOString()
 function shape(job) {
   if (!job) return job
-  const { packagePath, ...fields } = job
-  if (packagePath) fields.packageName = basename(packagePath)
+  const { packagePath, exportFormats, ...fields } = job
+  if (packagePath) {
+    fields.packageName = basename(packagePath)
+    if (exportFormats) fields.exportFormats = exportFormats.split(',')
+  }
   return { ...fields, result: job.result && JSON.parse(job.result), cancelRequested: Boolean(job.cancelRequested) }
 }
 
@@ -65,9 +68,9 @@ export class ProcessingJobs {
     return this.get(id)
   }
 
-  #activeImport(path, key) {
+  #activeImport(path, key, exportFormats) {
     return this.#db.prepare(`SELECT id FROM processing_jobs WHERE type = 'package-import' AND package_path = ?
-      AND source_key = ? AND status IN ('pending','running')`).get(path, key)
+      AND source_key = ? AND export_formats = ? AND status IN ('pending','running')`).get(path, key, exportFormats)
   }
 
   #enforceImportLimit() {
@@ -76,14 +79,14 @@ export class ProcessingJobs {
     if (count >= 16) throw new IndexInputError('Очередь импорта заполнена.')
   }
 
-  enqueueImport(path, key) {
+  enqueueImport(path, key, exportFormats = '') {
     return transaction(this.#db, () => {
-      const current = this.#activeImport(path, key)
+      const current = this.#activeImport(path, key, exportFormats)
       if (current) return this.get(current.id)
       this.#enforceImportLimit()
       const id = randomUUID()
-      this.#db.prepare(`INSERT INTO processing_jobs (id, type, status, priority, created_at, source_key, package_path)
-        VALUES (?, 'package-import', 'pending', 0, ?, ?, ?)`).run(id, now(), key, path)
+      this.#db.prepare(`INSERT INTO processing_jobs (id, type, status, priority, created_at, source_key, package_path, export_formats)
+        VALUES (?, 'package-import', 'pending', 0, ?, ?, ?, ?)`).run(id, now(), key, path, exportFormats)
       return this.get(id)
     })
   }
@@ -135,7 +138,7 @@ export class ProcessingJobs {
       const job = this.get(id)
       if (!job || !['failed', 'interrupted', 'cancelled'].includes(job.status) || job.attempts >= 3) return null
       if (job.type === 'package-import') {
-        if (this.#activeImport(this.importSource(job.id), job.sourceKey)) return null
+        if (this.#activeImport(this.importSource(job.id), job.sourceKey, job.exportFormats?.join(',') ?? '')) return null
         this.#enforceImportLimit()
       } else {
         const library = this.#db.prepare('SELECT id FROM libraries WHERE id = ? AND enabled = 1').get(job.libraryId)

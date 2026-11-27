@@ -57,7 +57,8 @@
       }
     ],
     "asarUnpack": [
-      "scripts/export-blend.py"
+      "scripts/export-blend.py",
+      "core/engines/blender/scripts/*.py"
     ],
     "win": {
       "icon": "assets/icon.ico",

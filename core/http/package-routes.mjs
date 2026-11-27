@@ -2,6 +2,7 @@ import { IndexInputError } from '../index/index-errors.mjs'
 import { inspectUnityPackage } from '../packages/unity/inspect.mjs'
 import { packageSource } from '../packages/unity/paths.mjs'
 import { hashPattern as packageHash } from '../packages/unity/policy.mjs'
+import { packageExportFormats } from '../conversion/formats.mjs'
 
 export function packageRoutes({ json, body, shutdown, wake }) {
   let inspecting = false
@@ -30,7 +31,7 @@ export function packageRoutes({ json, body, shutdown, wake }) {
     if (typeof input?.hash !== 'string' || !packageHash.test(input.hash)) {
       throw new IndexInputError('Сначала проанализируйте пакет.')
     }
-    const job = index.jobs.enqueueImport(source.path, input.hash)
+    const job = index.jobs.enqueueImport(source.path, input.hash, packageExportFormats(input.formats))
     wake()
     return json(response, 202, { job })
   }

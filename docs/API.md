@@ -27,7 +27,8 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | GET | `/api/index/quality-profiles` | Returns the six saved or default profiles and the supported field definitions |
 | POST | `/api/index/quality-profiles/:id` | `{"revision":0,"limits":{"maxTriangles":12000}}` replaces the enabled limits. `{"revision":0,"reset":true}` restores defaults. Stale revisions return 409 |
 | POST | `/api/index/packages/inspect` | `{"path":"<absolute local file>"}` returns the detected Unity package format, SHA-256, sizes, entry count and up to 500 preview entries |
-| POST | `/api/index/packages/import` | `{"path":"<absolute local file>","hash":"<SHA-256 from inspection>"}` returns 202 and the new or active import job |
+| POST | `/api/index/packages/import` | `{"path":"<absolute local file>","hash":"<SHA-256 from inspection>","formats":["fbx","glb"]}` returns 202 and the new or active import job. Omit `formats` for extraction only |
+| GET | `/api/index/jobs/:id/manifest?limit=50&offset=0` | Lists a completed package's assets with per-format output statuses, relative paths, method and hashes. Returns `assets`, `total` and `nextOffset`. The maximum limit is 100 |
 | GET | `/api/index/engines` | Lists detected Unity, Unreal and Blender executables and available version metadata without starting an editor |
 | POST | `/api/demo` | Creates and opens a separate procedural demo session on demand |
 

@@ -1,4 +1,5 @@
 import { mountEngineStatus } from './engine-status.js'
+import { appendManifest } from './report.js'
 
 const $ = name => document.getElementById('package-' + name)
 const jobsRoute = '/api/index/jobs'
@@ -7,10 +8,10 @@ const active = job => ['pending', 'running'].includes(job.status)
 const assetStatus = {
   ready: 'Готово', extracted: 'Прямое извлечение', unsupported: 'Не поддерживается',
   'requires-engine': 'Требуется обработчик Unity', failed: 'Файл отсутствует',
-  'missing-dependencies': 'Отсутствуют зависимости',
+  'missing-dependencies': 'Отсутствуют зависимости', converted: 'Сконвертировано',
 }
 const jobStatus = {
-  pending: 'В очереди', running: 'Извлечение', completed: 'Обработан',
+  pending: 'В очереди', running: 'Обработка', completed: 'Обработан',
   cancelled: 'Отменён', interrupted: 'Прерван', failed: 'Ошибка',
 }
 
@@ -36,6 +37,8 @@ export function mountPackageImporter({ dialog, json, post, openLibrary }) {
   const status = $('status')
   const pathInput = $('path')
   const fileInput = $('files')
+  const startAll = $('start-all')
+  const queuedPlans = new Map()
   const bridge = window.assetViewerDesktop
   let timer
   let busy = false
@@ -90,6 +93,10 @@ export function mountPackageImporter({ dialog, json, post, openLibrary }) {
         element('p', Object.entries(record.result.report.counts).map(([key, value]) =>
           (assetStatus[key] ?? key) + ' · ' + value).join(' / ')),
         element('p', record.result.directory))
+      if (record.result.report.export) {
+        details.append(element('p', 'Моделей сконвертировано · ' + record.result.report.converted))
+      }
+      appendManifest({ details, record, json, element, button, assetStatus })
       row.append(details)
     }
     row.append(controls)
@@ -106,6 +113,31 @@ export function mountPackageImporter({ dialog, json, post, openLibrary }) {
     })
   }
 
+  const exportFormats = () => ['fbx', 'glb'].filter(format => $('export-' + format).checked)
+
+  async function queuePlan(path, plan, formats) {
+    await json(packagesRoute + '/import', post({ path, hash: plan.hash, formats }))
+    queuedPlans.get(path)?.row.remove()
+    queuedPlans.delete(path)
+    startAll.hidden = queuedPlans.size < 2
+  }
+
+  startAll.addEventListener('click', async () => {
+    if (busy) return
+    busy = startAll.disabled = true
+    const formats = exportFormats()
+    try {
+      for (const [path, { plan, start }] of queuedPlans) {
+        start.disabled = true
+        try { await queuePlan(path, plan, formats) }
+        catch (error) { showError(error); start.disabled = false }
+      }
+      await refresh()
+    } finally {
+      busy = startAll.disabled = false
+    }
+  })
+
   function planRow(path, plan) {
     const row = element('li')
     row.className = 'index-analysis'
@@ -115,11 +147,11 @@ export function mountPackageImporter({ dialog, json, post, openLibrary }) {
     for (const asset of shown) preview.append(element('li', asset.sourcePath + ' · ' + assetStatus[asset.status]))
     details.append(element('summary', path.split(/[\\/]/).at(-1) + ' · ' + plan.total + ' записей'), preview)
     if (plan.total > shown.length) details.append(element('p', 'Показано ' + shown.length + ' из ' + plan.total + ' записей.'))
-    const start = button('Извлечь и добавить в индекс', async () => {
+    const start = button('Обработать и добавить в индекс', async () => {
+      if (busy) return
       start.disabled = true
       try {
-        await json(packagesRoute + '/import', post({ path, hash: plan.hash }))
-        row.remove()
+        await queuePlan(path, plan, exportFormats())
         await refresh()
       } catch (error) {
         showError(error)
@@ -127,6 +159,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary }) {
       }
     })
     row.append(details, start)
+    queuedPlans.set(path, { plan, row, start })
     return row
   }
 
@@ -135,6 +168,8 @@ export function mountPackageImporter({ dialog, json, post, openLibrary }) {
     busy = true
     status.textContent = 'Анализ пакетов…'
     plans.replaceChildren()
+    queuedPlans.clear()
+    startAll.hidden = true
     try {
       for (const path of [...new Set(paths)].filter(Boolean).slice(0, 16)) {
         try {
@@ -146,6 +181,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary }) {
         }
       }
       status.textContent = paths.length > 16 ? 'За один раз можно проанализировать до 16 пакетов.' : ''
+      startAll.hidden = queuedPlans.size < 2
     } finally {
       busy = false
     }

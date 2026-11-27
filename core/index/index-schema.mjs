@@ -165,7 +165,15 @@ const packageJobs = previousVersion => `
   CREATE INDEX jobs_by_library ON processing_jobs (library_id, created_at DESC);
 `
 
-export const schemaVersion = 7
+const packageExports = `
+  ALTER TABLE processing_jobs ADD COLUMN export_formats TEXT NOT NULL DEFAULT ''
+    CHECK (export_formats IN ('', 'fbx', 'glb', 'fbx,glb') AND (type = 'package-import' OR export_formats = ''));
+  DROP INDEX one_active_import_per_package;
+  CREATE UNIQUE INDEX one_active_import_per_package ON processing_jobs (package_path, source_key, export_formats)
+    WHERE type = 'package-import' AND status IN ('pending','running');
+`
+
+export const schemaVersion = 8
 
 export function transaction(db, write) {
   db.exec('BEGIN IMMEDIATE')
@@ -193,6 +201,7 @@ export function migrate(db) {
     if (lockedVersion < 4) db.exec(analysis)
     if (lockedVersion < 5) db.exec(quality)
     if (lockedVersion < 7) db.exec(packageJobs(lockedVersion))
+    if (lockedVersion < 8) db.exec(packageExports)
     db.exec('PRAGMA user_version = ' + schemaVersion)
   })
 }

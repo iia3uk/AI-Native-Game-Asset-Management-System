@@ -1,13 +1,11 @@
-import { execFile } from 'node:child_process'
 import { mkdtemp, rename, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { promisify } from 'node:util'
 import { fileInfo } from '../../files/asset-files.mjs'
 import { discoverBlender } from './discovery.mjs'
+import { runBlender } from './runner.mjs'
 
-const runFile = promisify(execFile)
 const bundledExportScript = fileURLToPath(new URL('../../../scripts/export-blend.py', import.meta.url))
 const previewAbort = new AbortController()
 let cacheDirectory
@@ -33,9 +31,9 @@ async function convertWithBlender(library, file) {
   for (const executable of commands) {
     try {
       const input = file.ext === 'blend' ? [source] : []
-      await runFile(executable, ['--background', '--factory-startup', '--disable-autoexec', ...input, '--python-exit-code', '1',
+      await runBlender(executable, [...input, '--python-exit-code', '1',
         '--python', exportScript, '--', partial, library.root, ...(input.length ? [] : [source])],
-      { timeout: 500_000, windowsHide: true, maxBuffer: 2 * 1024 ** 2, signal: previewAbort.signal })
+      { timeout: 500_000, signal: previewAbort.signal })
       await rename(partial, target)
       return target
     } catch (error) {

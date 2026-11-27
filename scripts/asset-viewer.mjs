@@ -10,6 +10,7 @@ import { assetThumbnail } from '../core/thumbnails/thumbnail-service.mjs'
 import { inspectUnityPackage } from '../core/packages/unity/inspect.mjs'
 import { packageSource } from '../core/packages/unity/paths.mjs'
 import { engineInventory } from '../core/engines/inventory.mjs'
+import { packageExportFormats } from '../core/conversion/formats.mjs'
 
 const string = { type: 'string' }
 const flag = { type: 'boolean' }
@@ -24,7 +25,7 @@ const commands = {
   preview: { args: ['asset-id'], options: { 'dry-run': flag, queue: flag, status: flag } },
   jobs: { args: ['job-id?'], options: { ...paging, library: string, type: string, cancel: flag, retry: flag } },
   'package-inspect': { args: ['absolute-path'], options: {} },
-  'package-import': { args: ['absolute-path'], options: { 'dry-run': flag, queue: flag } },
+  'package-import': { args: ['absolute-path'], options: { 'dry-run': flag, queue: flag, export: string } },
   engines: { args: [], options: { 'unity-project': string, 'unreal-project': string } },
   'thumbnail-cache': { args: [], options: { clear: flag, 'dry-run': flag } },
   profiles: { args: [], options: {} },
@@ -174,13 +175,14 @@ async function main([command, ...args]) {
   }), values.json)
   if (command === 'package-inspect' || command === 'package-import') {
     if (values.queue && values['dry-run']) throw new IndexInputError('Use only one of --queue or --dry-run.')
+    const exportFormats = packageExportFormats(values.export?.split(','))
     const source = await packageSource(input)
     const report = await inspectUnityPackage(source, { signal: AbortSignal.timeout(120_000) })
     if (command === 'package-inspect') return print(report, values.json)
-    if (values['dry-run']) return print({ dryRun: true, ...report }, values.json)
+    if (values['dry-run']) return print({ dryRun: true, ...report, ...(exportFormats && { exportFormats: exportFormats.split(',') }) }, values.json)
     const index = await AssetIndex.open(paths.database)
     try {
-      const queued = index.jobs.enqueueImport(source.path, report.hash)
+      const queued = index.jobs.enqueueImport(source.path, report.hash, exportFormats)
       if (values.queue) return print({ job: queued }, values.json)
       const job = await waitForJob(index, queued.id, { type: 'package-import', importDirectory: paths.imports })
       const scan = job.result?.scanJobId ? await waitForJob(index, job.result.scanJobId, { type: 'scan' }) : null

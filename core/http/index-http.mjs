@@ -8,6 +8,7 @@ import { ProcessingWorker } from '../processing/processing-worker.mjs'
 import { ThumbnailCache } from '../thumbnails/thumbnail-cache.mjs'
 import { assetThumbnail } from '../thumbnails/thumbnail-service.mjs'
 import { packageRoutes } from './package-routes.mjs'
+import { packageManifestPage } from '../packages/unity/manifest-page.mjs'
 import { engineInventory } from '../engines/inventory.mjs'
 
 export function indexRoutes({ database, thumbnailDirectory, importDirectory, ignoredWatchPaths,
@@ -101,6 +102,11 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
         if (method === 'GET' && id && !action) {
           const job = index.jobs.get(id)
           if (job) return json(response, 200, { job })
+        }
+        if (method === 'GET' && id && action === 'manifest') {
+          const page = await packageManifestPage(importDirectory, index.jobs.get(id),
+            Number(params.get('offset') ?? 0), Number(params.get('limit') ?? 50))
+          if (page) return json(response, 200, page)
         }
         if (method === 'POST' && id && action === 'cancel') {
           const job = index.jobs.cancel(id)

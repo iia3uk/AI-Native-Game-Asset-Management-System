@@ -30,4 +30,7 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     if (!statFile(archive, normalize(path)).size) throw new Error('Missing renderer dependency in app.asar: ' + path)
   }
   await access(join(resources, 'app.asar.unpacked', 'scripts', 'export-blend.py'))
+  for (const script of ['batch.py', 'stage_inputs.py']) {
+    await access(join(resources, 'app.asar.unpacked', 'core', 'engines', 'blender', 'scripts', script))
+  }
 }

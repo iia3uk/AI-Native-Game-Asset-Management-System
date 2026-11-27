@@ -6,20 +6,24 @@ import { checkedPath, fileInfo, readBoundedText, sameFile } from '../../files/as
 import { readPackage } from './inspect.mjs'
 import { hashPattern, invalid, MiB, packageLimits, unityPackageVersion } from './policy.mjs'
 import { packageDocuments } from './report.mjs'
+import { locateBatchBlender } from '../../engines/blender/batch.mjs'
+import { packageExportVersion } from '../../conversion/formats.mjs'
+import { exportRecipe, verifyExports } from '../../conversion/cache.mjs'
+import { exportPackage } from '../../conversion/batch.mjs'
 
 const packageDirectory = 'unitypackage-v' + unityPackageVersion
 
-async function importRoot(directory) {
+async function importRoot(directory, exportEnabled) {
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const root = await realpath(directory)
-  const version = join(root, packageDirectory)
+  const version = join(root, exportEnabled ? packageDirectory + '-export-v' + packageExportVersion : packageDirectory)
   await mkdir(version, { mode: 0o700, recursive: true })
   if (!await checkedPath(root, version)) throw invalid('каталог импорта недоступен.')
   return version
 }
 
-async function reuse(root, hash) {
-  const directory = join(root, hash)
+async function reuse(root, key, hash, formats, signal) {
+  const directory = join(root, key)
   const existing = await lstat(directory).catch(error => {
     if (error.code === 'ENOENT') return null
     throw error
@@ -36,16 +40,22 @@ async function reuse(root, hash) {
     if (metadata.source.sha256 !== hash || metadata.version !== unityPackageVersion ||
         recorded.version !== unityPackageVersion || !Number.isSafeInteger(recorded.written) ||
         !await fileInfo(directory, 'dependencies.json')) throw new Error('Invalid import manifest')
-    return { directory, source, report: recorded, reused: true }
+    if (formats.length && (recorded.export?.version !== packageExportVersion ||
+        recorded.export.formats?.join(',') !== formats.join(',') ||
+        !await verifyExports(directory, metadata.assets, signal))) throw new Error('Invalid export manifest')
+    return { directory, source: formats.length ? directory : source, report: recorded, reused: true }
   } catch {
+    signal?.throwIfAborted()
     throw invalid('сохранённый импорт повреждён.')
   }
 }
 
-export async function stageUnityPackage(directory, source, hash, { signal, onProgress, limits = packageLimits, publish }) {
+export async function stageUnityPackage(directory, source, hash, { signal, onProgress, limits = packageLimits, formats = [], publish }) {
   signal?.throwIfAborted()
   if (!hashPattern.test(hash)) throw invalid('некорректный SHA-256 пакета.')
-  const root = await importRoot(directory)
+  const blender = formats.length ? await locateBatchBlender() : null
+  const key = formats.length ? hash + '-' + exportRecipe(formats, blender) : hash
+  const root = await importRoot(directory, formats.length)
   for (const entry of await readdir(root, { withFileTypes: true })) {
     if (!entry.isDirectory() || !/^\.stage-[a-zA-Z0-9]{6}$/.test(entry.name)) continue
     const target = join(root, entry.name)
@@ -53,7 +63,7 @@ export async function stageUnityPackage(directory, source, hash, { signal, onPro
       await rm(target, { recursive: true, force: true })
     }
   }
-  const cached = await reuse(root, hash)
+  const cached = await reuse(root, key, hash, formats, signal)
   if (cached) {
     await verifyPackageHash(source, hash, limits, signal)
     signal?.throwIfAborted()
@@ -65,9 +75,11 @@ export async function stageUnityPackage(directory, source, hash, { signal, onPro
     if (records.hash !== hash) throw invalid('пакет изменился после анализа. Проанализируйте его снова.')
     const output = join(staging, 'output')
     await mkdir(join(output, 'Source'), { recursive: true })
-    const report = await packageDocuments(records, output, signal, limits, onProgress)
-    const target = join(root, hash)
-    return publish({ directory: target, source: join(target, 'Source'), report, reused: false },
+    const createExports = formats.length
+      ? entries => exportPackage({ output, scratch: staging, entries, formats, blender, signal, onProgress }) : undefined
+    const report = await packageDocuments(records, output, signal, limits, onProgress, createExports)
+    const target = join(root, key)
+    return publish({ directory: target, source: formats.length ? target : join(target, 'Source'), report, reused: false },
       () => renameSync(output, target))
   } finally {
     await rm(staging, { force: true, recursive: true })

@@ -15,7 +15,7 @@ function extractReferences(text) {
   return refs
 }
 
-export async function packageDocuments(packageInfo, output, signal, limits, onProgress) {
+export async function packageDocuments(packageInfo, output, signal, limits, onProgress, createExports) {
   const descriptions = []
   const byId = new Map()
   let textBudget = limits.dependencyBytes
@@ -76,7 +76,7 @@ export async function packageDocuments(packageInfo, output, signal, limits, onPr
     byId.set(entry.id, entry)
     descriptions.push(entry)
   }
-  onProgress?.(85)
+  onProgress?.(75)
   const dependencies = []
   const fileIDs = new Map(descriptions.map(entry => [entry.id, new Set(entry.fileIDs)]))
   for (const entry of descriptions) {
@@ -102,13 +102,16 @@ export async function packageDocuments(packageInfo, output, signal, limits, onPr
     delete entry.references
   }
   signal?.throwIfAborted()
+  const exports = await createExports?.(descriptions)
   const source = { format: packageInfo.format, sha256: packageInfo.hash, size: packageInfo.size }
   const manifest = { version: unityPackageVersion, source, engineVersion: null, assets: descriptions }
   const counts = Object.create(null)
   for (const { status } of descriptions) counts[status] = (counts[status] ?? 0) + 1
   const written = descriptions.filter(entry => entry.output || entry.metadata).length
   const report = { version: unityPackageVersion, mode: 'engineless', method: 'unitypackage-direct', counts, written,
-    converted: 0, limitations: ['native-unity-decoding-unavailable', 'no-generated-model-export', 'material-graphs-not-converted'] }
+    converted: exports?.modelsConverted ?? 0, ...(exports && { export: exports }),
+    limitations: ['native-unity-decoding-unavailable', ...(!exports ? ['no-generated-model-export'] : []),
+      'material-graphs-not-converted'] }
   for (const [name, document] of Object.entries({ manifest, dependencies: { version: unityPackageVersion, dependencies },
     'conversion-report': report })) {
     await writeFile(join(output, name + '.json'), JSON.stringify(document, null, 2) + '\n', { flag: 'wx', signal })

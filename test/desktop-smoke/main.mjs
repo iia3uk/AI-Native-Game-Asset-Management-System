@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
-import { copyFile, mkdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { setTimeout } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { app } from 'electron'
 import { startDesktop } from '../../desktop/bootstrap.mjs'
 import { generateFixtures } from '../../scripts/generate-fixtures.mjs'
-import { writeUnityFixture } from '../fixtures/unitypackage.mjs'
+import { unityEntries, unityFixtureEntries, writeUnityFixture } from '../fixtures/unitypackage.mjs'
 
 const screenshot = process.env.ASSET_VIEWER_SMOKE_SCREENSHOT
 const root = fileURLToPath(new URL('../../', import.meta.url))
@@ -105,18 +105,28 @@ void startDesktop(root).then(async ({ window, origin }) => {
   assert.equal(await webContents.executeJavaScript("document.querySelector('#index-analysis').open"), true)
   await webContents.executeJavaScript("document.querySelector('#index-watch').click()")
   await waitFor("document.querySelector('#index-watch').getAttribute('aria-pressed') === 'false'")
-  const packagePath = await writeUnityFixture(join(process.env.ASSET_VIEWER_DATA_DIR, 'Smoke.unitypackage'))
+  const cabin = await readFile(join(fixtures, 'Architecture', 'woodland-cabin.glb'))
+  const packagePath = await writeUnityFixture(join(process.env.ASSET_VIEWER_DATA_DIR, 'Smoke.unitypackage'),
+    unityFixtureEntries(unityEntries('7'.repeat(32), 'Assets/Imported/smoke-cabin.glb', cabin)))
   assert.equal(await webContents.executeJavaScript("window.assetViewerDesktop.selectedFilePath(new File(['mock'], 'fake.unitypackage'))"), '')
   await webContents.executeJavaScript(`{
     document.querySelector('#package-importer').open = true
     document.querySelector('#package-path').value = ${JSON.stringify(packagePath)}
     document.querySelector('#package-form').requestSubmit()
   }`)
-  await waitFor("document.querySelector('#package-plans summary')?.textContent.includes('Smoke.unitypackage · 6')")
+  await waitFor("document.querySelector('#package-plans summary')?.textContent.includes('Smoke.unitypackage · 7')")
   await webContents.executeJavaScript("document.querySelector('#package-engines').click()")
   await waitFor("document.querySelector('#package-engine-list').textContent.includes('Unreal Editor') && !document.querySelector('#package-engines').disabled")
-  await webContents.executeJavaScript("document.querySelector('#package-plans button').click()")
+  await webContents.executeJavaScript(`
+    document.querySelector('#package-export-glb').click()
+    document.querySelector('#package-plans button').click()
+  `)
   await waitFor("document.querySelector('#package-jobs').textContent.includes('В индексе')")
+  await webContents.executeJavaScript(`
+    document.querySelector('#package-jobs details').open = true
+    Array.from(document.querySelectorAll('#package-jobs button')).find(button => button.textContent === 'Показать файлы').click()
+  `)
+  await waitFor("document.querySelector('#package-jobs').textContent.includes('GLB · Оригинал · Previews/')")
   await webContents.executeJavaScript("Array.from(document.querySelectorAll('#package-jobs button')).find(button => button.textContent === 'Показать в индексе').click()")
   await waitFor("document.querySelector('#index-results').textContent.includes('fixture-package.obj')")
   await webContents.executeJavaScript("Array.from(document.querySelectorAll('#index-results button')).find(button => button.textContent.startsWith('fixture-package.obj')).click()")

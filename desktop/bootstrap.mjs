@@ -47,7 +47,10 @@ export async function startDesktop(applicationRoot = app.getAppPath()) {
   const child = utilityProcess.fork(join(root, 'server.mjs'), [], {
     env: { ...process.env, ASSET_VIEWER_PORT: process.env.ASSET_VIEWER_PORT ?? '8178',
       ASSET_VIEWER_PORT_FALLBACK: '1', ASSET_VIEWER_DESKTOP_TOKEN: token,
-      ...(app.isPackaged && { ASSET_VIEWER_BLEND_SCRIPT: join(process.resourcesPath, 'app.asar.unpacked', 'scripts', 'export-blend.py') }),
+      ...(app.isPackaged && {
+        ASSET_VIEWER_BLEND_SCRIPT: join(process.resourcesPath, 'app.asar.unpacked', 'scripts', 'export-blend.py'),
+        ASSET_VIEWER_BLENDER_BATCH_SCRIPT: join(process.resourcesPath, 'app.asar.unpacked', 'core/engines/blender/scripts/batch.py'),
+      }),
     },
     serviceName: 'Asset Viewer Local Server',
     stdio: 'pipe',

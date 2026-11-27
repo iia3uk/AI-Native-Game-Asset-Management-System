@@ -16,16 +16,19 @@ Scans keep running if you close the index dialog. Open it and select the library
 
 ## Import a Unity package
 
-Open **Индекс → Импорт пакетов Unity**. In the desktop app, select or drop up to 16 `.unitypackage` files. In the browser, enter the full local path and click **Проанализировать**. Expand each file to see its contents and choose **Извлечь и добавить в индекс**. The jobs list shows extraction and indexing progress and offers cancellation or retry where available.
+Open **Индекс → Импорт пакетов Unity**. In the desktop app, select or drop up to 16 `.unitypackage` files. In the browser, enter the full local path and click **Проанализировать**. Expand a package to see its contents. Select **FBX** or **GLB-предпросмотр** to request model exports, then choose **Обработать и добавить в индекс**. With multiple packages analyzed, **Обработать все пакеты** queues the remaining packages with the same formats. The jobs list displays progress and offers cancellation or retry where available.
 
 Use **Показать в индексе** after the scan completes. Supported originals such as FBX, GLB and PNG retain their original bytes and `Assets/` or `Packages/` paths. The application copies them into its data directory and uses the existing viewer. The report shows unavailable and excluded entries. Native Unity scenes and prefabs can be retained as source files and remain marked as requiring further processing. No editor is required.
 
-The job result shows the output directory. It contains `Source/`, any supplied PNG previews in `Previews/`, and three reports, `manifest.json`, `dependencies.json` and `conversion-report.json`. Source paths, GUIDs, available file IDs, hashes and dependency status are recorded. Importing the same archive again reuses its output. Generated FBX and GLB, binary Unity decoding, and Unreal or Fab package import are pending.
+The job result shows the managed output directory. **Отчёт об импорте → Показать файлы** lists the result for each asset and model format. The original tree lives in `Source/`. With a format selected, the export also contains `Models/`, `Textures/`, `Materials/`, `Animations/`, `Audio/`, `Previews/` and `Metadata/`. Original FBX and GLB files can be copied directly. Blender 4.5 or newer can produce FBX and GLB derivatives from OBJ, glTF, GLB and binary FBX. Original textures are copied byte for byte. An FBX copied from the package can still need its external textures relinked. Individual conversion failures appear in the report and other assets continue.
+
+The reports are `manifest.json`, `dependencies.json` and `conversion-report.json`. They record source paths, GUIDs, available file IDs, hashes, dependency status and how each artifact was made. An unchanged archive with the same formats and Blender installation reuses verified output. Binary Unity decoding, custom destination folders, and Unreal or Fab package import remain pending.
 
 ```sh
 npm run cli -- package-inspect "/absolute/path/example.unitypackage" --json
 npm run cli -- package-import "/absolute/path/example.unitypackage" --dry-run --json
 npm run cli -- package-import "/absolute/path/example.unitypackage" --json
+npm run cli -- package-import "/absolute/path/example.unitypackage" --export fbx,glb --json
 npm run cli -- jobs --type package-import --json
 ```
 
