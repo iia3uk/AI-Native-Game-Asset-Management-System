@@ -1,19 +1,23 @@
 namespace AssetViewer.UnityBundle.Objects.Resources;
 
+internal readonly record struct ResourceReference(string Path, ulong Offset, ulong Size);
+
 internal abstract class SerializedResources
 {
-    public byte[] ReadTexture(string owner, string path, ulong offset, uint size, int length, bool inspectOnly)
+    public virtual string TextureStorage => "bundle-member";
+
+    public byte[] ReadTexture(string owner, ResourceReference source, int length, bool inspectOnly)
     {
-        var resource = Resolve(owner, path, offset, size, ".resS", "texture-stream");
-        if (size < length) throw new BundleException("unity-bundle-texture-stream-range");
+        var resource = Resolve(owner, source.Path, source.Offset, source.Size, ".resS", "texture-stream");
+        if (source.Size < (ulong)length) throw new BundleException("unity-bundle-texture-stream-range");
         if (inspectOnly) return [];
         var data = new byte[length];
         resource.Read(0, data);
         return data;
     }
 
-    public ResourceSlice ResolveAudio(string owner, string path, ulong offset, ulong size) =>
-        Resolve(owner, path, offset, size, ".resource", "audio-stream");
+    public ResourceSlice ResolveAudio(string owner, ResourceReference source) =>
+        Resolve(owner, source.Path, source.Offset, source.Size, ".resource", "audio-stream");
 
     protected abstract ResourceSlice Resolve(string owner, string path, ulong offset, ulong size,
         string suffix, string issue);

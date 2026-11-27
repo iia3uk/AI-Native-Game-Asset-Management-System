@@ -15,7 +15,7 @@ export function bundleRecipe(withFbx, blender, method) {
     .digest('hex').slice(0, 24)
 }
 
-export async function readBundleCache(root, sha256, recipe, sourceName, method, signal) {
+export async function readBundleCache(root, { sha256, contentsSha256, resources }, recipe, sourceName, method, signal) {
   const output = join(root, sha256 + '-' + recipe)
   const existing = await lstat(output).catch(error => {
     if (error.code === 'ENOENT') return null
@@ -31,7 +31,9 @@ export async function readBundleCache(root, sha256, recipe, sourceName, method, 
     ])
     const { source, version, recipe: cachedRecipe, decoderRevision, assets, method: cachedMethod } = JSON.parse(manifest)
     const report = JSON.parse(summary)
-    if (!dependencies || source?.sha256 !== sha256 || version !== bundleVersion || cachedRecipe !== recipe ||
+    if (!dependencies || source?.sha256 !== sha256 || source.contentsSha256 !== contentsSha256 ||
+        JSON.stringify(source.resources) !== JSON.stringify(resources) ||
+        version !== bundleVersion || cachedRecipe !== recipe ||
         cachedMethod !== method || report?.method !== method || report.converterVersion !== assetsToolsVersion ||
         decoderRevision !== bundleDecoderRevision || report.decoderRevision !== decoderRevision || !Array.isArray(assets) ||
         assets.length !== report.total || assets.length > 10_000 ||

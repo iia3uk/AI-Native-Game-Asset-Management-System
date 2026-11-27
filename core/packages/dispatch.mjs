@@ -13,8 +13,9 @@ function bundleError(issue, serialized) {
     'unity-bundle-worker-unavailable': 'Не найден независимый декодер Unity.',
     'unity-bundle-worker-revision': 'Версия декодера Unity несовместима с приложением. Обновите декодер.',
     'unity-bundle-input-size': 'Файл Unity должен занимать от 48 байт до 128 МиБ.',
+    'unity-bundle-companion-size': 'Файл данных Unity превышает 256 МиБ или общий размер файлов данных превышает 512 МиБ.',
     'unity-bundle-space-limit': 'Недостаточно места для обработки файла Unity.',
-    'unity-bundle-source-changed': 'Файл Unity изменился после анализа. Проанализируйте файл снова.',
+    'unity-bundle-source-changed': 'Файл Unity или один из файлов данных изменился после анализа. Проанализируйте файл снова.',
   }
   return new IndexInputError(messages[issue] ?? (name + ' · ошибка декодирования (' + issue + ').'))
 }

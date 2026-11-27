@@ -6,7 +6,7 @@ namespace AssetViewer.UnityBundle;
 
 internal static class Program
 {
-    public const int DecoderRevision = 5;
+    public const int DecoderRevision = 6;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { MaxDepth = 10 };
 
     public static int Main(string[] args)
@@ -20,12 +20,12 @@ internal static class Program
         try
         {
             using var stream = File.OpenRead("request.json");
-            if (stream.Length > 2048) throw new BundleException("unity-bundle-request");
+            if (stream.Length > 4096) throw new BundleException("unity-bundle-request");
             var request = JsonSerializer.Deserialize<Request>(stream, Json);
             if (request is not { Protocol: 1, OutputLimit: >= 0 and <= 128L << 20 })
                 throw new BundleException("unity-bundle-request");
             Write(request.Serialized
-                ? SerializedFile.Read(request.InspectOnly, request.OutputLimit)
+                ? SerializedFile.Read(request.InspectOnly, request.OutputLimit, request.Companions)
                 : BundleObjects.Read(request.InspectOnly, request.OutputLimit));
             return 0;
         }
@@ -43,7 +43,8 @@ internal static class Program
     private static void Write<T>(T data) => Console.WriteLine(JsonSerializer.Serialize(data, Json));
 }
 
-internal sealed record Request(int Protocol, bool InspectOnly, long OutputLimit, bool Serialized = false);
+internal sealed record Request(int Protocol, bool InspectOnly, long OutputLimit, bool Serialized = false,
+    CompanionNames? Companions = null);
 internal sealed record Asset(string Member, string PathId, int ClassId, string? Name, string Status, string? Issue,
     int? Width = null, int? Height = null, int? Output = null, string? Format = null,
     int? Vertices = null, int? Triangles = null, int? Bytes = null,

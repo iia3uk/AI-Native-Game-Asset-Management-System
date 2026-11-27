@@ -14,9 +14,11 @@ import { locateUnityBridge } from '../core/engines/unity/bridge/run.mjs'
 import { bundleDecoderRevision, bundleResult } from '../core/engines/unity/bundle/protocol.mjs'
 import { locateBundleWorker } from '../core/engines/unity/bundle/run.mjs'
 import { buildAssetBundleFixture } from './fixtures/unity-bundle/project.mjs'
+import { buildUnityPlayerFixture } from './fixtures/unity-player/project.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 import { verifyBundleAudio } from './unity-bundle/audio.mjs'
 import { readTexture } from './unity-bundle/png.mjs'
+import { verifyPlayerExports, verifyPlayerMalformed } from './unity-bundle/player.mjs'
 import { verifyStandaloneUnity } from './unity-bundle/serialized.mjs'
 import { verifyBundleSprites } from './unity-bundle/sprites.mjs'
 
@@ -256,4 +258,61 @@ test('Unity builds native UnityFS bundles and the independent worker indexes tex
   await verifyBundleAudio(root, audioData, client(audioData), worker)
   const standaloneData = join(root, 'standalone-data')
   await verifyStandaloneUnity(root, standaloneData, client(standaloneData), worker, version)
+})
+
+test('native Unity Player companions decode, index and invalidate a stale inspection', {
+  skip: process.env.ASSET_VIEWER_TEST_NATIVE_PLAYER !== '1', timeout: 240_000,
+}, async t => {
+  const root = await testDirectory(t)
+  const version = process.env.ASSET_VIEWER_TEST_UNITY_VERSION || '6000.3.10f1'
+  const { editor, match } = await locateUnityBridge(version)
+  assert.equal(match, 'exact')
+  assert.ok(await locateBundleWorker(), 'Run npm run build:unity-bundle before the native test')
+  const directory = await buildUnityPlayerFixture(root, editor)
+  const files = { primary: join(directory, 'resources.assets'), texture: join(directory, 'resources.assets.resS'),
+    audio: join(directory, 'resources.resource') }
+  const server = await startServer(root)
+  try {
+    const inspect = async () => {
+      const response = await server.post('/api/index/packages/inspect', { path: files.primary })
+      assert.equal(response.status, 200)
+      return (await response.json()).package
+    }
+    const plan = await inspect()
+    assert.equal(plan.format, 'unity-serialized')
+    assert.equal(plan.unityVersion, version)
+    assert.deepEqual(plan.resources.map(({ name, role }) => [name, role]),
+      [['resources.assets.resS', 'texture'], ['resources.resource', 'audio']])
+    assert.equal(plan.assets.find(asset => asset.name === 'StreamedDXT5').textureStorage, 'companion')
+    assert.equal(plan.assets.find(asset => asset.name === 'StereoVorbis').issue, 'unity-bundle-audio-codec')
+    const job = await waitForImport(server, files.primary, plan.hash)
+    assert.equal(job.status, 'completed', job.error)
+    assert.equal((await waitForJob(server, job.result.scanJobId)).status, 'completed')
+    const page = await server.request('/api/index/jobs/' + job.id + '/manifest')
+    assert.equal(page.status, 200)
+    await verifyPlayerExports(root, files, plan, job, client(join(root, 'data')))
+    const cached = await waitForImport(server, files.primary, plan.hash)
+    assert.equal(cached.status, 'completed', cached.error)
+    assert.equal(cached.result.reused, true)
+    assert.equal(cached.result.directory, job.result.directory)
+
+    for (const file of [files.texture, files.audio]) {
+      const original = await readFile(file)
+      const changed = Buffer.from(original)
+      changed[changed.length - 1] ^= 1
+      await writeFile(file, changed)
+      try {
+        const next = await inspect()
+        assert.notEqual(next.hash, plan.hash)
+        const stale = await waitForImport(server, files.primary, plan.hash)
+        assert.equal(stale.status, 'failed')
+        assert.match(stale.error, /изменился после анализа/)
+      } finally {
+        await writeFile(file, original)
+      }
+    }
+    await verifyPlayerMalformed(files, inspect)
+  } finally {
+    await server.close()
+  }
 })

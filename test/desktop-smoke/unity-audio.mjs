@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { basename } from 'node:path'
 
-export async function verifyUnityAudio(webContents, waitFor, fixture) {
+export async function verifyUnityAudio(webContents, waitFor, fixture, { companion = false } = {}) {
   await webContents.executeJavaScript(`
     if (!document.querySelector('#index-dialog').open) document.querySelector('#index-mode').click()
     document.querySelector('#package-importer').open = true
@@ -9,7 +9,11 @@ export async function verifyUnityAudio(webContents, waitFor, fixture) {
     document.querySelector('#package-form').requestSubmit()
   `)
   await waitFor("document.querySelector('#package-plans').textContent.includes('StereoPcm · PCM 16 бит, 48000 Гц, 2 кан.')")
-  await waitFor("document.querySelector('#package-plans').textContent.includes('Для аудио UnityFS поддерживается PCM 16 бит')")
+  await waitFor("document.querySelector('#package-plans').textContent.includes('Для аудио Unity поддерживается PCM 16 бит')")
+  if (companion) {
+    await waitFor("document.querySelector('#package-plans').textContent.includes('Файлы данных · resources.assets.resS, resources.resource')")
+    await waitFor("document.querySelector('#package-plans').textContent.includes('StreamedDXT5 · DXT5 · Внешние данные')")
+  }
   await webContents.executeJavaScript("document.querySelector('#package-plans button').click()")
   const job = `Array.from(document.querySelector('#package-jobs').children)
     .find(item => item.firstElementChild.textContent.startsWith(${JSON.stringify(basename(fixture) + ' · ')}))`
@@ -20,6 +24,7 @@ export async function verifyUnityAudio(webContents, waitFor, fixture) {
     Array.from(row.querySelectorAll('button')).find(button => button.textContent === 'Показать файлы').click()
   }`)
   await waitFor(`(${job})?.textContent.includes('Audio-StereoPcm.wav') && (${job})?.textContent.includes('Audio-MonoPcm.wav')`)
+  if (companion) await waitFor(`(${job})?.textContent.includes('Texture-StreamedDXT5.png')`)
   await webContents.executeJavaScript(`Array.from((${job}).querySelectorAll('button'))
     .find(button => button.textContent === 'Показать в индексе').click()`)
   await waitFor("document.querySelector('#index-results').textContent.includes('Audio-StereoPcm.wav')")

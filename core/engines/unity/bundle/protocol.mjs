@@ -4,7 +4,7 @@ const issuePattern = /^unity-bundle-[a-z0-9-]{1,64}$/
 const versionPattern = /^\d{1,4}\.\d{1,3}\.\d{1,4}[abfp]\d{1,4}$/
 const memberPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,119}$/
 const pathIdPattern = /^-?\d{1,19}$/
-export const bundleDecoderRevision = 5
+export const bundleDecoderRevision = 6
 const pixelDimension = value => Number.isInteger(value) && value >= 1 && value <= 2048
 const validCount = (value, max) => Number.isSafeInteger(value) && value > 0 && value <= max
 const cropCoordinate = (value, length) => Number.isInteger(value) && value >= 0 && value + length <= 2048
@@ -37,7 +37,7 @@ export function bundleResult(report, inspectOnly, serialized = false) {
     let format, metrics, size
     if ([28, 213].includes(classId) && asset.format === 'rgba' && pixelDimension(width) && pixelDimension(height) &&
         ['rgba32', 'dxt1', 'dxt5'].includes(textureEncoding) &&
-        (textureStorage === 'inline' || (!serialized && textureStorage === 'bundle-member'))) {
+        (textureStorage === 'inline' || textureStorage === (serialized ? 'companion' : 'bundle-member'))) {
       format = 'rgba'
       metrics = { width, height, textureEncoding, textureStorage }
       size = width * height * 4
@@ -53,7 +53,7 @@ export function bundleResult(report, inspectOnly, serialized = false) {
       metrics = { vertices, triangles }
       size = asset.bytes
       if (!inspectOnly && (!validCount(size, 16 * 1024 ** 2) || size < 52)) return null
-    } else if (!serialized && classId === 83 && asset.format === 'wav' && [1, 2].includes(audio?.channels) &&
+    } else if (classId === 83 && asset.format === 'wav' && [1, 2].includes(audio?.channels) &&
         validCount(audio.frames, 32 * 1024 ** 2 / 2) && Number.isInteger(audio.sampleRate) &&
         audio.sampleRate >= 4000 && audio.sampleRate <= 96000) {
       const { channels, sampleRate, frames } = audio

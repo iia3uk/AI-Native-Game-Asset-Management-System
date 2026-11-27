@@ -70,7 +70,9 @@ The report marks unsupported layouts and classes. Meshes with skinning, blend sh
 
 ## Import a standalone binary Unity file
 
-Select a binary `.asset` or `.assets` file in the same importer, or find it with **Найти пакеты в папке**. The decoder checks the file header and reads little-endian formats 22 and 23 with embedded type trees. Supported static meshes become GLB with optional FBX, and supported inline textures become PNG. The decoder reports assets that need a companion file or whose type tree is missing. Text-based Unity YAML files continue to be handled by the Unity package importer.
+Select a binary `.asset` or `.assets` file in the same importer, or find it with **Найти пакеты в папке**. The decoder reads little-endian formats 22 and 23. With embedded type trees, supported static meshes become GLB with optional FBX. Supported RGBA32, DXT1 and DXT5 textures become PNG and 16-bit PCM AudioClips become WAV. Files with the type trees removed can export those textures and audio from verified Windows Player builds from Unity 6000.3.10f1 and 6000.6.0f1. Missing schemas and unsupported objects appear in the report.
+
+Keep the original filenames. For example, put `resources.assets`, `resources.assets.resS` and `resources.resource` in the same directory and select `resources.assets`. Inspection lists the matching files. Each companion can be up to 256 MiB, with a 512 MiB total. If a companion changes while the import is pending, run inspection again. Text-based Unity YAML files continue to be handled by the Unity package importer.
 
 ```sh
 npm run cli -- package-inspect "/absolute/path/mesh.asset" --json

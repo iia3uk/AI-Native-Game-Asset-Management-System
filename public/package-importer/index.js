@@ -188,6 +188,9 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     if (isUnityBinary(plan.format)) {
       details.insertBefore(element('p', formatLabel(plan.format) + ' ' + plan.containerVersion +
         ' · Unity ' + plan.unityVersion + ' · Без Unity Editor'), preview)
+      if (plan.resources?.length) {
+        details.insertBefore(element('p', 'Файлы данных · ' + plan.resources.map(resource => resource.name).join(', ')), preview)
+      }
     }
     if (plan.format === 'unreal-pak') {
       details.insertBefore(element('p', 'Unreal Pak ' + plan.containerVersion + ' · Извлечение исходных файлов'), preview)

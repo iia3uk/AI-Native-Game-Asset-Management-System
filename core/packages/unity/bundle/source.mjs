@@ -1,8 +1,10 @@
 import { open } from 'node:fs/promises'
 import { basename, dirname, isAbsolute } from 'node:path'
 import { inputLimit } from '../../../engines/unity/bundle/run.mjs'
+import { sameSource } from '../../../engines/unity/bundle/stage-file.mjs'
+import { companionSizeAllowed, findSerializedCompanions } from '../../../engines/unity/serialized/companions.mjs'
 import { isSerializedUnity, serializedProbeSize } from '../../../engines/unity/serialized/header.mjs'
-import { checkedPath, fileInfo, folderPath, sameFile } from '../../../files/asset-files.mjs'
+import { checkedPath, fileInfo, folderPath } from '../../../files/asset-files.mjs'
 import { IndexInputError } from '../../../index/index-errors.mjs'
 import { unityFsMagic } from '../../detect.mjs'
 
@@ -23,7 +25,7 @@ export async function readBundleSource({ root, path, name }, serialized, signal)
   signal?.throwIfAborted()
   const handle = await open(file.path, 'r')
   try {
-    if (!sameFile(await handle.stat(), file.info) || !await checkedPath(root, path)) {
+    if (!sameSource(await handle.stat(), file.info) || !await checkedPath(root, path)) {
       return { status: 'failed', issue: 'unity-bundle-source-changed' }
     }
     const bytes = Buffer.alloc(serialized ? serializedProbeSize : unityFsMagic.length)
@@ -36,5 +38,7 @@ export async function readBundleSource({ root, path, name }, serialized, signal)
   } finally {
     await handle.close()
   }
-  return { root, file, name, serialized }
+  const resources = serialized ? await findSerializedCompanions(root, file.path) : []
+  if (!companionSizeAllowed(resources)) return { status: 'failed', issue: 'unity-bundle-companion-size' }
+  return { root, file, name, serialized, resources }
 }

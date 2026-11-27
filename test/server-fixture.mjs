@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 export async function testDirectory(t) {
   const path = await mkdtemp(join(tmpdir(), 'asset-viewer-test-'))
-  t.after(() => rm(path, { recursive: true, force: true }))
+  t.after(() => rm(path, { recursive: true, force: true, maxRetries: 8, retryDelay: 300 }))
   return path
 }
 

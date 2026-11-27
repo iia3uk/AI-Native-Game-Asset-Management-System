@@ -1,6 +1,6 @@
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
-using AssetViewer.UnityBundle.Objects.Resources;
+using AssetViewer.UnityBundle.Serialized.Player;
 
 namespace AssetViewer.UnityBundle.Serialized;
 
@@ -9,7 +9,7 @@ internal static class SerializedFile
     private const string Input = "input.bundle";
     private const string Member = "input.assets";
 
-    public static Report Read(bool inspectOnly, long outputLimit)
+    public static Report Read(bool inspectOnly, long outputLimit, CompanionNames? companions)
     {
         using var input = File.OpenRead(Input);
         if (input.Length is < 48 or > 128L << 20)
@@ -27,8 +27,9 @@ internal static class SerializedFile
         {
             var file = manager.LoadAssetsFile(input, Member, false);
             var assets = new List<Asset>();
-            SerializedObjects.Read(manager, file, Member, input.Length, new MissingResources(), inspectOnly,
-                assets, ref outputLimit);
+            using var resources = new CompanionResources(companions);
+            SerializedObjects.Read(manager, file, Member, input.Length, resources, inspectOnly,
+                assets, ref outputLimit, PlayerLayout.Supports(file.file));
             return new Report(1, Program.DecoderRevision, "completed", header.Version,
                 file.file.Metadata.UnityVersion, assets);
         }
@@ -36,11 +37,5 @@ internal static class SerializedFile
         {
             manager.UnloadAll();
         }
-    }
-
-    private sealed class MissingResources : SerializedResources
-    {
-        protected override ResourceSlice Resolve(string owner, string path, ulong offset, ulong size,
-            string suffix, string issue) => throw new BundleException("unity-bundle-" + issue + "-missing");
     }
 }

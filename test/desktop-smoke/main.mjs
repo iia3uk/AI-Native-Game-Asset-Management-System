@@ -166,12 +166,14 @@ void launchSmoke().then(async ({ window, origin }) => {
   const sprites = process.env.ASSET_VIEWER_SMOKE_SPRITES
   const audio = process.env.ASSET_VIEWER_SMOKE_AUDIO
   const standalone = process.env.ASSET_VIEWER_SMOKE_STANDALONE
+  const player = process.env.ASSET_VIEWER_SMOKE_PLAYER
   const pak = process.env.ASSET_VIEWER_SMOKE_PAK === '1'
   await verifyPackageWatch(webContents, waitFor, fixtures, { bundle, pak })
   if (bundle) await verifyUnityBundle(webContents, waitFor, bundle)
   if (sprites) await verifyUnitySprites(webContents, waitFor, sprites)
   if (audio) await verifyUnityAudio(webContents, waitFor, audio)
   if (standalone) await verifyUnityBundle(webContents, waitFor, standalone, { standalone: true })
+  if (player) await verifyUnityAudio(webContents, waitFor, player, { companion: true })
   if (pak) await verifyUnrealPak(webContents, waitFor, fixtures)
   await verifyStartupWithoutInterface()
   assert.deepEqual(externalRequests, [])
@@ -181,6 +183,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   if (sprites) console.log('UnityFS sprite inspection, queued import, dependency reporting and indexed PNG preview passed.')
   if (audio) console.log('UnityFS PCM inspection, queued import, local byte ranges and indexed WAV playback passed.')
   if (standalone) console.log('Standalone Unity file inspection, queued import and indexed GLB preview passed.')
+  if (player) console.log('Unity Player companion inspection, queued texture and audio import and WAV playback passed.')
   if (pak) console.log('Unreal Pak folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
   app.quit()
 }).catch(error => {
