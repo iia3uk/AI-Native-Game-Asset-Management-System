@@ -7,6 +7,11 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | GET | `/api/index/libraries` | Returns connected libraries and indexed file counts |
 | POST | `/api/index/libraries` | `{"path":"<absolute local folder>"}` returns a durable library identity |
 | POST | `/api/index/libraries/:id/scan` | Empty object. Returns added, changed, moved, missing, hashed, reused and skipped hash counts |
+| POST | `/api/index/libraries/:id/jobs` | Empty object. Returns 202 and the new or active scan job |
+| GET | `/api/index/jobs` | Optional `library`, `limit` (1–200) and `offset`. Returns active jobs first |
+| GET | `/api/index/jobs/:id` | Returns persisted status, file count, attempt count and result or error |
+| POST | `/api/index/jobs/:id/cancel` | Cancels a pending job or requests cancellation for a running job |
+| POST | `/api/index/jobs/:id/retry` | Queues a failed, cancelled or interrupted job with fewer than three started attempts |
 | POST | `/api/index/libraries/:id/disconnect` | Empty object. Hides the library and retains its records |
 | GET | `/api/index/search` | `q`, `library`, `kind`, `limit` (1–100), `offset`. Returns `assets` and `nextOffset` |
 | GET | `/api/index/duplicates` | `limit`, `offset`. Hash groups among available files in connected libraries |

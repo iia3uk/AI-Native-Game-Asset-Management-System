@@ -1,42 +1,41 @@
 # Asset Viewer
 
-Вьювер работает локально с Node.js 22 или новее. Из этой папки выполните `npm ci` при первом запуске, затем `npm start` и откройте [вьювер](http://127.0.0.1:8177/). В PowerShell вместо `npm` можно использовать `npm.cmd`.
+**Asset Viewer — the first desktop application of the AI-Native Game Asset Management System.** It previews 3D models and textures, connects local game asset folders, and builds a searchable SQLite index. The web and desktop versions work with local data and require no AI account or cloud service.
 
-Нажмите «Демобиблиотека», чтобы открыть процедурные модели без своих файлов, Blender или интернета. Демоданные создаются в кеше приложения по запросу. Для тестов с повреждённой моделью, отсутствующей текстурой и дубликатом используйте `node scripts/generate-fixtures.mjs <папка> --include-errors`.
+[Русский README](README.ru.md) · [User guide](docs/USER_GUIDE.md) · [Development status](docs/STATUS.md)
 
-В разделе «Индекс» укажите полный путь к папке и нажмите «Подключить и сканировать». Поиск учитывает имя и путь файла, формат и сохранённые метаданные. Нажмите на результат для просмотра сведений или открытия во вьювере. Индекс и новые метаданные хранятся в SQLite и сохраняются после перезапуска. Существующие данные Fab и «Локальных папок» доступны в своих разделах.
+![Asset Viewer with the procedural woodland cabin demo](docs/screenshots/demo.png)
 
-## Произвольная папка
+## Run from source
 
-Нажмите «Локальные папки» и выберите ветку через «Обзор…» или введите полный путь. «Добавить папку» добавляет ещё одну ветку в тот же каталог. Вьювер рекурсивно читает все подпапки, а карточки группирует по папкам первого уровня каждой ветки. «Пересканировать» обновляет выбранную ветку. Для запуска сразу с нужной папкой используется `npm start -- --folder "D:\Assets"`.
+Use Node.js 22.16 or later.
 
-## Поддерживаемые форматы
+```sh
+npm ci
+npm start
+```
 
-| Что открывается | Форматы |
-| --- | --- |
-| Модели и сцены | GLB, glTF, VRM, FBX, OBJ, STL, DAE, 3DS, 3MF, AMF, KMZ, LWO, WRL/VRML, VOX, OFF/COFF/NOFF, DRC, MD2, Rhino 3DM, LDraw LDR/MPD |
-| Облака точек, скелеты и линии | PLY, PCD, XYZ, VTK/VTP, BVH, G-code, PDB |
-| Модели через Blender | BLEND, USD, USDA, USDC, USDZ, Alembic ABC |
-| Изображения и текстуры | PNG/APNG, JPEG/JPE/JFIF, WebP, GIF, BMP, AVIF, ICO, SVG, TGA, TIFF, HDR, EXR, DDS, KTX, KTX2, PVR |
+Open [Asset Viewer](http://127.0.0.1:8177/). Choose **Демобиблиотека** for the included procedural demo. Choose **Индекс** and enter an absolute folder path to create a persistent library, scan files, and search by name, path, format, or saved metadata. The current viewer interface is in Russian.
 
-Для форматов Blender создаётся временная копия GLB. Используется Blender из `PATH`, типового места установки или переменной `ASSET_VIEWER_BLENDER` с путём к исполняемому файлу. Установленная сборка Blender должна включать импорт нужного формата. Alembic открывается как геометрия текущего кадра. VRM отображается как glTF-сцена. Для LDraw добавьте папку с используемыми деталями вместе с моделью.
+Use `npm run desktop` for the Electron app. Use `npm run build:windows` to create a Windows x64 installer and portable executable with bundled Node.js. See [BUILD.md](docs/BUILD.md).
 
-Предпросмотр сжатых двумерных текстур зависит от доступных браузеру кодеков WebGL. Файлы вроде MAX, C4D, STEP, UASSET и Unity Package можно найти в списке «Все» и взять исходник для конвертации.
+## Capabilities
 
-Цветовые карты подхватываются из модели, по локальным ссылкам, из материалов OBJ и Unity или по однозначному имени модели, материала или меша. Связанные файлы могут лежать в соседних папках выбранного дерева. Для ручного назначения откройте «Цветовая текстура», выберите материал и карту из любой добавленной ветки и нажмите «Применить». Пункт «Автоматическая привязка» возвращает исходный выбор вьювера. Список веток, категории, ручные привязки и отметки локальных файлов хранятся в браузере.
+- Interactive 3D review, wireframe, lighting, parts, animation controls, thumbnails and texture overrides.
+- Direct browsing of local folders and optional local Fab catalogs with their existing review and classification settings.
+- Persistent indexing, SHA-256 duplicate detection, incremental scans and version history. Background scans report progress and support cancellation and retry. Search results open in the existing viewer.
+- Indexed tags, categories, notes, review decisions and license text.
+- JSON CLI commands for asset search, export, scans, backups and diagnostics. A read-only local [MCP server](docs/MCP.md) exposes paginated metadata access.
 
-При добавлении ветки можно создать или выбрать категорию для всех её моделей. Поле «Категория модели» переопределяет категорию конкретного 3D-файла. Фильтр слева показывает только подходящие модели внутри наборов. Миниатюру карточки вьювер строит из одной открываемой модели набора с учётом фильтра.
+Blender is optional. The viewer uses it to prepare GLB previews for BLEND, USD and Alembic. See the [user guide](docs/USER_GUIDE.md) for formats and settings.
 
-Архивы и форматы, требующие стороннего экспорта, остаются в списке «Все». Сервер слушает только loopback. Blender сохраняет копии предпросмотра во временную папку.
+## Develop
 
-## Каталог и отбор
+```sh
+npm run check
+npm test
+npm run benchmark
+npm run cli -- --help
+```
 
-Вкладка «Fab» открывает существующий локальный каталог. По умолчанию вьювер ищет его в соседней папке `FAB_ASSETS`. Для своего каталога задайте `FAB_ASSETS_ROOT` в окружении или в файле `.env` рядом с `server.mjs`. Для работы с обычной папкой каталог Fab не нужен.
-
-Ищите наборы по названию, автору, категории или формату. Вращайте модель мышью и меняйте масштаб колёсиком или кнопками «−» и «+». Кнопка «В кадр» возвращает исходный масштаб. Для файлов с анимацией выберите клип и нажмите «Пуск». Режим «На месте» по умолчанию убирает горизонтальное смещение персонажа. Снимите флажок, чтобы увидеть исходную траекторию. Файл анимации без видимого меша открывается как скелет.
-
-Меню «Часть» изолирует объект или участок меша с отдельным материалом и направляет на него камеру. «Вся модель» восстанавливает общий вид. Выберите «Цвет без света», чтобы посмотреть цветовую карту, цвет вершин или цвет материала независимо от освещения. Строка «Материалы» показывает, где используются цветовые карты.
-
-Выберите «Подходит», «Позже» или «Исключить». Нажатие на активную отметку снимает её. В разделе «Кандидаты» видны файлы с отметкой «Подходит». Заметки и отметки библиотеки Fab записываются в `Viewer/selections.json` внутри каталога. Этот файл содержит Fab ID, локальный путь и решение по каждому отмеченному файлу.
-
-GLB, glTF, FBX, OBJ, STL и PLY открываются в браузере. Для Blender создаются копии предпросмотра в GLB. В Unity Package отображаются извлечённые модели и изображения. Для FBX вьювер может подключить цветовую текстуру по связи из Unity-префаба, по связанному материалу или по имени карты. Если находит несколько вариантов для одного материала, показывает выбор «Текстура». Сцены, префабы и материалы Unity остаются доступными как исходные файлы.
+[Architecture](docs/ARCHITECTURE.md) · [API](docs/API.md) · [Security](SECURITY.md) · [Roadmap](docs/ROADMAP.md) · [Contributing](CONTRIBUTING.md)

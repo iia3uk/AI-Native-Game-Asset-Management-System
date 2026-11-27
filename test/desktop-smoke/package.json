@@ -1,0 +1,6 @@
+{
+  "name": "asset-viewer-desktop-smoke",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs"
+}

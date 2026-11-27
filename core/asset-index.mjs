@@ -4,6 +4,7 @@ import { basename, dirname, join } from 'node:path'
 import { backup, DatabaseSync } from 'node:sqlite'
 import { checkedPath, discoverAssets, folderPath, pathKey } from './asset-files.mjs'
 import { migrate, schemaVersion, transaction } from './index-schema.mjs'
+import { ProcessingJobs } from './processing-jobs.mjs'
 
 const readable = 'a.id, a.library_id AS libraryId, l.name AS library, a.path, a.name, a.ext, a.kind,' +
   ' a.size, a.mtime, a.hash, a.first_seen AS firstSeen, a.missing_since AS missingSince,' +
@@ -57,6 +58,14 @@ function validateId(id) {
   if (typeof id !== 'string' || !libraryIdPattern.test(id)) throw new IndexInputError('Некорректный идентификатор.')
 }
 
+function allowedLibraries(condition, args, libraryIds) {
+  if (libraryIds === undefined) return
+  if (!Array.isArray(libraryIds) || libraryIds.length > 100) throw new IndexInputError('Некорректный список библиотек.')
+  for (const id of libraryIds) validateId(id)
+  condition.push(libraryIds.length ? 'a.library_id IN (' + libraryIds.map(() => '?').join(', ') + ')' : '0')
+  args.push(...libraryIds)
+}
+
 export class AssetIndex {
   #db
   #scans = new Map()
@@ -78,6 +87,7 @@ export class AssetIndex {
         this.#db.exec('PRAGMA journal_mode=WAL;')
         migrate(this.#db)
       }
+      this.jobs = new ProcessingJobs(this.#db)
     } catch (error) {
       this.#db.close()
       throw error
@@ -115,10 +125,10 @@ export class AssetIndex {
     return Boolean(changes)
   }
 
-  async scan(id, { signal } = {}) {
+  async scan(id, { signal, onProgress, beforeCommit, onCommit } = {}) {
     validateId(id)
     if (this.#scans.has(id)) return this.#scans.get(id)
-    const pending = this.#scan(id, signal)
+    const pending = this.#scan(id, signal, onProgress, beforeCommit, onCommit)
     this.#scans.set(id, pending)
     try {
       return await pending
@@ -127,7 +137,7 @@ export class AssetIndex {
     }
   }
 
-  async #scan(id, signal) {
+  async #scan(id, signal, onProgress, beforeCommit, onCommit) {
     const library = this.#db.prepare('SELECT * FROM libraries WHERE id = ? AND enabled = 1').get(id)
     if (!library) throw new IndexInputError('Библиотека не подключена.')
     const previous = this.#db.prepare('SELECT * FROM assets WHERE library_id = ?').all(id)
@@ -153,11 +163,14 @@ export class AssetIndex {
       }
       discovered.set(key, { path: file.path, name: basename(file.path), ext: file.ext,
         kind: file.kind, size, mtime, ctime, hash })
+      onProgress?.(discovered.size)
     }
     signal?.throwIfAborted()
     const summary = { assets: discovered.size, added: 0, changed: 0, moved: 0, missing: 0, hashed, reused, skippedHashes }
     // A failed walk leaves the last successful scan intact. Never commit a stale scan from another process.
     return transaction(this.#db, () => {
+      beforeCommit?.()
+      signal?.throwIfAborted()
       const now = timestamp()
       const { changes } = this.#db.prepare(`
         UPDATE libraries SET indexed_at = ?, generation = generation + 1
@@ -165,6 +178,7 @@ export class AssetIndex {
       `).run(now, id, library.generation)
       if (!changes) throw new IndexInputError('Состояние библиотеки изменилось. Повторите сканирование.')
       this.#recordScan(id, now, discovered, previous, byPath, summary)
+      onCommit?.(summary)
       return summary
     })
   }
@@ -217,13 +231,14 @@ export class AssetIndex {
     }
   }
 
-  search({ q = '', libraryId, kind, hash, limit = 50, offset = 0 } = {}) {
+  search({ q = '', libraryId, libraryIds, kind, hash, limit = 50, offset = 0 } = {}) {
     const query = folded(stringField(q, 200))
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(offset) || offset < 0) {
       throw new IndexInputError('Некорректная страница результатов.')
     }
     const condition = ['l.enabled = 1', 'a.missing_since IS NULL']
     const args = []
+    allowedLibraries(condition, args, libraryIds)
     if (libraryId) {
       validateId(libraryId)
       condition.push('a.library_id = ?')
@@ -294,15 +309,29 @@ export class AssetIndex {
     `).all(id)
   }
 
-  duplicates(limit = 50, offset = 0) {
+  duplicates(limit = 50, offset = 0, libraryIds) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(offset) || offset < 0) {
       throw new IndexInputError('Некорректная страница результатов.')
     }
+    const condition = ['l.enabled = 1', 'a.missing_since IS NULL', 'a.hash IS NOT NULL']
+    const args = []
+    allowedLibraries(condition, args, libraryIds)
     return this.#db.prepare(`
       SELECT a.hash, COUNT(*) AS count, MAX(a.size) AS size FROM assets a JOIN libraries l ON a.library_id = l.id
-      WHERE l.enabled = 1 AND a.missing_since IS NULL AND a.hash IS NOT NULL
+      WHERE ${condition.join(' AND ')}
       GROUP BY a.hash HAVING COUNT(*) > 1 ORDER BY count DESC, a.hash LIMIT ? OFFSET ?
-    `).all(limit, offset)
+    `).all(...args, limit, offset)
+  }
+
+  exportMetadata(libraryId) {
+    const condition = ['l.enabled = 1', 'a.missing_since IS NULL']
+    const args = []
+    if (libraryId) allowedLibraries(condition, args, [libraryId])
+    const rows = this.#db.prepare(`
+      SELECT ${readable} FROM assets a JOIN libraries l ON a.library_id = l.id
+      WHERE ${condition.join(' AND ')} ORDER BY a.name COLLATE NOCASE, a.id
+    `)
+    return { version: 1, assets: [...rows.iterate(...args)].map(shape) }
   }
 
   integrity() {

@@ -1,9 +1,22 @@
+import { existsSync } from 'node:fs'
 import { AssetIndex, IndexInputError } from './asset-index.mjs'
 import { fileInfo, ScanChangeError } from './asset-files.mjs'
+import { ScanWorker } from './scan-worker.mjs'
 
 export function indexRoutes({ database, json, body, allowsWrite, openFolder, invalidateFolder }) {
   let pendingIndex
+  let worker
   const shutdown = new AbortController()
+
+  function openIndex() {
+    return pendingIndex ??= AssetIndex.open(database).then(index => {
+      if (!shutdown.signal.aborted) worker = new ScanWorker(index, invalidateFolder)
+      return index
+    }).catch(error => {
+      pendingIndex = undefined
+      throw error
+    })
+  }
 
   async function handle(request, response, path) {
     const [, , , resource, id, action, extra] = path.split('/')
@@ -12,13 +25,10 @@ export function indexRoutes({ database, json, body, allowsWrite, openFolder, inv
     if (extra !== undefined || !['GET', 'POST'].includes(method)) return json(response, 404, { error: 'Маршрут отсутствует.' })
     if (method === 'POST' && !allowsWrite(request)) return json(response, 403, { error: 'Недопустимый источник запроса' })
 
-    pendingIndex ??= AssetIndex.open(database).catch(error => {
-      pendingIndex = undefined
-      throw error
-    })
+    if (shutdown.signal.aborted) return json(response, 503, { error: 'Сервер завершает работу.' })
     let index
     try {
-      index = await pendingIndex
+      index = await openIndex()
     } catch (error) {
       console.error('Asset index:', error.message)
       return json(response, 503, { error: 'Индекс недоступен. Проверьте каталог данных и резервные копии.' })
@@ -29,15 +39,43 @@ export function indexRoutes({ database, json, body, allowsWrite, openFolder, inv
         const input = await body(request).catch(() => null)
         return json(response, 201, { library: await index.connect(input?.path) })
       }
-      if (method === 'POST' && resource === 'libraries' && action === 'scan') {
-        const result = await index.scan(id, { signal: shutdown.signal })
-        invalidateFolder(id)
-        return json(response, 200, result)
+      if (method === 'POST' && resource === 'libraries' && id && ['scan', 'jobs'].includes(action)) {
+        const job = index.jobs.enqueue(id)
+        if (!job) return json(response, 400, { error: 'Библиотека не подключена.' })
+        worker?.wake()
+        if (action === 'jobs') return json(response, 202, { job })
+        const finished = await worker?.wait(job.id, shutdown.signal)
+        if (finished?.status === 'completed') return json(response, 200, finished.result)
+        return json(response, 409, { error: finished?.error ?? 'Сканирование прервано.', job: finished })
       }
       if (method === 'POST' && resource === 'libraries' && action === 'disconnect') {
         const disconnected = index.disconnect(id)
         invalidateFolder(id)
         return json(response, 200, { disconnected })
+      }
+      if (resource === 'jobs') {
+        if (method === 'GET' && !id) {
+          const limit = Number(params.get('limit') ?? 50)
+          const offset = Number(params.get('offset') ?? 0)
+          if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200 || !Number.isSafeInteger(offset) || offset < 0) {
+            return json(response, 400, { error: 'Недопустимые параметры страницы.' })
+          }
+          return json(response, 200, { jobs: index.jobs.list({ libraryId: params.get('library'), limit, offset }) })
+        }
+        if (method === 'GET' && id && !action) {
+          const job = index.jobs.get(id)
+          if (job) return json(response, 200, { job })
+        }
+        if (method === 'POST' && id && action === 'cancel') {
+          const job = index.jobs.cancel(id)
+          if (job) return json(response, 200, { job })
+        }
+        if (method === 'POST' && id && action === 'retry') {
+          const job = index.jobs.retry(id)
+          if (!job) return json(response, 409, { error: 'Задание недоступно для повторного запуска.' })
+          worker?.wake()
+          return json(response, 202, { job })
+        }
       }
       if (method === 'GET' && resource === 'search' && !id) {
         return json(response, 200, index.search({
@@ -67,6 +105,7 @@ export function indexRoutes({ database, json, body, allowsWrite, openFolder, inv
       }
       return json(response, 404, { error: 'Запись или маршрут отсутствуют.' })
     } catch (error) {
+      if (shutdown.signal.aborted) return json(response, 503, { error: 'Сервер завершает работу.' })
       if (error instanceof IndexInputError) return json(response, 400, { error: error.message })
       if (error instanceof ScanChangeError) return json(response, 409, { error: error.message })
       if (['EACCES', 'EPERM', 'ENOENT', 'ENOTDIR'].includes(error.code)) {
@@ -76,5 +115,19 @@ export function indexRoutes({ database, json, body, allowsWrite, openFolder, inv
     }
   }
 
-  return { handle, abort: () => shutdown.abort(), close: async () => await (await pendingIndex)?.close() }
+  return {
+    handle,
+    startExisting() {
+      if (existsSync(database)) void openIndex().catch(error => console.error('Asset index:', error.message))
+    },
+    abort() {
+      shutdown.abort()
+      void worker?.stop()
+    },
+    async close() {
+      const index = await pendingIndex
+      await worker?.stop()
+      await index?.close()
+    },
+  }
 }

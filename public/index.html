@@ -169,6 +169,7 @@
       <label for="index-root">Полный путь к новой библиотеке</label>
       <div class="folder-path-row">
         <input id="index-root" required maxlength="4096" autocomplete="off" spellcheck="false">
+        <button id="index-pick" type="button" class="control" hidden>Обзор…</button>
         <button class="control primary-control">Подключить и сканировать</button>
       </div>
     </form>
@@ -194,10 +195,13 @@
     </form>
     <div class="index-toolbar">
       <button id="index-rescan" type="button" class="control" disabled>Пересканировать</button>
+      <button id="index-cancel-scan" type="button" class="control" hidden>Отменить сканирование</button>
+      <button id="index-retry-scan" type="button" class="control" hidden>Повторить задание</button>
       <button id="index-disconnect" type="button" class="control" disabled>Отключить</button>
       <p id="index-count" class="notice"></p>
     </div>
     <p id="index-status" class="notice" role="status"></p>
+    <p id="index-job-status" class="notice" role="status" hidden></p>
     <ul id="index-results" class="index-results" aria-label="Результаты поиска"></ul>
     <nav class="index-toolbar" aria-label="Страницы результатов">
       <button id="index-prev" type="button" class="control" disabled>Назад</button>

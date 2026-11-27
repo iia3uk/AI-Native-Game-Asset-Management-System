@@ -3,3 +3,4 @@ node_modules/
 __pycache__/
 *_ASSETS/
 fab-downloader/
+release/

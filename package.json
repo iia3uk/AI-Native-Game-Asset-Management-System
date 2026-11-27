@@ -1,14 +1,81 @@
 {
   "name": "asset-viewer",
+  "version": "0.1.0",
+  "productName": "Asset Viewer",
+  "description": "Local-first game asset browser and searchable library index",
   "private": true,
   "type": "module",
+  "main": "desktop/main.mjs",
+  "bin": {
+    "asset-viewer": "scripts/asset-viewer.mjs"
+  },
+  "engines": {
+    "node": ">=22.16.0"
+  },
   "scripts": {
     "postinstall": "node scripts/patch-three.mjs",
     "start": "node server.mjs",
-    "test": "node --test"
+    "desktop": "electron .",
+    "test:desktop": "electron test/desktop-smoke",
+    "build:windows": "electron-builder --win nsis portable --x64 --publish never && node scripts/release-checksums.mjs",
+    "cli": "node scripts/asset-viewer.mjs",
+    "check": "node scripts/check-syntax.mjs",
+    "test": "node --test test/*.test.mjs",
+    "benchmark": "node scripts/benchmark-index.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
     "rhino3dm": "8.32.1",
-    "three": "^0.187.0"
+    "three": "^0.187.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "electron": "45.5.0",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "io.github.iia3uk.assetviewer",
+    "afterPack": "scripts/verify-packaged-viewer.mjs",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "package.json",
+      "server.mjs",
+      "core/**",
+      "desktop/**",
+      "public/**",
+      "assets/icon.ico",
+      "scripts/export-blend.py",
+      "scripts/*.mjs",
+      {
+        "from": "node_modules/three/examples/jsm",
+        "to": "node_modules/three/examples/jsm",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asarUnpack": [
+      "scripts/export-blend.py"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "createDesktopShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-${arch}-Portable.${ext}"
+    }
   }
 }

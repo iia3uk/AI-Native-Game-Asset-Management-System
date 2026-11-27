@@ -59,7 +59,31 @@ const initial = `
   END;
 `
 
-export const schemaVersion = 1
+const processing = `
+  CREATE TABLE processing_jobs (
+    id TEXT PRIMARY KEY,
+    library_id TEXT NOT NULL REFERENCES libraries(id),
+    type TEXT NOT NULL CHECK (type = 'scan'),
+    status TEXT NOT NULL CHECK (status IN ('pending','running','completed','failed','cancelled','interrupted')),
+    priority INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    progress INTEGER NOT NULL DEFAULT 0,
+    result TEXT,
+    error TEXT,
+    worker TEXT,
+    lease_until INTEGER,
+    cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK (cancel_requested IN (0, 1))
+  ) STRICT;
+  CREATE UNIQUE INDEX one_active_job_per_library ON processing_jobs (library_id, type)
+    WHERE status IN ('pending','running');
+  CREATE INDEX pending_jobs ON processing_jobs (priority DESC, created_at) WHERE status = 'pending';
+  CREATE INDEX jobs_by_library ON processing_jobs (library_id, created_at DESC);
+`
+
+export const schemaVersion = 2
 
 export function transaction(db, write) {
   db.exec('BEGIN IMMEDIATE')
@@ -82,6 +106,7 @@ export function migrate(db) {
     const lockedVersion = version()
     if (lockedVersion > schemaVersion) throw new Error('The asset index was created by a newer version.')
     if (lockedVersion === 0) db.exec(initial)
+    if (lockedVersion < 2) db.exec(processing)
     db.exec('PRAGMA user_version = ' + schemaVersion)
   })
 }

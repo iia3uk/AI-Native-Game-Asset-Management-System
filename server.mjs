@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { lstat, open, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { extname, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -26,6 +26,7 @@ const rhino = resolve(project, 'node_modules/rhino3dm')
 const reviewPath = 'Viewer/selections.json'
 const port = Number(process.env.ASSET_VIEWER_PORT || 8177)
 if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('ASSET_VIEWER_PORT должен быть от 0 до 65535.')
+const desktopToken = process.env.ASSET_VIEWER_DESKTOP_TOKEN
 const metadataLimit = 64 * 1024 ** 2
 const identifier = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i
 const fileIdentifier = /^[a-f\d]{24}$/
@@ -95,6 +96,14 @@ async function loadReview() {
 function allowsWrite(request) {
   return request.headers.origin === 'http://' + request.headers.host &&
     request.headers['content-type']?.split(';', 1)[0].trim().toLowerCase() === 'application/json'
+}
+
+function allowsDesktopRequest(request) {
+  if (!desktopToken) return true
+  const token = request.headers['x-asset-viewer-desktop']
+  return typeof token === 'string' && token.length === desktopToken.length &&
+    Buffer.byteLength(token) === Buffer.byteLength(desktopToken) &&
+    timingSafeEqual(Buffer.from(token), Buffer.from(desktopToken))
 }
 
 async function body(request) {
@@ -283,6 +292,7 @@ const server = createServer(async (request, response) => {
     const activePort = server.address()?.port
     const host = request.headers.host
     if (![`127.0.0.1:${activePort}`, `localhost:${activePort}`].includes(host) ||
+        !allowsDesktopRequest(request) ||
         (request.headers.origin !== undefined && request.headers.origin !== 'http://' + host) ||
         request.headers['sec-fetch-site'] === 'cross-site' && request.headers['sec-fetch-mode'] !== 'navigate') {
       json(response, 403, { error: 'Доступ только с локального компьютера' })
@@ -360,10 +370,31 @@ const server = createServer(async (request, response) => {
     console.error(error.message)
   }
 })
-server.listen(port, '127.0.0.1', () => console.log(`Asset Viewer · http://127.0.0.1:${server.address().port}`))
+server.on('listening', () => {
+  indexed.startExisting()
+  const { port } = server.address()
+  console.log(`Asset Viewer · http://127.0.0.1:${port}`)
+  process.parentPort?.postMessage({ type: 'ready', port })
+})
+server.on('error', error => {
+  if (error.code === 'EADDRINUSE' && port && process.env.ASSET_VIEWER_PORT_FALLBACK === '1') {
+    server.listen(0, '127.0.0.1')
+  } else {
+    console.error(error.message)
+    process.exit(1)
+  }
+})
+server.listen(port, '127.0.0.1')
+
+let stopping
 function shutdown() {
+  if (stopping) return stopping
   indexed.abort()
-  server.close(() => void indexed.close().catch(error => console.error(error.message)))
-  void closePreviews().catch(error => console.error(error.message))
+  const disconnected = new Promise(resolve => server.close(resolve))
+  stopping = Promise.allSettled([closePreviews(), disconnected.then(indexed.close)])
+  return stopping
 }
-for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, shutdown)
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => void shutdown())
+process.parentPort?.on('message', ({ data }) => {
+  if (data?.type === 'shutdown') void shutdown().then(() => process.exit())
+})

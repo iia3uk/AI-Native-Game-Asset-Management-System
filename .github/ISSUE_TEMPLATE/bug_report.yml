@@ -1,0 +1,22 @@
+name: Bug report
+description: Report a reproducible problem with Asset Viewer
+body:
+  - type: input
+    id: environment
+    attributes:
+      label: Asset Viewer version and operating system
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use generated or shareable assets. Omit credentials and personal paths.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Actual and expected behavior
+    validations:
+      required: true

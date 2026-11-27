@@ -865,7 +865,15 @@ async function browsePath(path) {
   }
   if (!ui['folder-browser'].hidden) ui['folder-browser'].querySelector('button')?.focus()
 }
-ui['folder-pick'].addEventListener('click', () => void browsePath(ui['folder-path'].value))
+ui['folder-pick'].addEventListener('click', async () => {
+  if (!window.assetViewerDesktop) return browsePath(ui['folder-path'].value)
+  try {
+    const path = await window.assetViewerDesktop.chooseFolder()
+    if (path) ui['folder-path'].value = path
+  } catch (error) {
+    ui['folder-status'].textContent = error.message
+  }
+})
 ui['folder-path'].addEventListener('input', () => { ui['folder-browser'].hidden = true })
 ui['folder-browser'].addEventListener('click', event => {
   const button = event.target.closest('[data-path]')

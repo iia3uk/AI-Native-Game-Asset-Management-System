@@ -10,7 +10,7 @@ import { connectUnityMaterials } from './unity-materials.mjs'
 import { discoverAssets, fileInfo, folderPath, pathKey } from '../core/asset-files.mjs'
 
 const runFile = promisify(execFile)
-const exportScript = fileURLToPath(new URL('./export-blend.py', import.meta.url))
+const exportScript = process.env.ASSET_VIEWER_BLEND_SCRIPT ?? fileURLToPath(new URL('./export-blend.py', import.meta.url))
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 24)
 const sortByPath = (a, b) => a.path.localeCompare(b.path, 'ru', { numeric: true })
 const encodePath = path => path.split('/').map(encodeURIComponent).join('/')

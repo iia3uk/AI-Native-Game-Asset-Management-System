@@ -1,12 +1,19 @@
 # Development status
 
-The baseline is `aff0312` on `origin/main`. Development is local on `develop/asset-core`.
+The current development version is `0.1.0`. The baseline is `aff0312` on `origin/main`. Development is local on `develop/asset-core`.
 
 - Existing capabilities include Fab browsing and review, local folders, manual texture overrides, direct model and texture previews and optional Blender conversion.
 - Initial hardening added shared file and metadata guards, origin checks, HTTP regression tests and a bounded Blender queue.
 - The opt-in demo has four procedurally generated models, including an animated cabin and a textured OBJ. The fixture generator includes an optional error and duplicate set.
 - The SQLite library connects or disconnects chosen roots, performs incremental scans, detects hash duplicates and records missing files and move history. Indexed metadata supports tags, category, review, notes and license. Search supports text, library and file type filters. Results open in the existing viewer.
-- Verified with Node.js 24.18.0 on Windows. The baseline passed 22 tests and started successfully. The current suite covers HTTP boundaries, Fab compatibility, the demo, index persistence, backup and schema checks.
+- Durable background scans show progress and support cancellation and retry. The queue survives restarts and uses SQLite leases to identify interrupted work. Asset updates and a successful job result commit together.
+- Verified on Windows with Node.js 24.18.0, 22.23.5 and the minimum supported version 22.16.0. Also verified on Ubuntu under WSL2 with Node.js 24.18.0. The baseline passed 22 tests. All 34 current tests passed in each environment. The syntax check inspected 44 files. The suite covers HTTP boundaries, Fab compatibility, the demo, persistence, backup, migrations, queue recovery, CLI and MCP.
 - Browser smoke covered opening the demonstration, playing and pausing its animation, connecting 10 generated fixtures, searching, saving metadata, reopening the model and finding its saved metadata after a page reload.
-- Blender was unavailable in PATH and common install locations. A real Blender conversion, cross-platform behavior and desktop packaging still require verification.
-- Next priorities are the CLI, Windows packaging, and a durable background queue. See [ROADMAP.md](ROADMAP.md).
+- The CLI provides search, inspection, scan and connection dry runs, duplicate groups, JSON export, diagnostics and backup. The local stdio MCP server exposes seven read-only tools with library allowlists.
+- Electron development smoke verified the native bridge, child server, session token and a rendered demo. It also connected and indexed 10 synthetic fixtures in the desktop UI with external renderer requests blocked. The demo screenshot comes from the desktop smoke test.
+- The Windows packaging check verifies the Three.js loaders and decoders in the archive and the unpacked Blender script. The unpacked build rendered the procedural cabin and converted synthetic BLEND, USDC and Alembic files through Blender 5.3. The portable build connected and searched a 10-file fixture library, displayed the model and played its animation. A second launch verified that the index was retained and Blender conversion worked in the final portable executable.
+- The unsigned Windows x64 NSIS and portable builds are in `release/` with independently verified SHA-256 sums. The NSIS installer was built locally and has yet to be exercised in a clean Windows profile.
+- Synthetic Windows scan times from one run were 109 ms / 22 ms for 100 files, 905 ms / 169 ms for 1,000 and 9,306 ms / 1,975 ms for 10,000. The first scan hashed every fixture and the second reused every hash. These figures describe small text fixtures.
+- The checked-in workflows cover CI on Windows and Linux and draft release preparation. GitHub-hosted jobs need a remote run for verification.
+- The runtime npm dependency audit reported no known issues. The complete audit reported six moderate entries in the development-only Electron Builder dependency chain. Blender was selected through `ASSET_VIEWER_BLENDER` for the Steam installation on a secondary drive. Live Fab data, complex files, native Linux/macOS desktop builds and a signed installation need separate validation.
+- Next priority is opt-in watch-based indexing with event coalescing and reconciliation after downtime. Follow it with deeper model inspection and dependency records. Preview jobs, managed caches, collections, rule automation, AI providers, engine adapters and automatic updates remain on the [roadmap](ROADMAP.md).
