@@ -190,6 +190,15 @@
         <label><input id="package-export-glb" type="checkbox"> GLB-предпросмотр</label>
         <button id="package-start-all" class="control" type="button" hidden>Обработать все пакеты</button>
       </div>
+      <div class="index-toolbar">
+        <label for="package-engine-mode">Режим</label>
+        <select id="package-engine-mode">
+          <option value="engineless">Без Unity</option>
+          <option value="auto">Авто</option>
+          <option value="engine-assisted">С Unity Editor</option>
+        </select>
+        <label id="package-editor-version-control" hidden>Версия Unity <input id="package-editor-version" maxlength="32" placeholder="Авто"></label>
+      </div>
       <p id="package-status" class="notice" role="status"></p>
       <ul id="package-plans" class="index-results" aria-label="Содержимое выбранных пакетов"></ul>
       <ul id="package-jobs" class="index-results" aria-label="Задания импорта"></ul>

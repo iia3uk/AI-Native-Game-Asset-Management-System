@@ -1,7 +1,7 @@
 import { basename, dirname, join, parse } from 'node:path'
 import { absolutePath, configuredPaths, directories, executable, smallJson, smallText, verifyCandidates } from '../discovery-files.mjs'
+import { unityVersionPattern as versionPattern } from './options.mjs'
 
-const versionPattern = /^(\d{1,4})\.(\d{1,4})\.(\d{1,4})([abfp])(\d{1,4})(?:c\d{1,4})?$/
 const version = value => typeof value === 'string' && versionPattern.test(value) ? value : null
 
 function releaseOrder(left, right) {

@@ -4,13 +4,14 @@ import { convertBatchModel } from '../engines/blender/batch.mjs'
 import { fileInfo } from '../files/asset-files.mjs'
 import { packageExportVersion } from './formats.mjs'
 import { artifactPath, exportFolders, ExportArtifacts, modelArtifact } from './artifacts.mjs'
+import { publishUnityArtifacts } from './unity-artifacts.mjs'
 
 const convertible = new Set(['fbx', 'glb', 'gltf', 'obj'])
 const packageConversionBudget = 480_000
 const limitations = ['unity-objects-not-decoded', 'material-graphs-not-converted', 'no-engine-lod-or-collision-semantics',
   'model-conversion-can-change-shader-and-animation-representation']
 
-export async function exportPackage({ output, scratch, entries, formats, blender, signal, onProgress }) {
+export async function exportPackage({ output, scratch, entries, formats, blender, bridge, signal, onProgress }) {
   const source = join(output, 'Source')
   const store = new ExportArtifacts(output, signal)
   const deadline = AbortSignal.timeout(packageConversionBudget)
@@ -25,16 +26,22 @@ export async function exportPackage({ output, scratch, entries, formats, blender
       if (entry.kind === 'model') {
         const artifacts = await exportModel({ entry, formats, source, scratch, store, blender, signal, batchSignal, deadline })
         entry.exports.push(...artifacts)
-        if (artifacts.some(artifact => artifact.status === 'converted')) {
-          if (entry.status === 'extracted') entry.status = 'converted'
-          modelsConverted++
-        }
       } else if (artifactPath(entry, 'original')) {
         const file = await fileInfo(output, entry.output)
         entry.exports.push(await store.save(artifactPath(entry, 'original'), file, {
           method: 'original-copy', format: extname(entry.output).slice(1).toLowerCase(), status: 'extracted', sha256: entry.hash,
         }))
       }
+    }
+    if (bridge) {
+      entry.exports.push(...await publishUnityArtifacts(entry, bridge, {
+        store, formats, blender, scratch, signal, batchSignal, deadline,
+      }))
+    }
+    const converted = entry.exports.filter(artifact => artifact.status === 'converted')
+    if (converted.length && !entry.issues.includes('missing-dependencies')) entry.status = 'converted'
+    if (converted.some(artifact => ['fbx', 'glb'].includes(artifact.format) && artifact.role !== 'animation')) {
+      modelsConverted++
     }
     if (entry.metadata) {
       const file = await fileInfo(output, entry.metadata)
@@ -45,7 +52,8 @@ export async function exportPackage({ output, scratch, entries, formats, blender
     for (const { status } of entry.exports) counts[status] = (counts[status] ?? 0) + 1
     onProgress?.(76 + Math.floor(18 * (index + 1) / entries.length))
   }
-  return { version: packageExportVersion, formats, counts, modelsConverted, limitations }
+  return { version: packageExportVersion, formats, counts, modelsConverted, ...(bridge && { unity: bridge.summary }),
+    limitations: bridge ? limitations.slice(1) : limitations }
 }
 
 async function exportModel({ entry, formats, source, scratch, store, blender, signal, batchSignal, deadline }) {

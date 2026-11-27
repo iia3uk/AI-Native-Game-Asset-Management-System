@@ -1,5 +1,6 @@
 import { mountEngineStatus } from './engine-status.js'
-import { appendManifest } from './report.js'
+import { appendManifest, describeIssue } from './report.js'
+import { mountImportOptions } from './import-options.js'
 
 const $ = name => document.getElementById('package-' + name)
 const jobsRoute = '/api/index/jobs'
@@ -31,6 +32,7 @@ function button(text, action) {
 
 export function mountPackageImporter({ dialog, json, post, openLibrary }) {
   mountEngineStatus({ json })
+  const importOptions = mountImportOptions($)
   const section = $('importer')
   const plans = $('plans')
   const jobs = $('jobs')
@@ -96,6 +98,9 @@ export function mountPackageImporter({ dialog, json, post, openLibrary }) {
       if (record.result.report.export) {
         details.append(element('p', 'Моделей сконвертировано · ' + record.result.report.converted))
       }
+      const unity = record.result.report.export?.unity
+      if (unity?.status === 'completed') details.append(element('p', 'Unity Editor ' + unity.editorVersion))
+      else if (unity?.issue) details.append(element('p', 'Unity Editor · ' + describeIssue(unity.issue)))
       appendManifest({ details, record, json, element, button, assetStatus })
       row.append(details)
     }
@@ -113,10 +118,8 @@ export function mountPackageImporter({ dialog, json, post, openLibrary }) {
     })
   }
 
-  const exportFormats = () => ['fbx', 'glb'].filter(format => $('export-' + format).checked)
-
-  async function queuePlan(path, plan, formats) {
-    await json(packagesRoute + '/import', post({ path, hash: plan.hash, formats }))
+  async function queuePlan(path, plan, options) {
+    await json(packagesRoute + '/import', post({ path, hash: plan.hash, ...options }))
     queuedPlans.get(path)?.row.remove()
     queuedPlans.delete(path)
     startAll.hidden = queuedPlans.size < 2
@@ -125,11 +128,11 @@ export function mountPackageImporter({ dialog, json, post, openLibrary }) {
   startAll.addEventListener('click', async () => {
     if (busy) return
     busy = startAll.disabled = true
-    const formats = exportFormats()
+    const options = importOptions()
     try {
       for (const [path, { plan, start }] of queuedPlans) {
         start.disabled = true
-        try { await queuePlan(path, plan, formats) }
+        try { await queuePlan(path, plan, options) }
         catch (error) { showError(error); start.disabled = false }
       }
       await refresh()
@@ -151,7 +154,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary }) {
       if (busy) return
       start.disabled = true
       try {
-        await queuePlan(path, plan, exportFormats())
+        await queuePlan(path, plan, importOptions())
         await refresh()
       } catch (error) {
         showError(error)

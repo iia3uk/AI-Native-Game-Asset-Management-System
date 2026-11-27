@@ -15,7 +15,7 @@ function extractReferences(text) {
   return refs
 }
 
-export async function packageDocuments(packageInfo, output, signal, limits, onProgress, createExports) {
+export async function packageDocuments(packageInfo, output, signal, limits, onProgress, createExports, mode = 'engineless') {
   const descriptions = []
   const byId = new Map()
   let textBudget = limits.dependencyBytes
@@ -104,11 +104,12 @@ export async function packageDocuments(packageInfo, output, signal, limits, onPr
   signal?.throwIfAborted()
   const exports = await createExports?.(descriptions)
   const source = { format: packageInfo.format, sha256: packageInfo.hash, size: packageInfo.size }
-  const manifest = { version: unityPackageVersion, source, engineVersion: null, assets: descriptions }
+  const manifest = { version: unityPackageVersion, source, engineVersion: null, assets: descriptions,
+    ...(exports?.unity?.editorVersion && { conversionEditorVersion: exports.unity.editorVersion }) }
   const counts = Object.create(null)
   for (const { status } of descriptions) counts[status] = (counts[status] ?? 0) + 1
   const written = descriptions.filter(entry => entry.output || entry.metadata).length
-  const report = { version: unityPackageVersion, mode: 'engineless', method: 'unitypackage-direct', counts, written,
+  const report = { version: unityPackageVersion, mode, method: 'unitypackage-direct', counts, written,
     converted: exports?.modelsConverted ?? 0, ...(exports && { export: exports }),
     limitations: ['native-unity-decoding-unavailable', ...(!exports ? ['no-generated-model-export'] : []),
       'material-graphs-not-converted'] }

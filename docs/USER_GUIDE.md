@@ -18,17 +18,22 @@ Scans keep running if you close the index dialog. Open it and select the library
 
 Open **Индекс → Импорт пакетов Unity**. In the desktop app, select or drop up to 16 `.unitypackage` files. In the browser, enter the full local path and click **Проанализировать**. Expand a package to see its contents. Select **FBX** or **GLB-предпросмотр** to request model exports, then choose **Обработать и добавить в индекс**. With multiple packages analyzed, **Обработать все пакеты** queues the remaining packages with the same formats. The jobs list displays progress and offers cancellation or retry where available.
 
-Use **Показать в индексе** after the scan completes. Supported originals such as FBX, GLB and PNG retain their original bytes and `Assets/` or `Packages/` paths. The application copies them into its data directory and uses the existing viewer. The report shows unavailable and excluded entries. Native Unity scenes and prefabs can be retained as source files and remain marked as requiring further processing. No editor is required.
+Use **Показать в индексе** after the scan completes. Supported originals such as FBX, GLB and PNG retain their original bytes and `Assets/` or `Packages/` paths. The application copies them into its data directory and uses the existing viewer. The report shows unavailable and excluded entries.
+
+**Без Unity** is the default mode. **Авто** and **С Unity Editor** also allow an installed Unity 6000 final or patch release to export supported native objects. Enter a preferred Editor version or leave it blank to use a detected installation. Both modes use the direct pipeline for supported originals. The first Editor run may download the pinned FBX Exporter and its dependencies from the Unity registry. The job keeps the original assets and reports any Editor or per-asset export issue.
 
 The job result shows the managed output directory. **Отчёт об импорте → Показать файлы** lists the result for each asset and model format. The original tree lives in `Source/`. With a format selected, the export also contains `Models/`, `Textures/`, `Materials/`, `Animations/`, `Audio/`, `Previews/` and `Metadata/`. Original FBX and GLB files can be copied directly. Blender 4.5 or newer can produce FBX and GLB derivatives from OBJ, glTF, GLB and binary FBX. Original textures are copied byte for byte. An FBX copied from the package can still need its external textures relinked. Individual conversion failures appear in the report and other assets continue.
 
-The reports are `manifest.json`, `dependencies.json` and `conversion-report.json`. They record source paths, GUIDs, available file IDs, hashes, dependency status and how each artifact was made. An unchanged archive with the same formats and Blender installation reuses verified output. Binary Unity decoding, custom destination folders, and Unreal or Fab package import remain pending.
+The Unity bridge exports whole prefabs and their mesh renderers as individual FBX files, standalone transform animations as FBX, supported readable textures as PNG and material texture bindings as JSON. GLB previews of Unity geometry use Blender. Unity scenes, binary Unity assets, assets with custom serialized components and shader graphs remain source files or diagnostic entries.
+
+The reports are `manifest.json`, `dependencies.json` and `conversion-report.json`. They record source paths, GUIDs, available file IDs, hashes, dependency status and how each artifact was made. An unchanged archive with the same mode, formats and tool installations reuses verified output. Custom destination folders and Unreal or Fab package import remain pending.
 
 ```sh
 npm run cli -- package-inspect "/absolute/path/example.unitypackage" --json
 npm run cli -- package-import "/absolute/path/example.unitypackage" --dry-run --json
 npm run cli -- package-import "/absolute/path/example.unitypackage" --json
 npm run cli -- package-import "/absolute/path/example.unitypackage" --export fbx,glb --json
+npm run cli -- package-import "/absolute/path/example.unitypackage" --mode engine-assisted --unity-version 6000.3.10f1 --export fbx,glb --json
 npm run cli -- jobs --type package-import --json
 ```
 
@@ -44,7 +49,7 @@ npm run cli -- engines --unity-project "/absolute/path/UnityProject" --json
 npm run cli -- engines --unreal-project "/absolute/path/Game.uproject" --json
 ```
 
-The Unity check reports an exact project version if installed, or a candidate from the same release series. The Unreal check reports an installation matching the project association. These results describe the installed editors. Editor-assisted export remains pending.
+The Unity check reports an exact project version if installed, or a candidate from the same release series. The Unreal check reports an installation matching the project association. Unreal Editor export remains pending.
 
 Set `ASSET_VIEWER_UNITY` or `ASSET_VIEWER_BLENDER` to an absolute executable path. Set `ASSET_VIEWER_UNITY_ROOTS` or `ASSET_VIEWER_UNREAL_ROOTS` to absolute installation directories using the operating system's PATH separator. Start or restart the app with those settings.
 

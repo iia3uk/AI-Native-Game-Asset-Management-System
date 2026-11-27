@@ -34,7 +34,7 @@ test('queue migration retains assets, leases recover, and retries commit matchin
   const other = await AssetIndex.open(database)
   let worker
   try {
-    assert.equal(index.integrity().schemaVersion, 8)
+    assert.equal(index.integrity().schemaVersion, 9)
     assert.equal(index.asset(asset.id).note, 'Keep this during migration')
     const queued = index.jobs.enqueue(id)
     assert.equal(other.jobs.enqueue(id).id, queued.id)

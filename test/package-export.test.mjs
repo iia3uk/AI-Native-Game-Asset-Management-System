@@ -93,6 +93,8 @@ test('schema 7 pending imports survive the migration and format choices distingu
     raw.exec(`DROP INDEX one_active_import_per_package;
       CREATE UNIQUE INDEX one_active_import_per_package ON processing_jobs (package_path, source_key)
         WHERE type = 'package-import' AND status IN ('pending','running');
+      ALTER TABLE processing_jobs DROP COLUMN editor_version;
+      ALTER TABLE processing_jobs DROP COLUMN engine_mode;
       ALTER TABLE processing_jobs DROP COLUMN export_formats;
       PRAGMA user_version = 7;`)
   } finally { raw.close() }
@@ -104,6 +106,14 @@ test('schema 7 pending imports survive the migration and format choices distingu
     assert.equal(index.jobs.enqueueImport(path, key, 'fbx,glb').id, exportJob.id)
     index.jobs.cancel(exportJob.id)
     assert.deepEqual(index.jobs.retry(exportJob.id).exportFormats, ['fbx', 'glb'])
+    const options = { mode: 'engine-assisted', editorVersion: '6000.3.10f1' }
+    const bridgeJob = index.jobs.enqueueImport(path, key, 'fbx,glb', options)
+    assert.notEqual(bridgeJob.id, exportJob.id)
+    assert.equal(index.jobs.enqueueImport(path, key, 'fbx,glb', options).id, bridgeJob.id)
+    index.jobs.cancel(bridgeJob.id)
+    const retried = index.jobs.retry(bridgeJob.id)
+    assert.equal(retried.engineMode, options.mode)
+    assert.equal(retried.editorVersion, options.editorVersion)
   } finally {
     await index.close()
   }

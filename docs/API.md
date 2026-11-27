@@ -27,7 +27,7 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | GET | `/api/index/quality-profiles` | Returns the six saved or default profiles and the supported field definitions |
 | POST | `/api/index/quality-profiles/:id` | `{"revision":0,"limits":{"maxTriangles":12000}}` replaces the enabled limits. `{"revision":0,"reset":true}` restores defaults. Stale revisions return 409 |
 | POST | `/api/index/packages/inspect` | `{"path":"<absolute local file>"}` returns the detected Unity package format, SHA-256, sizes, entry count and up to 500 preview entries |
-| POST | `/api/index/packages/import` | `{"path":"<absolute local file>","hash":"<SHA-256 from inspection>","formats":["fbx","glb"]}` returns 202 and the new or active import job. Omit `formats` for extraction only |
+| POST | `/api/index/packages/import` | `{"path":"<absolute local file>","hash":"<SHA-256 from inspection>","formats":["fbx","glb"]}` returns 202 and the new or active import job. The default mode `engineless` extracts originals when formats are omitted. Optional `mode` values `auto` and `engine-assisted` allow Unity for native objects and default to both formats. Optional `editorVersion` specifies the preferred Unity version in these modes |
 | GET | `/api/index/jobs/:id/manifest?limit=50&offset=0` | Lists a completed package's assets with per-format output statuses, relative paths, method and hashes. Returns `assets`, `total` and `nextOffset`. The maximum limit is 100 |
 | GET | `/api/index/engines` | Lists detected Unity, Unreal and Blender executables and available version metadata without starting an editor |
 | POST | `/api/demo` | Creates and opens a separate procedural demo session on demand |
@@ -36,7 +36,7 @@ Failed scans preserve the last committed index. Disconnection and removal of ori
 
 Automatic scans use the same queue. An explicit scan request promotes the active automatic job to a manual job if the job is still available. Disabling watching cancels queued automatic jobs and requests cancellation for running automatic jobs.
 
-The package import result contains `directory`, `report`, `reused`, `library` and `scanJobId`. Check the scan job for indexing completion. `library` and `scanJobId` are null when all items were excluded. The package path is used locally and the job list exposes its basename.
+The package import result contains `directory`, `report`, `reused`, `library` and `scanJobId`. Check the scan job for indexing completion. `library` and `scanJobId` are null when all items were excluded. The package path is used locally and the job list exposes its basename. With Unity allowed, `report.export.unity` records the Editor outcome and available versions. Per-file export entries distinguish prefab, component, mesh, animation, texture and material roles.
 
 Thumbnail requests deduplicate active jobs for the same asset version. The thumbnail route reports `available`, `missing`, `stale`, `unsupported`, `unavailable`, `limited`, or a job status. A stale source requires a new scan. The image route returns 404 when the asset, cache entry or source version is no longer available. Queued or running jobs can populate the cache after a clear.
 

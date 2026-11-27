@@ -10,6 +10,7 @@ import { locateBatchBlender } from '../../engines/blender/batch.mjs'
 import { packageExportVersion } from '../../conversion/formats.mjs'
 import { exportRecipe, verifyExports } from '../../conversion/cache.mjs'
 import { exportPackage } from '../../conversion/batch.mjs'
+import { locateUnityBridge, prepareUnityExports, removeUnityProject } from '../../engines/unity/bridge/run.mjs'
 
 const packageDirectory = 'unitypackage-v' + unityPackageVersion
 
@@ -50,11 +51,17 @@ async function reuse(root, key, hash, formats, signal) {
   }
 }
 
-export async function stageUnityPackage(directory, source, hash, { signal, onProgress, limits = packageLimits, formats = [], publish }) {
+export async function stageUnityPackage(directory, source, hash, {
+  signal, onProgress, limits = packageLimits, formats = [], mode = 'engineless', editorVersion = '', publish,
+}) {
   signal?.throwIfAborted()
   if (!hashPattern.test(hash)) throw invalid('некорректный SHA-256 пакета.')
-  const blender = formats.length ? await locateBatchBlender() : null
-  const key = formats.length ? hash + '-' + exportRecipe(formats, blender) : hash
+  const [blender, editor] = await Promise.all([
+    formats.length ? locateBatchBlender() : null,
+    mode === 'engineless' ? null : locateUnityBridge(editorVersion),
+  ])
+  const engine = editor && [mode, editorVersion, editor.identity ?? editor.issue]
+  const key = formats.length ? hash + '-' + exportRecipe(formats, blender, engine) : hash
   const root = await importRoot(directory, formats.length)
   for (const entry of await readdir(root, { withFileTypes: true })) {
     if (!entry.isDirectory() || !/^\.stage-[a-zA-Z0-9]{6}$/.test(entry.name)) continue
@@ -75,9 +82,16 @@ export async function stageUnityPackage(directory, source, hash, { signal, onPro
     if (records.hash !== hash) throw invalid('пакет изменился после анализа. Проанализируйте его снова.')
     const output = join(staging, 'output')
     await mkdir(join(output, 'Source'), { recursive: true })
-    const createExports = formats.length
-      ? entries => exportPackage({ output, scratch: staging, entries, formats, blender, signal, onProgress }) : undefined
-    const report = await packageDocuments(records, output, signal, limits, onProgress, createExports)
+    const createExports = formats.length ? async entries => {
+      const project = join(staging, 'unity')
+      try {
+        const bridge = editor && await prepareUnityExports({ project, output, entries, selection: editor, signal })
+        return await exportPackage({ output, scratch: staging, entries, formats, blender, bridge, signal, onProgress })
+      } finally {
+        if (editor) await removeUnityProject(project)
+      }
+    } : undefined
+    const report = await packageDocuments(records, output, signal, limits, onProgress, createExports, mode)
     const target = join(root, key)
     return publish({ directory: target, source: formats.length ? target : join(target, 'Source'), report, reused: false },
       () => renameSync(output, target))

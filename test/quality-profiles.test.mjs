@@ -127,7 +127,7 @@ test('schema 4 migration retains existing analysis and profile edits survive bac
 
   index = await AssetIndex.open(database)
   try {
-    assert.equal(index.integrity().schemaVersion, 8)
+    assert.equal(index.integrity().schemaVersion, 9)
     assert.deepEqual(index.inspect(asset.id), before)
     const profile = index.qualityProfiles.update('custom-project', { revision: 0, limits: { maxTriangles: 1 } })
     const snapshot = await index.backup(join(directory, 'backups'))

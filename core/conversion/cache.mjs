@@ -5,8 +5,10 @@ import { packageExportVersion } from './formats.mjs'
 
 const hashPattern = /^[0-9a-f]{64}$/
 
-export function exportRecipe(formats, blender) {
-  return createHash('sha256').update(JSON.stringify([packageExportVersion, formats, blender?.identity ?? null]))
+export function exportRecipe(formats, blender, engine) {
+  const recipe = [packageExportVersion, formats, blender?.identity ?? null]
+  if (engine) recipe.push(engine)
+  return createHash('sha256').update(JSON.stringify(recipe))
     .digest('hex').slice(0, 24)
 }
 

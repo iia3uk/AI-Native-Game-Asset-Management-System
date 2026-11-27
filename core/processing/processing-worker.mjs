@@ -105,7 +105,7 @@ export class ProcessingWorker {
   async #import(job, signal, onProgress) {
     const source = await packageSource(this.index.jobs.importSource(job.id))
     await stageUnityPackage(this.importDirectory, source, job.sourceKey, {
-      signal, onProgress, formats: job.exportFormats,
+      signal, onProgress, formats: job.exportFormats, mode: job.engineMode, editorVersion: job.editorVersion,
       publish: (result, move) => {
         signal.throwIfAborted()
         return this.index.jobs.completeImport(job.id, this.#id, () => {

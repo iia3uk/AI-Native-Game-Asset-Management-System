@@ -5,15 +5,18 @@ import { IndexInputError } from '../index/index-errors.mjs'
 
 const fields = 'id, library_id AS libraryId, type, status, priority, created_at AS createdAt, started_at AS startedAt,' +
   ' finished_at AS finishedAt, attempts, progress, result, error, trigger, cancel_requested AS cancelRequested,' +
-  ' asset_id AS assetId, source_key AS sourceKey, package_path AS packagePath, export_formats AS exportFormats'
+  ' asset_id AS assetId, source_key AS sourceKey, package_path AS packagePath, export_formats AS exportFormats,' +
+  ' engine_mode AS engineMode, editor_version AS editorVersion'
 const leaseMs = 15_000
 const now = () => new Date().toISOString()
 function shape(job) {
   if (!job) return job
-  const { packagePath, exportFormats, ...fields } = job
+  const { packagePath, exportFormats, engineMode, editorVersion, ...fields } = job
   if (packagePath) {
     fields.packageName = basename(packagePath)
     if (exportFormats) fields.exportFormats = exportFormats.split(',')
+    if (engineMode !== 'engineless') fields.engineMode = engineMode
+    if (editorVersion) fields.editorVersion = editorVersion
   }
   return { ...fields, result: job.result && JSON.parse(job.result), cancelRequested: Boolean(job.cancelRequested) }
 }
@@ -68,9 +71,10 @@ export class ProcessingJobs {
     return this.get(id)
   }
 
-  #activeImport(path, key, exportFormats) {
+  #activeImport(path, key, exportFormats, mode, editorVersion) {
     return this.#db.prepare(`SELECT id FROM processing_jobs WHERE type = 'package-import' AND package_path = ?
-      AND source_key = ? AND export_formats = ? AND status IN ('pending','running')`).get(path, key, exportFormats)
+      AND source_key = ? AND export_formats = ? AND engine_mode = ? AND editor_version = ?
+      AND status IN ('pending','running')`).get(path, key, exportFormats, mode, editorVersion)
   }
 
   #enforceImportLimit() {
@@ -79,14 +83,15 @@ export class ProcessingJobs {
     if (count >= 16) throw new IndexInputError('Очередь импорта заполнена.')
   }
 
-  enqueueImport(path, key, exportFormats = '') {
+  enqueueImport(path, key, exportFormats = '', { mode = 'engineless', editorVersion = '' } = {}) {
     return transaction(this.#db, () => {
-      const current = this.#activeImport(path, key, exportFormats)
+      const current = this.#activeImport(path, key, exportFormats, mode, editorVersion)
       if (current) return this.get(current.id)
       this.#enforceImportLimit()
       const id = randomUUID()
-      this.#db.prepare(`INSERT INTO processing_jobs (id, type, status, priority, created_at, source_key, package_path, export_formats)
-        VALUES (?, 'package-import', 'pending', 0, ?, ?, ?, ?)`).run(id, now(), key, path, exportFormats)
+      this.#db.prepare(`INSERT INTO processing_jobs (id, type, status, priority, created_at, source_key, package_path,
+        export_formats, engine_mode, editor_version) VALUES (?, 'package-import', 'pending', 0, ?, ?, ?, ?, ?, ?)`)
+        .run(id, now(), key, path, exportFormats, mode, editorVersion)
       return this.get(id)
     })
   }
@@ -138,7 +143,8 @@ export class ProcessingJobs {
       const job = this.get(id)
       if (!job || !['failed', 'interrupted', 'cancelled'].includes(job.status) || job.attempts >= 3) return null
       if (job.type === 'package-import') {
-        if (this.#activeImport(this.importSource(job.id), job.sourceKey, job.exportFormats?.join(',') ?? '')) return null
+        if (this.#activeImport(this.importSource(job.id), job.sourceKey, job.exportFormats?.join(',') ?? '',
+          job.engineMode ?? 'engineless', job.editorVersion ?? '')) return null
         this.#enforceImportLimit()
       } else {
         const library = this.#db.prepare('SELECT id FROM libraries WHERE id = ? AND enabled = 1').get(job.libraryId)

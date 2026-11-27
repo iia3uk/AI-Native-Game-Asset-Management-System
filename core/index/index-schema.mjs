@@ -173,7 +173,19 @@ const packageExports = `
     WHERE type = 'package-import' AND status IN ('pending','running');
 `
 
-export const schemaVersion = 8
+const engineMode = `
+  ALTER TABLE processing_jobs ADD COLUMN engine_mode TEXT NOT NULL DEFAULT 'engineless'
+    CHECK (engine_mode IN ('engineless', 'auto', 'engine-assisted') AND
+      (type = 'package-import' OR engine_mode = 'engineless'));
+  ALTER TABLE processing_jobs ADD COLUMN editor_version TEXT NOT NULL DEFAULT ''
+    CHECK (length(editor_version) <= 32 AND (engine_mode != 'engineless' OR editor_version = ''));
+  DROP INDEX one_active_import_per_package;
+  CREATE UNIQUE INDEX one_active_import_per_package
+    ON processing_jobs (package_path, source_key, export_formats, engine_mode, editor_version)
+    WHERE type = 'package-import' AND status IN ('pending','running');
+`
+
+export const schemaVersion = 9
 
 export function transaction(db, write) {
   db.exec('BEGIN IMMEDIATE')
@@ -202,6 +214,7 @@ export function migrate(db) {
     if (lockedVersion < 5) db.exec(quality)
     if (lockedVersion < 7) db.exec(packageJobs(lockedVersion))
     if (lockedVersion < 8) db.exec(packageExports)
+    if (lockedVersion < 9) db.exec(engineMode)
     db.exec('PRAGMA user_version = ' + schemaVersion)
   })
 }

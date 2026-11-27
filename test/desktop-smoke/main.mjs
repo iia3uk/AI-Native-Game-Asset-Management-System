@@ -117,16 +117,25 @@ void startDesktop(root).then(async ({ window, origin }) => {
   await waitFor("document.querySelector('#package-plans summary')?.textContent.includes('Smoke.unitypackage · 7')")
   await webContents.executeJavaScript("document.querySelector('#package-engines').click()")
   await waitFor("document.querySelector('#package-engine-list').textContent.includes('Unreal Editor') && !document.querySelector('#package-engines').disabled")
+  assert.equal(await webContents.executeJavaScript("document.querySelector('#package-editor-version-control').hidden"), true)
   await webContents.executeJavaScript(`
+    {
+      const mode = document.querySelector('#package-engine-mode')
+      mode.value = 'engine-assisted'
+      mode.dispatchEvent(new Event('change'))
+      document.querySelector('#package-editor-version').value = '6000.999.1f1'
+    }
     document.querySelector('#package-export-glb').click()
     document.querySelector('#package-plans button').click()
   `)
+  assert.equal(await webContents.executeJavaScript("document.querySelector('#package-editor-version-control').hidden"), false)
   await waitFor("document.querySelector('#package-jobs').textContent.includes('В индексе')")
   await webContents.executeJavaScript(`
     document.querySelector('#package-jobs details').open = true
     Array.from(document.querySelectorAll('#package-jobs button')).find(button => button.textContent === 'Показать файлы').click()
   `)
   await waitFor("document.querySelector('#package-jobs').textContent.includes('GLB · Оригинал · Previews/')")
+  await waitFor("document.querySelector('#package-jobs').textContent.includes('Запрошенная версия Unity недоступна')")
   await webContents.executeJavaScript("Array.from(document.querySelectorAll('#package-jobs button')).find(button => button.textContent === 'Показать в индексе').click()")
   await waitFor("document.querySelector('#index-results').textContent.includes('fixture-package.obj')")
   await webContents.executeJavaScript("Array.from(document.querySelectorAll('#index-results button')).find(button => button.textContent.startsWith('fixture-package.obj')).click()")

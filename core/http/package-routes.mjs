@@ -3,6 +3,7 @@ import { inspectUnityPackage } from '../packages/unity/inspect.mjs'
 import { packageSource } from '../packages/unity/paths.mjs'
 import { hashPattern as packageHash } from '../packages/unity/policy.mjs'
 import { packageExportFormats } from '../conversion/formats.mjs'
+import { unityImportOptions } from '../engines/unity/options.mjs'
 
 export function packageRoutes({ json, body, shutdown, wake }) {
   let inspecting = false
@@ -31,7 +32,9 @@ export function packageRoutes({ json, body, shutdown, wake }) {
     if (typeof input?.hash !== 'string' || !packageHash.test(input.hash)) {
       throw new IndexInputError('Сначала проанализируйте пакет.')
     }
-    const job = index.jobs.enqueueImport(source.path, input.hash, packageExportFormats(input.formats))
+    const options = unityImportOptions(input.mode, input.editorVersion)
+    const formats = packageExportFormats(input.formats) || (options.mode === 'engineless' ? '' : 'fbx,glb')
+    const job = index.jobs.enqueueImport(source.path, input.hash, formats, options)
     wake()
     return json(response, 202, { job })
   }
