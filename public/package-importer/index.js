@@ -1,5 +1,6 @@
 import { mountEngineStatus } from './engine-status.js'
 import { mountPackageFolder } from './folder.js'
+import { formatLabel, isUnityBinary } from './formats.js'
 import { appendManifest, assetLabel, describeIssue } from './report.js'
 import { mountImportOptions } from './import-options.js'
 
@@ -114,9 +115,10 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
         element('p', record.result.directory))
       const materials = record.result.report.materials
       if (materials?.written) details.append(element('p', 'Описаний материалов · ' + materials.written))
-      if (record.result.report.packageFormat === 'unityfs') {
-        const { format, unityVersion, converted, total } = record.result.report
-        details.append(element('p', 'UnityFS ' + format + ' · Unity ' + unityVersion + ' · Декодировано ' + converted + ' из ' + total))
+      if (isUnityBinary(record.result.report.packageFormat)) {
+        const { packageFormat, format, unityVersion, converted, total } = record.result.report
+        details.append(element('p', formatLabel(packageFormat) + ' ' + format + ' · Unity ' + unityVersion +
+          ' · Декодировано ' + converted + ' из ' + total))
       }
       if (record.result.report.packageFormat === 'unreal-pak') {
         const { containerVersion, extracted, total } = record.result.report
@@ -146,7 +148,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
   }
 
   async function queuePlan(target, plan, options) {
-    if (plan.format === 'unityfs') options = { mode: 'engineless', formats: options.formats }
+    if (isUnityBinary(plan.format)) options = { mode: 'engineless', formats: options.formats }
     if (plan.format === 'unreal-pak') options = { mode: 'engineless' }
     await json(packagesRoute + '/import', post({ ...target, hash: plan.hash, ...options }))
     const key = selectionKey(target)
@@ -183,8 +185,9 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
       preview.append(element('li', [assetLabel(asset), status, asset.issue && describeIssue(asset.issue)].filter(Boolean).join(' · ')))
     }
     details.append(element('summary', selectionLabel(target) + ' · ' + plan.total + ' записей'), preview)
-    if (plan.format === 'unityfs') {
-      details.insertBefore(element('p', 'UnityFS ' + plan.containerVersion + ' · Unity ' + plan.unityVersion + ' · Без Unity Editor'), preview)
+    if (isUnityBinary(plan.format)) {
+      details.insertBefore(element('p', formatLabel(plan.format) + ' ' + plan.containerVersion +
+        ' · Unity ' + plan.unityVersion + ' · Без Unity Editor'), preview)
     }
     if (plan.format === 'unreal-pak') {
       details.insertBefore(element('p', 'Unreal Pak ' + plan.containerVersion + ' · Извлечение исходных файлов'), preview)

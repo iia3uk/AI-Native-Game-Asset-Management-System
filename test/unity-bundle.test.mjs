@@ -17,6 +17,7 @@ import { buildAssetBundleFixture } from './fixtures/unity-bundle/project.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 import { verifyBundleAudio } from './unity-bundle/audio.mjs'
 import { readTexture } from './unity-bundle/png.mjs'
+import { verifyStandaloneUnity } from './unity-bundle/serialized.mjs'
 import { verifyBundleSprites } from './unity-bundle/sprites.mjs'
 
 const run = promisify(execFile)
@@ -244,7 +245,7 @@ test('Unity builds native UnityFS bundles and the independent worker indexes tex
     await writeFile(join(output.output, entry.artifact.path), 'tampered cache')
     const corrupt = await waitForImport(server, alternate, plan.hash, ['fbx'])
     assert.equal(corrupt.status, 'failed')
-    assert.match(corrupt.error, /Кеш импорта UnityFS повреждён/)
+    assert.match(corrupt.error, /Кеш декодирования Unity повреждён/)
     assert.deepEqual(await readFile(alternate), before)
   } finally {
     await server.close()
@@ -253,4 +254,6 @@ test('Unity builds native UnityFS bundles and the independent worker indexes tex
   await verifyBundleSprites(root, spriteData, client(spriteData))
   const audioData = join(root, 'audio-data')
   await verifyBundleAudio(root, audioData, client(audioData), worker)
+  const standaloneData = join(root, 'standalone-data')
+  await verifyStandaloneUnity(root, standaloneData, client(standaloneData), worker, version)
 })

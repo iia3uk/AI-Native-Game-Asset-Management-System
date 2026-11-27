@@ -21,7 +21,7 @@ async function hasPcmHeader(file, { channels, sampleRate }, size) {
   }
 }
 
-export async function saveBundleAudio(asset, stage, store, converterVersion) {
+export async function saveBundleAudio(asset, stage, store, { method, converterVersion }) {
   const { file: staged, size, ...entry } = asset
   const file = await fileInfo(stage, staged)
   if (!await hasPcmHeader(file, entry.audio, size))
@@ -29,7 +29,7 @@ export async function saveBundleAudio(asset, stage, store, converterVersion) {
   const { id, label } = bundleIdentity(entry)
   const name = label ? 'Audio-' + label + '.wav' : 'Audio.wav'
   const artifact = await store.save('Audio/' + id + '/' + name, file, {
-    status: 'converted', format: 'wav', role: 'audio', method: 'assetstools-unityfs-fsb5-pcm16', converterVersion,
+    status: 'converted', format: 'wav', role: 'audio', method: method + '-fsb5-pcm16', converterVersion,
   })
   return { ...entry, id, status: artifact.status, artifact }
 }

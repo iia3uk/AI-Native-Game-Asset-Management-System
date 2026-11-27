@@ -26,7 +26,8 @@ export async function stageBundle(source, workspace, inspectOnly, signal) {
   const after = await fileInfo(source.root, source.file.path)
   if (!after || !sameFile(after.info, source.file.info)) return 'unity-bundle-source-changed'
   await mkdir(join(workspace, 'output'))
-  await writeFile(join(workspace, 'request.json'), JSON.stringify({ protocol: 1, inspectOnly, outputLimit }),
+  await writeFile(join(workspace, 'request.json'), JSON.stringify({ protocol: 1, inspectOnly, outputLimit,
+    serialized: source.serialized }),
     { flag: 'wx', signal })
   return null
 }

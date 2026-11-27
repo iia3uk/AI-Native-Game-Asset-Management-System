@@ -1,12 +1,12 @@
 using AssetsTools.NET;
 using AssetViewer.UnityBundle.Formats;
-using AssetViewer.UnityBundle.UnityFs;
+using AssetViewer.UnityBundle.Objects.Resources;
 
 namespace AssetViewer.UnityBundle.Objects.Textures;
 
 internal static class Texture2D
 {
-    public static Product Read(AssetTypeValueField field, string member, BundleResources resources, bool inspectOnly,
+    public static Product Read(AssetTypeValueField field, string member, SerializedResources resources, bool inspectOnly,
         long outputLimit)
     {
         var width = field["m_Width"].AsInt;

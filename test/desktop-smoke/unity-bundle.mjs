@@ -1,11 +1,14 @@
 import { basename } from 'node:path'
 
-export async function verifyUnityBundle(webContents, waitFor, fixture) {
+export async function verifyUnityBundle(webContents, waitFor, fixture, { standalone = false } = {}) {
   await webContents.executeJavaScript(`
+    if (!document.querySelector('#index-dialog').open) document.querySelector('#index-mode').click()
+    document.querySelector('#package-importer').open = true
     document.querySelector('#package-path').value = ${JSON.stringify(fixture)}
     document.querySelector('#package-form').requestSubmit()
   `)
-  await waitFor("document.querySelector('#package-plans').textContent.includes('UnityFS 8')")
+  const label = standalone ? 'Бинарный файл Unity' : 'UnityFS 8'
+  await waitFor(`document.querySelector('#package-plans').textContent.includes(${JSON.stringify(label)})`)
   await waitFor("document.querySelector('#package-plans').textContent.includes('Triangle ·')")
   const compressed = await webContents.executeJavaScript("document.querySelector('#package-plans').textContent.includes('StreamedDXT5 · DXT5')")
   await webContents.executeJavaScript("document.querySelector('#package-plans button').click()")
@@ -17,7 +20,8 @@ export async function verifyUnityBundle(webContents, waitFor, fixture) {
     bundle.querySelector('details').open = true
     Array.from(bundle.querySelectorAll('button')).find(button => button.textContent === 'Показать файлы').click()
   }`)
-  await waitFor(`(${row})?.textContent.includes('Mesh-Triangle.glb') && (${row})?.textContent.includes('Texture-Albedo.png')`)
+  await waitFor(`(${row})?.textContent.includes('Mesh-Triangle.glb')`)
+  if (!standalone) await waitFor(`(${row})?.textContent.includes('Texture-Albedo.png')`)
   if (compressed) {
     await waitFor(`(${row})?.textContent.includes('Texture-InlineDXT1.png') && (${row})?.textContent.includes('Texture-StreamedDXT5.png')`)
   }

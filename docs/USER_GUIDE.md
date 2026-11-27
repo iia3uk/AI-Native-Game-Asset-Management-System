@@ -16,7 +16,7 @@ Scans keep running if you close the index dialog. Open it and select the library
 
 ## Import a Unity package
 
-Open **Индекс → Импорт пакетов Unity и Unreal**. In the desktop app, select or drop up to 16 Unity packages, UnityFS containers or Unreal Pak archives. In the browser, enter the full local path and click **Проанализировать**. Expand a package to see its contents. Select **FBX** or **GLB-предпросмотр** to request Unity model exports, then choose **Обработать и добавить в индекс**. With multiple packages analyzed, **Обработать проанализированные пакеты** queues the remaining packages using settings supported by each format. The jobs list displays progress and offers cancellation or retry where available.
+Open **Индекс → Импорт пакетов Unity и Unreal**. In the desktop app, select or drop up to 16 Unity packages, UnityFS containers, standalone binary Unity files or Unreal Pak archives. In the browser, enter the full local path and click **Проанализировать**. Expand a package to see its contents. Select **FBX** or **GLB-предпросмотр** to request Unity model exports, then choose **Обработать и добавить в индекс**. With multiple packages analyzed, **Обработать проанализированные пакеты** queues the remaining packages using settings supported by each format. The jobs list displays progress and offers cancellation or retry where available.
 
 For one-time folder import, expand **Найти пакеты в папке** and choose the directory or enter its absolute path. Search checks nested files by header or trailer, including renamed files. A GZIP file is a Unity Package candidate until analysis checks its archive contents. Select files and click **Проанализировать выбранные**, then queue the analyzed packages. Each page contains up to 16 files. Queue a page before analyzing the next one. Use a smaller subfolder if the search reaches its limit of 500 candidates or 20,000 directory entries.
 
@@ -66,7 +66,16 @@ Unpacked sprites with an integer pixel rectangle and a supported base texture in
 
 Mono and stereo AudioClips with 16-bit PCM in a single-sound FSB5 bank produce WAV files with the same sample values and sample rate. Open a WAV result from the index with **Открыть во вьюере** to play it. Export supports an embedded `.resource` entry and a maximum WAV size of 32 MiB. Vorbis, other codecs and external resource references are reported individually. [Unity audio import settings](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/AudioImporterSampleSettings.html).
 
-The report marks unsupported layouts and classes. Meshes with skinning, blend shapes, mesh compression, extra vertex attributes or multiple vertex streams are outside the current decoder. Streamed textures, additional pixel formats, material bindings and bundle dependency analysis remain pending. A repeated import with the same SHA-256, output formats and tool versions reuses verified results.
+The report marks unsupported layouts and classes. Meshes with skinning, blend shapes, mesh compression, extra vertex attributes or multiple vertex streams are outside the current decoder. Additional pixel formats, material bindings and bundle dependency analysis remain pending. A repeated import with the same SHA-256, output formats and tool versions reuses verified results.
+
+## Import a standalone binary Unity file
+
+Select a binary `.asset` or `.assets` file in the same importer, or find it with **Найти пакеты в папке**. The decoder checks the file header and reads little-endian formats 22 and 23 with embedded type trees. Supported static meshes become GLB with optional FBX, and supported inline textures become PNG. The decoder reports assets that need a companion file or whose type tree is missing. Text-based Unity YAML files continue to be handled by the Unity package importer.
+
+```sh
+npm run cli -- package-inspect "/absolute/path/mesh.asset" --json
+npm run cli -- package-import "/absolute/path/mesh.asset" --export fbx --json
+```
 
 ## Automatically import packages from a folder
 

@@ -31,7 +31,7 @@ export async function runPackageFolder(input, paths, values, waitForImport) {
           const by = AbortSignal.timeout(120_000)
           const plan = await inspectPackage(source, { signal: AbortSignal.any([stop.signal, by]) })
           const recipe = packageOptions(plan.format, plan.format === 'unitypackage' ? options :
-            plan.format === 'unityfs' ? { formats: options.formats } : {})
+            { formats: plan.format === 'unreal-pak' ? undefined : options.formats })
           const queued = index.jobs.enqueueImport(source.path, plan.hash, recipe.formats, recipe)
           results.push({ path, ...await waitForImport(index, queued.id, paths.imports, stop.signal) })
         } catch (error) {

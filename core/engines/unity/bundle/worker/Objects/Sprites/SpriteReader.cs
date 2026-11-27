@@ -1,11 +1,11 @@
 using System.Globalization;
 using AssetsTools.NET;
 using AssetViewer.UnityBundle.Objects.Textures;
-using AssetViewer.UnityBundle.UnityFs;
+using AssetViewer.UnityBundle.Objects.Resources;
 
 namespace AssetViewer.UnityBundle.Objects.Sprites;
 
-internal sealed class SpriteReader(string member, BundleResources resources, bool inspectOnly,
+internal sealed class SpriteReader(string member, SerializedResources resources, bool inspectOnly,
     Func<long, AssetTypeValueField> readTexture)
 {
     private long cachedPathId;

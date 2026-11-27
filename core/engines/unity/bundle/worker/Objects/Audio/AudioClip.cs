@@ -1,12 +1,12 @@
 using AssetsTools.NET;
 using AssetViewer.UnityBundle.Formats;
-using AssetViewer.UnityBundle.UnityFs;
+using AssetViewer.UnityBundle.Objects.Resources;
 
 namespace AssetViewer.UnityBundle.Objects.Audio;
 
 internal static class AudioClip
 {
-    public static Product Read(AssetTypeValueField field, string member, BundleResources resources,
+    public static Product Read(AssetTypeValueField field, string member, SerializedResources resources,
         bool inspectOnly, long outputLimit)
     {
         var source = field["m_Resource"];

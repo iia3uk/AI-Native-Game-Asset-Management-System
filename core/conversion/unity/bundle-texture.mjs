@@ -4,7 +4,7 @@ import { fileInfo } from '../../files/asset-files.mjs'
 import { encodePngScanlines } from '../../files/png.mjs'
 import { bundleIdentity } from './bundle-names.mjs'
 
-export async function saveBundleTexture(asset, stage, store, converterVersion, signal) {
+export async function saveBundleTexture(asset, stage, store, { method, converterVersion }, signal) {
   const { file: staged, size: pixelBytes, ...entry } = asset
   const { width, height } = entry
   const source = await fileInfo(stage, staged)
@@ -24,7 +24,7 @@ export async function saveBundleTexture(asset, stage, store, converterVersion, s
   const kind = entry.sprite ? 'Sprite' : 'Texture'
   const filename = kind + (label ? '-' + label : '') + '.png'
   const artifact = await store.save('Textures/' + id + '/' + filename, await fileInfo(stage, target), {
-    status: 'converted', format: 'png', method: 'assetstools-unityfs-' +
+    status: 'converted', format: 'png', method: method + '-' +
       (entry.sprite ? 'sprite-' : '') + entry.textureEncoding, converterVersion,
   })
   return { ...entry, id, status: artifact.status, artifact }

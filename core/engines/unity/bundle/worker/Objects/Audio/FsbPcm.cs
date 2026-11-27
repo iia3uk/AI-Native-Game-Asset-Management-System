@@ -1,5 +1,5 @@
 using System.Buffers.Binary;
-using AssetViewer.UnityBundle.UnityFs;
+using AssetViewer.UnityBundle.Objects.Resources;
 
 namespace AssetViewer.UnityBundle.Objects.Audio;
 

@@ -62,6 +62,8 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     ...unrealBridgeScripts.map(file => 'core/engines/unreal/bridge/editor/' + file),
     'public/package-importer/index.js',
     'public/package-importer/folder.js',
+    'public/package-importer/formats.js',
+    'core/engines/unity/serialized/header.mjs',
     'node_modules/three/build/three.module.js',
     'node_modules/three/examples/jsm/controls/OrbitControls.js',
     'node_modules/three/examples/jsm/loaders/GLTFLoader.js',

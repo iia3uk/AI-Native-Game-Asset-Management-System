@@ -31,14 +31,14 @@ async function exportFbx(source, relative, stage, store, options, signal) {
   }
 }
 
-export async function saveBundleMesh(asset, stage, store, converterVersion, fbx, signal) {
+export async function saveBundleMesh(asset, stage, store, { method, converterVersion }, fbx, signal) {
   const { file: staged, size, ...entry } = asset
   const file = await modelArtifact(stage, staged, 'glb', signal)
   if (!file || file.info.size !== size) return { ...entry, status: 'failed', issue: 'unity-bundle-mesh-output' }
   const { id, label } = bundleIdentity(entry)
   const filename = label ? 'Mesh-' + label : 'Mesh'
   const artifact = await store.save('Previews/' + id + '/' + filename + '.glb', file, {
-    status: 'converted', format: 'glb', method: 'assetstools-unityfs-static-mesh', converterVersion,
+    status: 'converted', format: 'glb', method: method + '-static-mesh', converterVersion,
   })
   const outputs = fbx && artifact.status === 'converted' &&
     [await exportFbx(artifact.path, 'Models/' + id + '/' + filename + '.fbx', stage, store, fbx, signal)]

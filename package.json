@@ -16,7 +16,7 @@
     "postinstall": "node scripts/patch-three.mjs",
     "start": "node server.mjs",
     "desktop": "electron .",
-    "test:desktop": "electron test/desktop-smoke",
+    "test:desktop": "node test/desktop-smoke/run.mjs",
     "build:cue4parse": "node scripts/build-cue4parse.mjs",
     "build:unity-bundle": "node scripts/build-unity-bundle.mjs",
     "prebuild:windows": "npm run build:unity-bundle -- win-x64 && npm run build:cue4parse -- win-x64",

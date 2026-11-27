@@ -1,4 +1,4 @@
-const labels = { unitypackage: 'Возможный Unity Package', unityfs: 'UnityFS', 'unreal-pak': 'Unreal Pak' }
+import { formatLabel } from './formats.js'
 
 export function mountPackageFolder({ $, scan, inspect, chooseFolder, batchSize }) {
   const get = id => $('folder-' + id)
@@ -29,7 +29,7 @@ export function mountPackageFolder({ $, scan, inspect, chooseFolder, batchSize }
       checkbox.type = 'checkbox'
       checkbox.value = path
       checkbox.checked = true
-      label.append(checkbox, ' ' + path + ' · ' + (labels[format] ?? format))
+      label.append(checkbox, ' ' + path + ' · ' + formatLabel(format))
       row.append(label)
       list.append(row)
     }

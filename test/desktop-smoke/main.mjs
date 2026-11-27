@@ -18,11 +18,15 @@ import { unityEntries, unityFixtureEntries, writeUnityFixture } from '../fixture
 
 const screenshot = process.env.ASSET_VIEWER_SMOKE_SCREENSHOT
 const root = fileURLToPath(new URL('../../', import.meta.url))
-if (!process.env.ASSET_VIEWER_DATA_DIR) throw new Error('Provide isolated ASSET_VIEWER_DATA_DIR for this test.')
-process.env.ASSET_VIEWER_PORT ||= '0'
-app.commandLine.appendSwitch('use-angle', 'swiftshader')
 
-void startDesktop(root, { showWindow: false }).then(async ({ window, origin }) => {
+async function launchSmoke() {
+  if (!process.env.ASSET_VIEWER_DATA_DIR) throw new Error('Run npm run test:desktop to create isolated smoke-test data.')
+  process.env.ASSET_VIEWER_PORT ||= '0'
+  app.commandLine.appendSwitch('use-angle', 'swiftshader')
+  return startDesktop(root, { showWindow: false })
+}
+
+void launchSmoke().then(async ({ window, origin }) => {
   const { webContents } = window
   webContents.setBackgroundThrottling(false)
   const externalRequests = []
@@ -161,11 +165,13 @@ void startDesktop(root, { showWindow: false }).then(async ({ window, origin }) =
   const bundle = process.env.ASSET_VIEWER_SMOKE_BUNDLE
   const sprites = process.env.ASSET_VIEWER_SMOKE_SPRITES
   const audio = process.env.ASSET_VIEWER_SMOKE_AUDIO
+  const standalone = process.env.ASSET_VIEWER_SMOKE_STANDALONE
   const pak = process.env.ASSET_VIEWER_SMOKE_PAK === '1'
   await verifyPackageWatch(webContents, waitFor, fixtures, { bundle, pak })
   if (bundle) await verifyUnityBundle(webContents, waitFor, bundle)
   if (sprites) await verifyUnitySprites(webContents, waitFor, sprites)
   if (audio) await verifyUnityAudio(webContents, waitFor, audio)
+  if (standalone) await verifyUnityBundle(webContents, waitFor, standalone, { standalone: true })
   if (pak) await verifyUnrealPak(webContents, waitFor, fixtures)
   await verifyStartupWithoutInterface()
   assert.deepEqual(externalRequests, [])
@@ -174,6 +180,7 @@ void startDesktop(root, { showWindow: false }).then(async ({ window, origin }) =
   if (bundle) console.log('UnityFS folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
   if (sprites) console.log('UnityFS sprite inspection, queued import, dependency reporting and indexed PNG preview passed.')
   if (audio) console.log('UnityFS PCM inspection, queued import, local byte ranges and indexed WAV playback passed.')
+  if (standalone) console.log('Standalone Unity file inspection, queued import and indexed GLB preview passed.')
   if (pak) console.log('Unreal Pak folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
   app.quit()
 }).catch(error => {

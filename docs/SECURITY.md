@@ -20,6 +20,8 @@ UnityFS processing runs an independent worker on a staged copy with fixed argume
 
 The queued UnityFS path verifies the staged copy against the SHA-256 from inspection. Cache reuse checks the bounded manifest and verifies each published artifact against its recorded hash. Publication checks output formats and uses the same lease and transactional index handoff as Unity package imports.
 
+Standalone Unity decoding stages one selected file and checks its SHA-256 through the same queue. The header must describe a little-endian version 22 or 23 file, match the exact staged length and place its metadata before the object data. Supported objects use embedded type trees. The standalone resolver never reads companion files or external references.
+
 For streamed texture data, the worker accepts a reference to the serialized owner's `.resS` entry in the validated bundle directory. It checks the declared offset and size against that entry, reads only the bytes required for the highest-resolution mip and rejects output that would exceed the remaining budget before expanding the texture. The resource resolver has no filesystem path lookup.
 
 Sprite decoding follows Texture2D references only within the same validated serialized member. It checks the crop rectangle against the source dimensions and the remaining output budget. Each reader retains at most one source texture for repeated crops.

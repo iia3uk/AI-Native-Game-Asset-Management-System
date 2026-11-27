@@ -9,13 +9,13 @@ import { IndexInputError } from '../../../index/index-errors.mjs'
 
 export const bundleVersion = 1
 
-export function bundleRecipe(withFbx, blender) {
+export function bundleRecipe(withFbx, blender, method) {
   return createHash('sha256')
-    .update(JSON.stringify([bundleVersion, assetsToolsVersion, bundleDecoderRevision, withFbx, blender?.identity ?? null]))
+    .update(JSON.stringify([bundleVersion, assetsToolsVersion, bundleDecoderRevision, method, withFbx, blender?.identity ?? null]))
     .digest('hex').slice(0, 24)
 }
 
-export async function readBundleCache(root, sha256, recipe, sourceName, signal) {
+export async function readBundleCache(root, sha256, recipe, sourceName, method, signal) {
   const output = join(root, sha256 + '-' + recipe)
   const existing = await lstat(output).catch(error => {
     if (error.code === 'ENOENT') return null
@@ -29,10 +29,10 @@ export async function readBundleCache(root, sha256, recipe, sourceName, signal) 
       readBoundedText(output, 'conversion-report.json', 64 * 1024),
       fileInfo(output, 'dependencies.json'),
     ])
-    const { source, version, recipe: cachedRecipe, decoderRevision, assets } = JSON.parse(manifest)
+    const { source, version, recipe: cachedRecipe, decoderRevision, assets, method: cachedMethod } = JSON.parse(manifest)
     const report = JSON.parse(summary)
     if (!dependencies || source?.sha256 !== sha256 || version !== bundleVersion || cachedRecipe !== recipe ||
-        report?.method !== 'assetstools-unityfs' || report.converterVersion !== assetsToolsVersion ||
+        cachedMethod !== method || report?.method !== method || report.converterVersion !== assetsToolsVersion ||
         decoderRevision !== bundleDecoderRevision || report.decoderRevision !== decoderRevision || !Array.isArray(assets) ||
         assets.length !== report.total || assets.length > 10_000 ||
         report.converted !== assets.filter(asset => asset.status === 'converted').length ||
@@ -46,6 +46,6 @@ export async function readBundleCache(root, sha256, recipe, sourceName, signal) 
     return { ...report, output, sourceName, reused: true }
   } catch {
     signal?.throwIfAborted()
-    throw new IndexInputError('Кеш импорта UnityFS повреждён.')
+    throw new IndexInputError('Кеш декодирования Unity повреждён.')
   }
 }

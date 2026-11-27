@@ -15,7 +15,7 @@ import { bundleRecipe, bundleVersion, readBundleCache } from './cache.mjs'
 import { bundleDependencies } from './dependencies.mjs'
 import { readBundleSource, selectBundlePath } from './source.mjs'
 
-async function saveOutputs(workspace, source, hash, recipe, report, { withFbx, blender, signal, onProgress }) {
+async function saveOutputs(workspace, source, hash, recipe, report, { method, withFbx, blender, signal, onProgress }) {
   const output = join(workspace, 'publish')
   const results = join(workspace, 'output')
   await mkdir(output)
@@ -25,18 +25,19 @@ async function saveOutputs(workspace, source, hash, recipe, report, { withFbx, b
   const fbx = withFbx && { blender, deadline, signal: signal ? AbortSignal.any([signal, deadline]) : deadline }
   const assets = []
   const counts = {}
+  const decoder = { method, converterVersion: assetsToolsVersion }
   for (const asset of report.assets) {
     signal?.throwIfAborted()
     let result = asset
-    if (asset.file && asset.format === 'glb') result = await saveBundleMesh(asset, results, store, assetsToolsVersion, fbx, signal)
-    if (asset.file && asset.format === 'png') result = await saveBundleTexture(asset, results, store, assetsToolsVersion, signal)
-    if (asset.file && asset.format === 'wav') result = await saveBundleAudio(asset, results, store, assetsToolsVersion)
+    if (asset.file && asset.format === 'glb') result = await saveBundleMesh(asset, results, store, decoder, fbx, signal)
+    if (asset.file && asset.format === 'png') result = await saveBundleTexture(asset, results, store, decoder, signal)
+    if (asset.file && asset.format === 'wav') result = await saveBundleAudio(asset, results, store, decoder)
     assets.push(result)
     counts[result.status] = (counts[result.status] ?? 0) + 1
     onProgress?.(50 + Math.floor(40 * assets.length / report.assets.length))
   }
   const converted = counts.converted ?? 0
-  const summary = { status: converted ? 'completed' : 'no-compatible-inputs', method: 'assetstools-unityfs',
+  const summary = { status: converted ? 'completed' : 'no-compatible-inputs', method,
     converterVersion: assetsToolsVersion, format: report.format, unityVersion: report.unityVersion,
     decoderRevision: report.decoderRevision,
     total: assets.length, converted, skipped: assets.length - converted, counts }
@@ -52,9 +53,9 @@ async function saveOutputs(workspace, source, hash, recipe, report, { withFbx, b
   return { summary, output, cacheable }
 }
 
-export async function processUnityBundle(selected, { directory, inspectOnly = false, withFbx = false, expectedHash,
+export async function processUnityBundle(selected, { directory, inspectOnly = false, withFbx = false, expectedHash, serialized = false,
   signal, onProgress, publish = (result, move) => { move(); return result } }) {
-  const source = await readBundleSource(selected, signal)
+  const source = await readBundleSource(selected, serialized, signal)
   if (source.status) return source
   const root = inspectOnly ? await realpath(tmpdir()) : await packageWorkspaceRoot(directory, 'unity-bundle-v' + bundleVersion)
   const workspace = await mkdtemp(join(root, inspectOnly ? 'asset-viewer-bundle-' : '.stage-'))
@@ -65,9 +66,10 @@ export async function processUnityBundle(selected, { directory, inspectOnly = fa
     if (expectedHash && expectedHash !== hash) return { status: 'failed', issue: 'unity-bundle-source-changed' }
     onProgress?.(15)
     const blender = withFbx && !inspectOnly ? await locateBatchBlender() : null
-    const recipe = bundleRecipe(withFbx, blender)
+    const method = serialized ? 'assetstools-unity-serialized' : 'assetstools-unityfs'
+    const recipe = bundleRecipe(withFbx, blender, method)
     if (!inspectOnly) {
-      const cached = await readBundleCache(root, hash, recipe, source.name, signal)
+      const cached = await readBundleCache(root, hash, recipe, source.name, method, signal)
       if (cached) {
         signal?.throwIfAborted()
         return publish(cached, () => {})
@@ -79,19 +81,20 @@ export async function processUnityBundle(selected, { directory, inspectOnly = fa
     if (decoded?.status === 'completed' && decoded.decoderRevision !== bundleDecoderRevision) {
       return { status: 'failed', issue: 'unity-bundle-worker-revision' }
     }
-    const report = bundleResult(decoded, inspectOnly)
+    const report = bundleResult(decoded, inspectOnly, serialized)
     if (!report) return { status: 'failed', issue: 'unity-bundle-worker-protocol' }
     if (report.status !== 'completed') return report
     if (inspectOnly) return { ...report, hash, total: report.assets.length, assets: report.assets.slice(0, 500) }
     onProgress?.(50)
-    const { summary, output, cacheable } = await saveOutputs(workspace, source, hash, recipe, report, { withFbx, blender, signal, onProgress })
+    const { summary, output, cacheable } = await saveOutputs(workspace, source, hash, recipe, report,
+      { method, withFbx, blender, signal, onProgress })
     const destination = join(root, cacheable ? hash + '-' + recipe : randomUUID())
     signal?.throwIfAborted()
     try {
       return publish({ ...summary, output: destination, sourceName: source.name, reused: false }, () => renameSync(output, destination))
     } catch (error) {
       if (!cacheable || !['EEXIST', 'ENOTEMPTY', 'EPERM'].includes(error.code)) throw error
-      const cached = await readBundleCache(root, hash, recipe, source.name, signal)
+      const cached = await readBundleCache(root, hash, recipe, source.name, method, signal)
       if (!cached) throw error
       signal?.throwIfAborted()
       return publish(cached, () => {})

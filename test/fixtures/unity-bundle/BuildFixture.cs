@@ -7,6 +7,7 @@ public static class AssetViewerBundleFixture
 {
     public static void Build()
     {
+        EditorSettings.serializationMode = SerializationMode.ForceBinary;
         const string root = "Assets/BundleFixture";
         Directory.CreateDirectory(root);
         AssetDatabase.Refresh();
