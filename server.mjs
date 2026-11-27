@@ -7,6 +7,8 @@ import { pipeline } from 'node:stream/promises'
 import { parseArgs } from 'node:util'
 import { blenderPreview, browseFolder, closePreviews, scanFolder } from './scripts/local-library.mjs'
 import { checkedPath, fileInfo, readBoundedText } from './core/asset-files.mjs'
+import { dataPaths } from './core/data-paths.mjs'
+import { generateFixtures } from './scripts/generate-fixtures.mjs'
 
 const project = fileURLToPath(new URL('.', import.meta.url))
 try {
@@ -38,6 +40,7 @@ let reviewWrites = Promise.resolve()
 let viewFiles
 let viewFilesUpdated
 const folders = new Map()
+let demoRequest
 
 async function safeFile(base, subpath) {
   const file = await fileInfo(base, subpath)
@@ -154,6 +157,14 @@ async function openFolder(path) {
   return folder
 }
 
+async function openDemo() {
+  const root = dataPaths().demo
+  await generateFixtures(root)
+  const folder = await openFolder(root)
+  folder.info.demo = true
+  return folder.info
+}
+
 async function handleFolder(request, response, path) {
   if (request.method === 'POST' && !allowsWrite(request)) {
     return json(response, 403, { error: 'Недопустимый источник запроса' })
@@ -256,6 +267,11 @@ const server = createServer(async (request, response) => {
     } catch {
       json(response, 400, { error: 'Некорректный путь запроса' })
       return
+    }
+    if (request.method === 'POST' && path === '/api/demo') {
+      if (!allowsWrite(request)) return json(response, 403, { error: 'Недопустимый источник запроса' })
+      demoRequest ??= openDemo().catch(error => { demoRequest = undefined; throw error })
+      return json(response, 200, await demoRequest)
     }
     if (request.method === 'POST' && path === '/api/review') {
       await changeReview(request, response)

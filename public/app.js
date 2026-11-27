@@ -12,7 +12,7 @@ const ui = Object.fromEntries([
   'view-options', 'lighting', 'part-tools', 'preview-part', 'color-source',
   'selected-name', 'decision', 'note', 'save-note', 'notice', 'file-tabs', 'file-search', 'file-list',
   'license', 'fab-link', 'source-link',
-  'fab-mode', 'open-folder', 'folder-tools', 'folder-root', 'rescan-folder', 'folder-dialog', 'folder-form',
+  'fab-mode', 'open-folder', 'demo-mode', 'folder-tools', 'folder-root', 'rescan-folder', 'folder-dialog', 'folder-form',
   'folder-path', 'folder-pick', 'folder-status', 'folder-cancel', 'folder-submit', 'library-title', 'category-wrap',
   'folder-browser', 'add-folder', 'remove-folder',
   'manual-texture', 'manual-material', 'manual-search', 'manual-image', 'manual-apply', 'manual-status',
@@ -63,7 +63,7 @@ function savedFolders() {
 }
 
 function saveFolders() {
-  localStorage.setItem(foldersStorage, JSON.stringify([...localFolders.values()].map(({ id, root }) => ({ id, root }))))
+  localStorage.setItem(foldersStorage, JSON.stringify(userFolders().map(({ id, root }) => ({ id, root }))))
 }
 
 function registerFolder(info) {
@@ -87,8 +87,10 @@ async function restoreFolders() {
   for (const result of results) if (result.status === 'fulfilled') registerFolder(result.value)
 }
 
-const localMarks = () => Object.assign({}, ...[...localFolders.values()].map(folder => folder.marks))
-const combinedImages = () => [...localFolders.values()].flatMap(folder => folder.images)
+const userFolders = () => [...localFolders.values()].filter(folder => !folder.demo)
+const activeFolders = () => state.folder?.demo ? [state.folder] : userFolders()
+const localMarks = () => Object.assign({}, ...activeFolders().map(folder => folder.marks))
+const combinedImages = () => activeFolders().flatMap(folder => folder.images)
 const localGroupId = (folder, group) => folder.key + '.' + group
 const imageId = file => file.selectionId ?? file.id
 
@@ -218,7 +220,7 @@ async function ensurePreview(file, folder) {
 
 function modelResources(folder, files) {
   if (!folder) return files
-  const otherImages = [...localFolders.values()].filter(other => other.key !== folder.key).flatMap(other => other.images)
+  const otherImages = folder.demo ? [] : userFolders().filter(other => other.key !== folder.key).flatMap(other => other.images)
   return otherImages.length ? folder.resources.concat(otherImages) : folder.resources
 }
 
@@ -242,7 +244,8 @@ async function thumbnailInput(pack, category, candidateIds) {
 
 function updateTabs() {
   pressed(ui['fab-mode'], !state.folder)
-  pressed(ui['open-folder'], Boolean(state.folder))
+  pressed(ui['open-folder'], Boolean(state.folder && !state.folder.demo))
+  pressed(ui['demo-mode'], Boolean(state.folder?.demo))
   ui['all-packs'].setAttribute('aria-pressed', String(!state.candidates))
   ui['candidate-packs'].setAttribute('aria-pressed', String(state.candidates))
   ui['candidate-count'].textContent = counts(chosen().length)
@@ -711,7 +714,7 @@ async function saveReview(statusValue) {
 
 async function activateCatalog(folder, selection = {}) {
   state.folder = folder
-  state.packs = folder ? [...localFolders.values()].flatMap(root => root.packs.map(pack => ({
+  state.packs = folder ? activeFolders().flatMap(root => root.packs.map(pack => ({
     ...pack, id: localGroupId(root, pack.id), groupId: pack.id, folderKey: root.key,
   }))) : fab.packs
   state.marks = folder ? localMarks() : fab.marks
@@ -720,8 +723,8 @@ async function activateCatalog(folder, selection = {}) {
   void selectFile(null)
   ui.search.value = ''
   ui.search.placeholder = folder ? 'Название папки или формат' : 'Название или автор'
-  ui['library-title'].textContent = folder ? 'Папки' : 'Наборы'
-  ui['folder-tools'].hidden = !folder
+  ui['library-title'].textContent = folder?.demo ? 'Демобиблиотека' : folder ? 'Папки' : 'Наборы'
+  ui['folder-tools'].hidden = !folder || folder.demo
   ui['folder-root'].textContent = folder?.root ?? ''
   ui['folder-root'].title = folder?.root ?? ''
   ui['category-wrap'].hidden = false
@@ -729,7 +732,7 @@ async function activateCatalog(folder, selection = {}) {
   ui.category.value = ''
   const total = state.packs.reduce((sum, pack) => sum + pack.models, 0)
   ui['library-stats'].textContent = folder
-    ? counted(total, 'модель', 'модели', 'моделей') + ' · ' + counted(localFolders.size, 'ветка', 'ветки', 'веток')
+    ? counted(total, 'модель', 'модели', 'моделей') + ' · ' + counted(activeFolders().length, 'ветка', 'ветки', 'веток')
     : counts(state.packs.length) + ' наборов · ' + counts(total) + ' 3D-файлов'
   renderPacks()
   const first = state.packs.find(pack => pack.id === selection.pack) ??
@@ -778,7 +781,7 @@ ui['fab-mode'].addEventListener('click', () => {
   if (state.folder) void activateCatalog(null, fab.selection ?? {})
 })
 function showFolderDialog() {
-  ui['folder-path'].value = state.folder?.root ?? ''
+  ui['folder-path'].value = state.folder && !state.folder.demo ? state.folder.root : ''
   ui['folder-browser'].hidden = true
   fillCategories(ui['folder-category'], 'Выбрать позже', true)
   ui['folder-category'].value = ''
@@ -788,16 +791,29 @@ function showFolderDialog() {
   ui['folder-dialog'].showModal()
 }
 ui['open-folder'].addEventListener('click', async () => {
-  if (!state.folder && !localFolders.size && savedFolders().length) await restoreFolders()
-  if (!state.folder && localFolders.size) return activateCatalog(localFolders.values().next().value, localSelection)
+  const entering = !state.folder || state.folder.demo
+  if (entering && !userFolders().length && savedFolders().length) await restoreFolders()
+  if (entering && userFolders().length) return activateCatalog(userFolders()[0], localSelection)
   showFolderDialog()
+})
+ui['demo-mode'].addEventListener('click', async () => {
+  if (state.folder?.demo || ui['demo-mode'].disabled) return
+  ui['demo-mode'].disabled = true
+  try {
+    const info = await json('/api/demo', post({}))
+    await activateCatalog(registerFolder(info))
+  } catch (error) {
+    ui.notice.textContent = error.message
+  } finally {
+    ui['demo-mode'].disabled = false
+  }
 })
 ui['add-folder'].addEventListener('click', showFolderDialog)
 ui['remove-folder'].addEventListener('click', () => {
   if (!state.folder) return
   localFolders.delete(state.folder.key)
   saveFolders()
-  const next = localFolders.values().next().value
+  const next = userFolders()[0]
   void activateCatalog(next ?? null, next ? {} : fab.selection ?? {})
 })
 ui['folder-form'].addEventListener('submit', event => {
