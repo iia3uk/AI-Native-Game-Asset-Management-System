@@ -7,6 +7,9 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { inflateSync } from 'node:zlib'
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { locateBatchBlender } from '../core/engines/blender/batch.mjs'
 import { locateUnityBridge } from '../core/engines/unity/bridge/run.mjs'
 import { bundleResult } from '../core/engines/unity/bundle/protocol.mjs'
 import { locateBundleWorker } from '../core/engines/unity/bundle/run.mjs'
@@ -48,7 +51,7 @@ test('UnityFS validates decoder reports and rejects non-bundle sources without t
   assert.equal(bundleResult({ ...report, assets: [row, { ...row, output: 1 }] }, false), null)
 })
 
-test('Unity builds a native LZ4 UnityFS fixture and the independent worker publishes and indexes its RGBA texture', {
+test('Unity builds a native UnityFS bundle and the independent worker indexes decoded texture and static mesh outputs', {
   skip: process.env.ASSET_VIEWER_TEST_NATIVE_BUNDLE !== '1', timeout: 180_000,
 }, async t => {
   const root = await testDirectory(t)
@@ -65,18 +68,20 @@ test('Unity builds a native LZ4 UnityFS fixture and the independent worker publi
   assert.equal(inspection.status, 'completed', JSON.stringify(inspection))
   assert.equal(inspection.unityVersion, version)
   assert.equal(inspection.format, 8)
-  assert.equal(inspection.total, 2)
+  assert.equal(inspection.total, 3)
   const texture = inspection.assets.find(asset => asset.classId === 28)
   assert.deepEqual([texture.status, texture.width, texture.height], ['available', 4, 4])
-  assert.equal(inspection.assets.find(asset => asset.classId === 43).status, 'unsupported')
+  const mesh = inspection.assets.find(asset => asset.format === 'glb')
+  assert.deepEqual([mesh.status, mesh.vertices, mesh.triangles], ['available', 6, 2])
+  assert.ok(inspection.assets.some(asset => asset.classId === 43 && asset.status === 'unsupported'))
   await assert.rejects(readdir(data), { code: 'ENOENT' })
 
-  const output = await query('unity-bundle', input)
-  assert.equal(output.converted, 1, JSON.stringify(output))
+  const output = await query('unity-bundle', input, '--fbx')
+  assert.equal(output.converted, 2, JSON.stringify(output))
   assert.equal(output.skipped, 1)
   const manifest = JSON.parse(await readFile(join(output.output, 'manifest.json'), 'utf8'))
   assert.equal(manifest.source.sha256, createHash('sha256').update(before).digest('hex'))
-  const entry = manifest.assets.find(asset => asset.status === 'converted')
+  const entry = manifest.assets.find(asset => asset.format === 'png')
   assert.equal(entry.pathId, texture.pathId)
   const png = await readFile(join(output.output, entry.artifact.path))
   assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20), png[25]], [4, 4, 6])
@@ -87,6 +92,31 @@ test('Unity builds a native LZ4 UnityFS fixture and the independent worker publi
   const { assets } = await query('search', 'Albedo', '--library', output.library.id)
   assert.equal(assets.length, 1)
   assert.equal(assets[0].ext, 'png')
+
+  const model = manifest.assets.find(asset => asset.pathId === mesh.pathId)
+  const readProduct = async product => Uint8Array.from(await readFile(join(output.output, product.path))).buffer
+  const glb = await new GLTFLoader().parseAsync(await readProduct(model.artifact), '')
+  const geometries = []
+  glb.scene.traverse(node => { if (node.isMesh) geometries.push(node.geometry) })
+  assert.equal(geometries.length, 2)
+  assert.deepEqual([...geometries[0].index.array], [0, 2, 1])
+  assert.deepEqual([...geometries[1].index.array], [3, 5, 4])
+  assert.deepEqual([...geometries[1].attributes.position.array.subarray(9, 12)], [2, 0, -1])
+  assert.equal(geometries[0].attributes.normal.getZ(0), 1)
+  assert.deepEqual([...geometries[0].attributes.uv.array.subarray(0, 6)], [0, 1, 0, 0, 1, 1])
+  assert.equal((await query('search', 'Triangle', '--library', output.library.id)).assets.some(asset => asset.ext === 'glb'), true)
+  const [fbx] = model.exports
+  if (await locateBatchBlender()) {
+    assert.equal(fbx.status, 'converted', JSON.stringify(fbx))
+    let triangles = 0
+    const imported = new FBXLoader().parse(await readProduct(fbx), '')
+    imported.traverse(node => {
+      if (node.isMesh) triangles += (node.geometry.index?.count ?? node.geometry.attributes.position.count) / 3
+    })
+    assert.equal(triangles, 2)
+  } else {
+    assert.deepEqual(fbx, { format: 'fbx', status: 'requires-tool', issue: 'blender-unavailable' })
+  }
 
   const bad = join(root, 'Broken.bundle')
   await writeFile(bad, before.subarray(0, -1))

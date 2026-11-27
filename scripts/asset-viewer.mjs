@@ -32,7 +32,7 @@ const commands = {
   'package-inspect': { args: ['absolute-path'], options: {} },
   'package-import': { args: ['absolute-path'], options: { 'dry-run': flag, queue: flag, export: string,
     mode: string, 'unity-version': string } },
-  'unity-bundle': { args: ['absolute-path'], options: { inspect: flag } },
+  'unity-bundle': { args: ['absolute-path'], options: { inspect: flag, fbx: flag } },
   'unreal-inspect': { args: ['absolute-path'], options: {} },
   'unreal-export': { args: ['absolute-path'], options: { 'unreal-version': string } },
   'unreal-extract': { args: ['absolute-path'], options: { inspect: flag } },
@@ -209,7 +209,7 @@ async function main([command, ...args]) {
     return print(await inspectUnreal(input, { signal: AbortSignal.timeout(120_000) }), values.json)
   }
   if (command === 'unity-bundle') return print(await runPackageOperation(paths, 'Unity Bundle', options =>
-    importUnityBundle(input, { ...options, inspectOnly: values.inspect })), values.json)
+    importUnityBundle(input, { ...options, inspectOnly: values.inspect, withFbx: values.fbx })), values.json)
   if (command === 'unreal-export') return print(await runPackageOperation(paths, 'Unreal', options =>
     exportUnrealWithEditor(input, { ...options, unrealVersion: values['unreal-version'] })), values.json)
   if (command === 'unreal-extract') return print(await runPackageOperation(paths, 'Unreal', options =>

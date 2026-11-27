@@ -4,6 +4,8 @@ namespace AssetViewer.UnityBundle.Objects;
 
 internal sealed record Texture(string Name, int Width, int Height, byte[] Pixels)
 {
+    public Product ToProduct() => new(Name, "rgba", Pixels, Width: Width, Height: Height);
+
     public static Texture? Read(AssetTypeValueField field)
     {
         var width = field["m_Width"].AsInt;

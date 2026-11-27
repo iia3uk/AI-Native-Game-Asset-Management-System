@@ -2,6 +2,7 @@ using System.Globalization;
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using AssetViewer.UnityBundle.Objects;
+using AssetViewer.UnityBundle.Objects.Mesh;
 
 namespace AssetViewer.UnityBundle.UnityFs;
 
@@ -37,42 +38,9 @@ internal static class BundleObjects
                         info.ByteSize > directory.DecompressedSize - offset)
                         throw new BundleException("unity-bundle-object-range");
                     var classId = info.GetTypeId(file);
-                    var row = new Asset(directory.Name, info.PathId.ToString(CultureInfo.InvariantCulture), classId, null,
-                        "unsupported", classId == 28 ? "unity-bundle-texture-format" : "unity-bundle-class-unsupported");
-                    if (classId == 28 && file.Metadata.TypeTreeEnabled && info.ByteSize <= 32L << 20)
-                    {
-                        try
-                        {
-                            var texture = Texture.Read(manager.GetBaseField(member, info));
-                            if (texture != null)
-                            {
-                                row = row with { Name = texture.Name, Width = texture.Width, Height = texture.Height,
-                                    Status = "available", Issue = null };
-                                if (!inspectOnly)
-                                {
-                                    if (texture.Pixels.Length > outputLimit)
-                                        row = row with { Status = "unsupported", Issue = "unity-bundle-output-limit" };
-                                    else
-                                    {
-                                        var output = entries.Count;
-                                        using var target = new FileStream(Path.Combine("output", $"{output}.rgba"), FileMode.CreateNew);
-                                        target.Write(texture.Pixels);
-                                        outputLimit -= texture.Pixels.Length;
-                                        row = row with { Status = "decoded", Output = output };
-                                    }
-                                }
-                            }
-                        }
-                        catch (Exception error) when (error is not (OutOfMemoryException or IOException))
-                        {
-                            row = row with { Status = "unsupported", Issue = "unity-bundle-texture-invalid" };
-                        }
-                    }
-                    else if (classId == 28)
-                    {
-                        row = row with { Issue = file.Metadata.TypeTreeEnabled ? "unity-bundle-object-size" : "unity-bundle-type-tree" };
-                    }
-                    entries.Add(row);
+                    var row = new Asset(directory.Name, info.PathId.ToString(CultureInfo.InvariantCulture),
+                        classId, null, "unsupported", "unity-bundle-class-unsupported");
+                    entries.Add(ReadObject(manager, member, info, row, inspectOnly, entries.Count, ref outputLimit));
                 }
             }
             return new Report(1, "completed", header.Format, header.Version, entries);
@@ -81,5 +49,36 @@ internal static class BundleObjects
         {
             manager.UnloadAll();
         }
+    }
+
+    private static Asset ReadObject(AssetsManager manager, AssetsFileInstance member, AssetFileInfo info,
+        Asset row, bool inspectOnly, int output, ref long outputLimit)
+    {
+        if (row.ClassId is not (28 or 43)) return row;
+        if (!member.file.Metadata.TypeTreeEnabled) return row with { Issue = "unity-bundle-type-tree" };
+        if (info.ByteSize > 32L << 20) return row with { Issue = "unity-bundle-object-size" };
+        Product? product;
+        try
+        {
+            var field = manager.GetBaseField(member, info);
+            product = row.ClassId == 28 ? Texture.Read(field)?.ToProduct() : StaticMesh.Read(field).ToProduct(inspectOnly);
+        }
+        catch (BundleException error)
+        {
+            return row with { Issue = error.Message };
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            return row with { Issue = "unity-bundle-object-invalid" };
+        }
+        if (product == null) return row with { Issue = "unity-bundle-texture-format" };
+        var available = row with { Name = product.Name, Format = product.Format, Width = product.Width, Height = product.Height,
+            Vertices = product.Vertices, Triangles = product.Triangles, Status = "available", Issue = null };
+        if (inspectOnly) return available;
+        if (product.Bytes.Length > outputLimit) return row with { Issue = "unity-bundle-output-limit" };
+        using var target = new FileStream(Path.Combine("output", $"{output}.{product.Format}"), FileMode.CreateNew);
+        target.Write(product.Bytes);
+        outputLimit -= product.Bytes.Length;
+        return available with { Status = "decoded", Output = output, Bytes = product.Bytes.Length };
     }
 }

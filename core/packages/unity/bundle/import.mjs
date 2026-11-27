@@ -3,7 +3,9 @@ import { mkdir, mkdtemp, open, realpath, rename, rm, writeFile } from 'node:fs/p
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { artifactHash, ExportArtifacts, exportFolders } from '../../../conversion/artifacts.mjs'
+import { saveBundleMesh } from '../../../conversion/unity/bundle-mesh.mjs'
 import { saveBundleTexture } from '../../../conversion/unity/bundle-texture.mjs'
+import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
 import { bundleResult } from '../../../engines/unity/bundle/protocol.mjs'
 import { assetsToolsVersion, inputLimit, locateBundleWorker, runBundleWorker, stageBundle } from '../../../engines/unity/bundle/run.mjs'
 import { fileInfo, folderPath, sameFile } from '../../../files/asset-files.mjs'
@@ -34,19 +36,24 @@ async function readSource(input, signal) {
   return { root, file, name: basename(file.path) }
 }
 
-async function publish(workspace, root, source, report, signal) {
+async function publish(workspace, root, source, report, withFbx, signal) {
   const output = join(workspace, 'publish')
   const results = join(workspace, 'output')
   await mkdir(output)
   await Promise.all(exportFolders.map(folder => mkdir(join(output, folder))))
   const store = new ExportArtifacts(output, signal)
+  const deadline = AbortSignal.timeout(5 * 60_000)
+  const fbx = withFbx && report.assets.some(asset => asset.file && asset.format === 'glb') &&
+    { blender: await locateBatchBlender(), deadline, signal: signal ? AbortSignal.any([signal, deadline]) : deadline }
   const assets = []
   for (const asset of report.assets) {
     signal?.throwIfAborted()
-    assets.push(asset.file ? await saveBundleTexture(asset, results, store, assetsToolsVersion, signal) : asset)
+    if (!asset.file) assets.push(asset)
+    else if (asset.format === 'glb') assets.push(await saveBundleMesh(asset, results, store, assetsToolsVersion, fbx, signal))
+    else assets.push(await saveBundleTexture(asset, results, store, assetsToolsVersion, signal))
   }
   const converted = assets.filter(asset => asset.status === 'converted').length
-  const summary = { status: converted ? 'completed' : 'no-compatible-inputs', method: 'assetstools-unityfs-rgba32',
+  const summary = { status: converted ? 'completed' : 'no-compatible-inputs', method: 'assetstools-unityfs',
     converterVersion: assetsToolsVersion, format: report.format, unityVersion: report.unityVersion,
     total: assets.length, converted, skipped: assets.length - converted }
   if (!converted) return { ...summary, assets: assets.slice(0, 500) }
@@ -65,7 +72,7 @@ async function publish(workspace, root, source, report, signal) {
   return { ...summary, output: destination, sourceName: source.name }
 }
 
-export async function importUnityBundle(path, { directory, inspectOnly = false, signal }) {
+export async function importUnityBundle(path, { directory, inspectOnly = false, withFbx = false, signal }) {
   const source = await readSource(path, signal)
   if (source.status) return source
   const executable = await locateBundleWorker()
@@ -81,7 +88,7 @@ export async function importUnityBundle(path, { directory, inspectOnly = false, 
     if (!report) return { status: 'failed', issue: 'unity-bundle-worker-protocol' }
     if (report.status !== 'completed') return report
     if (inspectOnly) return { ...report, total: report.assets.length, assets: report.assets.slice(0, 500) }
-    return await publish(workspace, root, source, report, signal)
+    return await publish(workspace, root, source, report, withFbx, signal)
   } finally {
     await rm(workspace, { force: true, recursive: true, maxRetries: 3 })
   }

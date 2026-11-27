@@ -46,9 +46,12 @@ The CLI recognizes stock UnityFS by its file signature. Follow the [worker build
 ```sh
 npm run cli -- unity-bundle "/absolute/path/example.bundle" --inspect --json
 npm run cli -- unity-bundle "/absolute/path/example.bundle" --json
+npm run cli -- unity-bundle "/absolute/path/example.bundle" --fbx --json
 ```
 
-Inspection lists the archive and Unity versions and up to 500 serialized objects with their IDs and support status. Import decodes inline RGBA32 textures with an embedded type tree and publishes PNGs to the managed import folder. The index makes them searchable by texture name. The first version handles stored and LZ4 blocks. It reports meshes and other unsupported classes in the manifest. Streamed textures, other pixel formats, dependency analysis, conversion cache and background jobs remain pending.
+Inspection lists the archive and Unity versions and up to 500 serialized objects with their IDs and support status. The worker handles stored and LZ4 blocks. It reads embedded type trees and publishes inline RGBA32 textures as PNG. It exports supported static triangle meshes as GLB with positions, normals, UV0 and separate submeshes. Add `--fbx` to request an FBX through Blender. If Blender is unavailable, the GLB and PNG still reach the index.
+
+The report marks unsupported layouts and classes. Meshes with skinning, blend shapes, mesh compression, extra vertex attributes or multiple vertex streams are outside the current decoder. Streamed textures, additional pixel formats, material bindings, dependency analysis, conversion cache and background jobs remain pending.
 
 ## Detect installed editors and Blender
 

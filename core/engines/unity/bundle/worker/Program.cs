@@ -41,6 +41,9 @@ internal static class Program
 
 internal sealed record Request(int Protocol, bool InspectOnly, long OutputLimit);
 internal sealed record Asset(string Member, string PathId, int ClassId, string? Name, string Status, string? Issue,
-    int? Width = null, int? Height = null, int? Output = null);
+    int? Width = null, int? Height = null, int? Output = null, string? Format = null,
+    int? Vertices = null, int? Triangles = null, int? Bytes = null);
+internal sealed record Product(string Name, string Format, byte[] Bytes,
+    int? Width = null, int? Height = null, int? Vertices = null, int? Triangles = null);
 internal sealed record Report(int Protocol, string Status, uint Format, string UnityVersion, IReadOnlyList<Asset> Assets);
 internal sealed class BundleException(string code) : Exception(code);
