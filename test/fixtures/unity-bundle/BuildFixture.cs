@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -27,12 +28,7 @@ public static class AssetViewerBundleFixture
         line.SetIndices(new[] { 0, 1 }, MeshTopology.Lines, 0);
         AssetDatabase.CreateAsset(line, root + "/Line.asset");
 
-        var texture = new Texture2D(4, 4, TextureFormat.RGBA32, false) { name = "BundleAlbedo" };
-        for (int y = 0; y < texture.height; y++)
-            for (int x = 0; x < texture.width; x++)
-                texture.SetPixel(x, y, new Color32((byte)(32 * x), (byte)(32 * y), 96, 255));
-        texture.Apply();
-        AssetDatabase.CreateAsset(texture, root + "/Albedo.asset");
+        var textures = BundleFixtureTextures.Create(root);
         AssetDatabase.SaveAssets();
 
         var output = Path.GetFullPath(Path.Combine(Application.dataPath, "../..", "Bundles"));
@@ -40,11 +36,18 @@ public static class AssetViewerBundleFixture
         var mapping = new AssetBundleBuild
         {
             assetBundleName = "fixture.bundle",
-            assetNames = new[] { root + "/Triangle.asset", root + "/Albedo.asset", root + "/Line.asset" }
+            assetNames = new[] { root + "/Triangle.asset", root + "/Line.asset" }.Concat(textures).ToArray()
         };
         if (BuildPipeline.BuildAssetBundles(output, new[] { mapping },
             BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.StrictMode,
             BuildTarget.StandaloneWindows64) == null)
             throw new System.InvalidOperationException("Unity failed to build the fixture AssetBundle.");
+
+        var uncompressed = Path.Combine(output, "uncompressed");
+        Directory.CreateDirectory(uncompressed);
+        if (BuildPipeline.BuildAssetBundles(uncompressed, new[] { mapping },
+            BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.StrictMode,
+            BuildTarget.StandaloneWindows64) == null)
+            throw new System.InvalidOperationException("Unity failed to build the uncompressed fixture AssetBundle.");
     }
 }

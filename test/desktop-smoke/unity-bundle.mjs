@@ -7,6 +7,7 @@ export async function verifyUnityBundle(webContents, waitFor, fixture) {
   `)
   await waitFor("document.querySelector('#package-plans').textContent.includes('UnityFS 8')")
   await waitFor("document.querySelector('#package-plans').textContent.includes('Triangle ·')")
+  const compressed = await webContents.executeJavaScript("document.querySelector('#package-plans').textContent.includes('StreamedDXT5 · DXT5')")
   await webContents.executeJavaScript("document.querySelector('#package-plans button').click()")
   const row = `Array.from(document.querySelector('#package-jobs').children)
     .find(item => item.firstElementChild.textContent.startsWith(${JSON.stringify(basename(fixture) + ' · ')}))`
@@ -17,6 +18,9 @@ export async function verifyUnityBundle(webContents, waitFor, fixture) {
     Array.from(bundle.querySelectorAll('button')).find(button => button.textContent === 'Показать файлы').click()
   }`)
   await waitFor(`(${row})?.textContent.includes('Mesh-Triangle.glb') && (${row})?.textContent.includes('Texture-Albedo.png')`)
+  if (compressed) {
+    await waitFor(`(${row})?.textContent.includes('Texture-InlineDXT1.png') && (${row})?.textContent.includes('Texture-StreamedDXT5.png')`)
+  }
   await webContents.executeJavaScript(`Array.from((${row}).querySelectorAll('button'))
     .find(button => button.textContent === 'Показать в индексе').click()`)
   await waitFor("document.querySelector('#index-results').textContent.includes('Mesh-Triangle.glb')")

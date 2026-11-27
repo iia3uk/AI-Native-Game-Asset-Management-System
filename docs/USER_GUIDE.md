@@ -60,7 +60,7 @@ npm run cli -- package-import "/absolute/path/example.bundle" --json
 npm run cli -- package-import "/absolute/path/example.bundle" --export fbx --queue --json
 ```
 
-Inspection lists the archive and Unity versions and up to 500 serialized objects with their IDs and support status. The worker handles stored and LZ4 blocks. It reads embedded type trees and publishes inline RGBA32 textures as PNG. It exports supported static triangle meshes as GLB with positions, normals, UV0 and separate submeshes. If Blender is unavailable, the GLB and PNG still reach the index.
+Inspection lists the archive and Unity versions and up to 500 serialized objects with their IDs and support status. The worker handles stored and LZ4 blocks. It reads embedded type trees and publishes the highest-resolution mip of supported RGBA32, DXT1 and DXT5 textures as PNG. Texture data can be inline or in a matching `.resS` member inside the same archive. External resource files, other texture encodings and textures larger than 2048 × 2048 are outside this path. The worker exports supported static triangle meshes as GLB with positions, normals, UV0 and separate submeshes. If Blender is unavailable, the GLB and PNG still reach the index.
 
 The report marks unsupported layouts and classes. Meshes with skinning, blend shapes, mesh compression, extra vertex attributes or multiple vertex streams are outside the current decoder. Streamed textures, additional pixel formats, material bindings and bundle dependency analysis remain pending. A repeated import with the same SHA-256, output formats and tool versions reuses verified results.
 

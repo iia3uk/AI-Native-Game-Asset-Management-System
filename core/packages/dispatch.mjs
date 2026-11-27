@@ -10,6 +10,7 @@ import { processUnrealPak } from './unreal/pak/import.mjs'
 function bundleError(issue) {
   const messages = {
     'unity-bundle-worker-unavailable': 'Не найден независимый декодер UnityFS.',
+    'unity-bundle-worker-revision': 'Версия декодера UnityFS несовместима с приложением. Обновите декодер.',
     'unity-bundle-input-size': 'Размер UnityFS вне допустимого диапазона (48 байт — 128 МиБ).',
     'unity-bundle-space-limit': 'Недостаточно места для обработки UnityFS.',
     'unity-bundle-source-changed': 'UnityFS изменился после анализа. Проанализируйте файл снова.',

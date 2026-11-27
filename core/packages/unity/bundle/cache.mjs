@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { verifyExports } from '../../../conversion/cache.mjs'
+import { bundleDecoderRevision } from '../../../engines/unity/bundle/protocol.mjs'
 import { assetsToolsVersion } from '../../../engines/unity/bundle/run.mjs'
 import { checkedPath, fileInfo, readBoundedText } from '../../../files/asset-files.mjs'
 import { IndexInputError } from '../../../index/index-errors.mjs'
@@ -9,7 +10,8 @@ import { IndexInputError } from '../../../index/index-errors.mjs'
 export const bundleVersion = 1
 
 export function bundleRecipe(withFbx, blender) {
-  return createHash('sha256').update(JSON.stringify([bundleVersion, assetsToolsVersion, withFbx, blender?.identity ?? null]))
+  return createHash('sha256')
+    .update(JSON.stringify([bundleVersion, assetsToolsVersion, bundleDecoderRevision, withFbx, blender?.identity ?? null]))
     .digest('hex').slice(0, 24)
 }
 
@@ -27,10 +29,11 @@ export async function readBundleCache(root, sha256, recipe, sourceName, signal) 
       readBoundedText(output, 'conversion-report.json', 64 * 1024),
       fileInfo(output, 'dependencies.json'),
     ])
-    const { source, version, recipe: cachedRecipe, assets } = JSON.parse(manifest)
+    const { source, version, recipe: cachedRecipe, decoderRevision, assets } = JSON.parse(manifest)
     const report = JSON.parse(summary)
     if (!dependencies || source?.sha256 !== sha256 || version !== bundleVersion || cachedRecipe !== recipe ||
-        report?.method !== 'assetstools-unityfs' || report.converterVersion !== assetsToolsVersion || !Array.isArray(assets) ||
+        report?.method !== 'assetstools-unityfs' || report.converterVersion !== assetsToolsVersion ||
+        decoderRevision !== bundleDecoderRevision || report.decoderRevision !== decoderRevision || !Array.isArray(assets) ||
         assets.length !== report.total || assets.length > 10_000 ||
         report.converted !== assets.filter(asset => asset.status === 'converted').length ||
         report.skipped !== report.total - report.converted ||

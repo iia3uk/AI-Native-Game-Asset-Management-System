@@ -7,7 +7,7 @@ import { artifactHash, ExportArtifacts, exportFolders } from '../../../conversio
 import { saveBundleMesh } from '../../../conversion/unity/bundle-mesh.mjs'
 import { saveBundleTexture } from '../../../conversion/unity/bundle-texture.mjs'
 import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
-import { bundleResult } from '../../../engines/unity/bundle/protocol.mjs'
+import { bundleDecoderRevision, bundleResult } from '../../../engines/unity/bundle/protocol.mjs'
 import { assetsToolsVersion, locateBundleWorker, runBundleWorker, stageBundle } from '../../../engines/unity/bundle/run.mjs'
 import { packageWorkspaceRoot } from '../../workspace.mjs'
 import { bundleRecipe, bundleVersion, readBundleCache } from './cache.mjs'
@@ -37,10 +37,11 @@ async function saveOutputs(workspace, source, hash, recipe, report, { withFbx, b
   const converted = counts.converted ?? 0
   const summary = { status: converted ? 'completed' : 'no-compatible-inputs', method: 'assetstools-unityfs',
     converterVersion: assetsToolsVersion, format: report.format, unityVersion: report.unityVersion,
+    decoderRevision: report.decoderRevision,
     total: assets.length, converted, skipped: assets.length - converted, counts }
   const documents = {
     manifest: { version: bundleVersion, recipe, source: { name: source.name, size: source.file.info.size, sha256: hash, license: null },
-      method: summary.method, converterVersion: assetsToolsVersion, assets },
+      method: summary.method, converterVersion: assetsToolsVersion, decoderRevision: report.decoderRevision, assets },
     dependencies: { version: 1, status: 'unavailable', entries: [] },
     'conversion-report': summary,
   }
@@ -73,7 +74,11 @@ export async function processUnityBundle(selected, { directory, inspectOnly = fa
     }
     const executable = await locateBundleWorker()
     if (!executable) return { status: 'unavailable', issue: 'unity-bundle-worker-unavailable' }
-    const report = bundleResult(await runBundleWorker(executable, workspace, signal), inspectOnly)
+    const decoded = await runBundleWorker(executable, workspace, signal)
+    if (decoded?.status === 'completed' && decoded.decoderRevision !== bundleDecoderRevision) {
+      return { status: 'failed', issue: 'unity-bundle-worker-revision' }
+    }
+    const report = bundleResult(decoded, inspectOnly)
     if (!report) return { status: 'failed', issue: 'unity-bundle-worker-protocol' }
     if (report.status !== 'completed') return report
     if (inspectOnly) return { ...report, hash, total: report.assets.length, assets: report.assets.slice(0, 500) }

@@ -15,6 +15,12 @@ const packageIssues = {
   'unity-texture-png-unavailable': 'Unity не смогла сохранить эту текстуру в PNG',
   'unity-animation-requires-target-rig': 'Для анимации требуется исходный риг',
   'unity-synthetic-animation-hierarchy': 'Иерархия анимации восстановлена по путям объектов',
+  'unity-bundle-texture-format': 'Кодек текстуры UnityFS не поддерживается',
+  'unity-bundle-texture-shape': 'Поддерживаются одиночные двумерные текстуры до 2048 × 2048',
+  'unity-bundle-texture-size': 'Данных текстуры недостаточно',
+  'unity-bundle-texture-stream-path': 'Текстура ссылается за пределы своего раздела UnityFS',
+  'unity-bundle-texture-stream-missing': 'Раздел с данными текстуры отсутствует',
+  'unity-bundle-texture-stream-range': 'Данные текстуры выходят за границы раздела',
   'unreal-pak-encrypted-entry': 'Запись зашифрована',
   'unreal-pak-invalid-payload': 'Файл не прошёл проверку формата',
   'unreal-pak-orphan-companion': 'Отсутствует связанный пакет Unreal',
@@ -30,7 +36,8 @@ const artifactRoles = {
 export const describeIssue = issue => packageIssues[issue] ?? issue
 
 export function assetLabel(asset) {
-  return asset.sourcePath ?? asset.path ?? [asset.name, [asset.member, asset.pathId].filter(Boolean).join(' #')].filter(Boolean).join(' · ')
+  return asset.sourcePath ?? asset.path ?? [asset.name, asset.textureEncoding?.toUpperCase(),
+    [asset.member, asset.pathId].filter(Boolean).join(' #')].filter(Boolean).join(' · ')
 }
 
 export function appendManifest({ details, record, json, element, button, assetStatus }) {

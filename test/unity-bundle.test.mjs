@@ -12,7 +12,7 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { locateBatchBlender } from '../core/engines/blender/batch.mjs'
 import { locateUnityBridge } from '../core/engines/unity/bridge/run.mjs'
-import { bundleResult } from '../core/engines/unity/bundle/protocol.mjs'
+import { bundleDecoderRevision, bundleResult } from '../core/engines/unity/bundle/protocol.mjs'
 import { locateBundleWorker } from '../core/engines/unity/bundle/run.mjs'
 import { buildAssetBundleFixture } from './fixtures/unity-bundle/project.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
@@ -51,6 +51,20 @@ async function waitForJob(server, id) {
   assert.fail('UnityFS job did not reach a terminal state.')
 }
 
+async function readTexture(manifest, output, name) {
+  const entry = manifest.assets.find(asset => asset.name === name)
+  assert.equal(entry.artifact.method, 'assetstools-unityfs-' + entry.textureEncoding)
+  const png = await readFile(join(output, entry.artifact.path))
+  assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20), png[25]], [entry.width, entry.height, 6])
+  assert.equal(png.subarray(37, 41).toString('ascii'), 'IDAT')
+  const pixels = inflateSync(png.subarray(41, 41 + png.readUInt32BE(33)))
+  const pixel = (x, y) => {
+    const offset = y * (entry.width * 4 + 1) + 1 + x * 4
+    return [...pixels.subarray(offset, offset + 4)]
+  }
+  return { entry, pixel }
+}
+
 test('UnityFS validates decoder reports and rejects non-bundle sources without touching the index', async t => {
   const root = await testDirectory(t)
   const path = join(root, 'Fixture.bundle')
@@ -61,12 +75,16 @@ test('UnityFS validates decoder reports and rejects non-bundle sources without t
   await assert.rejects(readdir(data), { code: 'ENOENT' })
 
   const row = { member: 'CAB-123', pathId: '7268794857742934074', classId: 28, name: 'Albedo',
-    status: 'decoded', issue: null, width: 4, height: 4, output: 0 }
-  const report = { protocol: 1, status: 'completed', format: 8, unityVersion: '6000.3.10f1', assets: [row] }
+    status: 'decoded', issue: null, width: 4, height: 4, output: 0, format: 'rgba', bytes: 64,
+    textureEncoding: 'dxt5', textureStorage: 'bundle-member' }
+  const report = { protocol: 1, decoderRevision: bundleDecoderRevision, status: 'completed', format: 8,
+    unityVersion: '6000.3.10f1', assets: [row] }
   assert.equal(bundleResult(report, false).assets[0].file, '0.rgba')
-  for (const invalid of [{ ...row, member: '../CAB' }, { ...row, output: 4 }, { ...row, width: 3000 }]) {
+  for (const invalid of [{ ...row, member: '../CAB' }, { ...row, output: 4 }, { ...row, width: 3000 },
+    { ...row, textureStorage: 'sidecar' }, { ...row, textureEncoding: 'other' }, { ...row, bytes: 63 }]) {
     assert.equal(bundleResult({ ...report, assets: [invalid] }, false), null)
   }
+  assert.equal(bundleResult({ ...report, decoderRevision: bundleDecoderRevision - 1 }, false), null)
   assert.equal(bundleResult(report, true), null)
   assert.equal(bundleResult({ ...report, assets: [row, { ...row, output: 1 }] }, false), null)
 })
@@ -88,8 +106,9 @@ test('Unity builds a native UnityFS bundle and the independent worker indexes de
   assert.equal(inspection.status, 'completed', JSON.stringify(inspection))
   assert.equal(inspection.unityVersion, version)
   assert.equal(inspection.format, 8)
-  assert.equal(inspection.total, 3)
-  const texture = inspection.assets.find(asset => asset.classId === 28)
+  assert.equal(inspection.total, 6)
+  assert.equal(inspection.decoderRevision, bundleDecoderRevision)
+  const texture = inspection.assets.find(asset => asset.name === 'Albedo')
   assert.deepEqual([texture.status, texture.width, texture.height], ['available', 4, 4])
   const mesh = inspection.assets.find(asset => asset.format === 'glb')
   assert.deepEqual([mesh.status, mesh.vertices, mesh.triangles], ['available', 6, 2])
@@ -97,21 +116,35 @@ test('Unity builds a native UnityFS bundle and the independent worker indexes de
   await assert.rejects(readdir(data), { code: 'ENOENT' })
 
   const output = await query('unity-bundle', input, '--fbx')
-  assert.equal(output.converted, 2, JSON.stringify(output))
+  assert.equal(output.converted, 5, JSON.stringify(output))
   assert.equal(output.skipped, 1)
   const manifest = JSON.parse(await readFile(join(output.output, 'manifest.json'), 'utf8'))
   assert.equal(manifest.source.sha256, createHash('sha256').update(before).digest('hex'))
-  const entry = manifest.assets.find(asset => asset.format === 'png')
+  assert.equal(manifest.decoderRevision, bundleDecoderRevision)
+  const { entry, pixel } = await readTexture(manifest, output.output, 'Albedo')
   assert.equal(entry.pathId, texture.pathId)
-  const png = await readFile(join(output.output, entry.artifact.path))
-  assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20), png[25]], [4, 4, 6])
-  assert.equal(png.subarray(37, 41).toString('ascii'), 'IDAT')
-  const pixels = inflateSync(png.subarray(41, 41 + png.readUInt32BE(33)))
-  assert.deepEqual([...pixels.subarray(0, 9)], [0, 0, 96, 96, 255, 32, 96, 96, 255])
-  assert.deepEqual([...pixels.subarray(51, 60)], [0, 0, 0, 96, 255, 32, 0, 96, 255])
+  assert.deepEqual([pixel(0, 0), pixel(1, 3)], [[0, 96, 96, 255], [32, 0, 96, 255]])
+  const dxt1 = await readTexture(manifest, output.output, 'InlineDXT1')
+  assert.equal(dxt1.entry.textureStorage, 'inline')
+  assert.deepEqual(Array.from({ length: 8 }, (_, x) => dxt1.pixel(x, 0)), [
+    [255, 0, 0, 255], [0, 0, 255, 255], [170, 0, 85, 255], [85, 0, 170, 255],
+    [0, 0, 0, 255], [0, 255, 0, 255], [0, 127, 0, 255], [0, 0, 0, 0],
+  ])
+  const dxt5 = await readTexture(manifest, output.output, 'InlineDXT5')
+  assert.equal(dxt5.entry.textureStorage, 'inline')
+  assert.deepEqual(dxt5.pixel(3, 3), [170, 0, 85, 157])
+  assert.deepEqual(dxt5.pixel(6, 0), [85, 0, 170, 0])
+  assert.deepEqual(dxt5.pixel(7, 0), [170, 0, 85, 255])
+  const streamed = await readTexture(manifest, output.output, 'StreamedDXT5')
+  assert.equal(streamed.entry.textureStorage, 'bundle-member')
+  assert.deepEqual([streamed.entry.width, streamed.entry.height], [512, 512])
+  for (const [actual, expected] of [
+    [streamed.pixel(20, 20), [0, 255, 0, 204]], [streamed.pixel(20, 490), [255, 0, 0, 51]],
+  ]) assert.ok(actual.every((channel, index) => Math.abs(channel - expected[index]) <= 8), String(actual))
   const { assets } = await query('search', 'Albedo', '--library', output.library.id)
   assert.equal(assets.length, 1)
   assert.equal(assets[0].ext, 'png')
+  assert.equal((await query('search', 'StreamedDXT5', '--library', output.library.id)).assets[0].ext, 'png')
 
   const model = manifest.assets.find(asset => asset.pathId === mesh.pathId)
   const readProduct = async product => Uint8Array.from(await readFile(join(output.output, product.path))).buffer
@@ -145,6 +178,24 @@ test('Unity builds a native UnityFS bundle and the independent worker indexes de
   assert.deepEqual(await readFile(input), before)
   assert.deepEqual(await readdir(join(output.output, '..')), [output.output.split(/[\\/]/).at(-1)])
 
+  const uncompressed = await readFile(join(root, 'Bundles', 'uncompressed', 'fixture.bundle'))
+  const streamPath = /archive:\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+\.resS/.exec(uncompressed.toString('latin1'))
+  assert.ok(streamPath, 'Unity should write an internal resource reference')
+  assert.equal(uncompressed.readUInt32LE(streamPath.index - 4), streamPath[0].length)
+  for (const [issue, edit] of [
+    ['path', bytes => bytes.write('../outside/', streamPath.index, 'ascii')],
+    ['range', bytes => bytes.writeUInt32LE(0xffff_fffe, streamPath.index - 8)],
+  ]) {
+    const corrupted = Buffer.from(uncompressed)
+    edit(corrupted)
+    const path = join(root, 'bad-stream-' + issue + '.bundle')
+    await writeFile(path, corrupted)
+    const report = await query('unity-bundle', path, '--inspect')
+    assert.equal(report.status, 'completed', JSON.stringify(report))
+    assert.ok(report.assets.some(asset => asset.issue === 'unity-bundle-texture-stream-' + issue))
+    assert.ok(report.assets.some(asset => asset.name === 'Albedo' && asset.status === 'available'))
+  }
+
   const alternate = join(root, 'Container.bin')
   await writeFile(alternate, before)
   const server = await startServer(root)
@@ -153,7 +204,7 @@ test('Unity builds a native UnityFS bundle and the independent worker indexes de
     assert.equal(inspected.status, 200)
     const { package: plan } = await inspected.json()
     assert.deepEqual([plan.format, plan.containerVersion, plan.unityVersion, plan.hash], ['unityfs', 8, version, manifest.source.sha256])
-    assert.equal(plan.assets.find(asset => asset.classId === 28).pathId, texture.pathId)
+    assert.equal(plan.assets.find(asset => asset.name === 'Albedo').pathId, texture.pathId)
     const disallowed = await server.post('/api/index/packages/import', { path: alternate, hash: plan.hash, mode: 'engine-assisted' })
     assert.equal(disallowed.status, 400)
 
@@ -162,7 +213,7 @@ test('Unity builds a native UnityFS bundle and the independent worker indexes de
     assert.equal(cached.result.reused, true)
     assert.equal(cached.result.library.id, output.library.id)
     assert.equal(cached.result.report.packageFormat, 'unityfs')
-    assert.deepEqual(cached.result.report.counts, { converted: 2, unsupported: 1 })
+    assert.deepEqual(cached.result.report.counts, { converted: 5, unsupported: 1 })
     assert.equal((await waitForJob(server, cached.result.scanJobId)).status, 'completed')
     const page = await (await server.request('/api/index/jobs/' + cached.id + '/manifest')).json()
     assert.deepEqual(page.assets, manifest.assets)

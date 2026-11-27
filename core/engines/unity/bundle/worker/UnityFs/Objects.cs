@@ -1,8 +1,8 @@
 using System.Globalization;
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
-using AssetViewer.UnityBundle.Objects;
 using AssetViewer.UnityBundle.Objects.Mesh;
+using AssetViewer.UnityBundle.Objects.Textures;
 
 namespace AssetViewer.UnityBundle.UnityFs;
 
@@ -18,6 +18,7 @@ internal static class BundleObjects
         {
             var bundle = manager.LoadBundleFile(input, "input.bundle", false);
             BundleDirectory.Validate(bundle.file);
+            var resources = new BundleResources(bundle.file);
             var entries = new List<Asset>();
             var files = bundle.file.BlockAndDirInfo.DirectoryInfos;
             for (var index = 0; index < files.Count; index++)
@@ -40,10 +41,10 @@ internal static class BundleObjects
                     var classId = info.GetTypeId(file);
                     var row = new Asset(directory.Name, info.PathId.ToString(CultureInfo.InvariantCulture),
                         classId, null, "unsupported", "unity-bundle-class-unsupported");
-                    entries.Add(ReadObject(manager, member, info, row, inspectOnly, entries.Count, ref outputLimit));
+                    entries.Add(ReadObject(manager, member, info, row, resources, inspectOnly, entries.Count, ref outputLimit));
                 }
             }
-            return new Report(1, "completed", header.Format, header.Version, entries);
+            return new Report(1, Program.DecoderRevision, "completed", header.Format, header.Version, entries);
         }
         finally
         {
@@ -52,16 +53,17 @@ internal static class BundleObjects
     }
 
     private static Asset ReadObject(AssetsManager manager, AssetsFileInstance member, AssetFileInfo info,
-        Asset row, bool inspectOnly, int output, ref long outputLimit)
+        Asset row, BundleResources resources, bool inspectOnly, int output, ref long outputLimit)
     {
         if (row.ClassId is not (28 or 43)) return row;
         if (!member.file.Metadata.TypeTreeEnabled) return row with { Issue = "unity-bundle-type-tree" };
         if (info.ByteSize > 32L << 20) return row with { Issue = "unity-bundle-object-size" };
-        Product? product;
+        Product product;
         try
         {
             var field = manager.GetBaseField(member, info);
-            product = row.ClassId == 28 ? Texture.Read(field)?.ToProduct() : StaticMesh.Read(field).ToProduct(inspectOnly);
+            product = row.ClassId == 28 ? Texture2D.Read(field, row.Member, resources, inspectOnly, outputLimit) :
+                StaticMesh.Read(field).ToProduct(inspectOnly);
         }
         catch (BundleException error)
         {
@@ -71,8 +73,8 @@ internal static class BundleObjects
         {
             return row with { Issue = "unity-bundle-object-invalid" };
         }
-        if (product == null) return row with { Issue = "unity-bundle-texture-format" };
         var available = row with { Name = product.Name, Format = product.Format, Width = product.Width, Height = product.Height,
+            TextureEncoding = product.TextureEncoding, TextureStorage = product.TextureStorage,
             Vertices = product.Vertices, Triangles = product.Triangles, Status = "available", Issue = null };
         if (inspectOnly) return available;
         if (product.Bytes.Length > outputLimit) return row with { Issue = "unity-bundle-output-limit" };
