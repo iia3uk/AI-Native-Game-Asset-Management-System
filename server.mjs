@@ -44,7 +44,8 @@ let viewFilesUpdated
 const folders = new Map()
 const indexedFolders = new Map()
 let demoRequest
-const indexed = indexRoutes({ database: dataPaths().database, json, body, allowsWrite,
+const paths = dataPaths()
+const indexed = indexRoutes({ database: paths.database, ignoredWatchPaths: [paths.cache, paths.backups], json, body, allowsWrite,
   openFolder: openIndexedFolder, invalidateFolder: invalidateIndexedFolder })
 
 async function safeFile(base, subpath) {
@@ -194,7 +195,7 @@ async function openIndexedFolder(asset) {
 }
 
 async function openDemo() {
-  const root = dataPaths().demo
+  const root = paths.demo
   await generateFixtures(root)
   const folder = await openFolder(root)
   folder.info.demo = true

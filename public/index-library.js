@@ -17,13 +17,15 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
   let pollTimer
 
   const activeJob = () => ['pending', 'running'].includes(job?.status)
+  const watching = () => libraries.some(library => library.id === selection.value && library.watching)
 
   function buttons() {
     $('connect').querySelector('button:not([type])').disabled = busy
     $('pick').disabled = busy
     $('query').querySelector('button').disabled = busy
     selection.disabled = $('kind').disabled = busy
-    for (const id of ['rescan', 'disconnect']) $(id).disabled = busy || !selection.value
+    for (const id of ['rescan', 'watch', 'disconnect']) $(id).disabled = busy || !selection.value
+    $('watch').setAttribute('aria-pressed', String(watching()))
     $('rescan').disabled ||= activeJob()
     $('cancel-scan').disabled = busy || Boolean(job?.cancelRequested)
     $('retry-scan').disabled = busy
@@ -34,11 +36,11 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
     results.setAttribute('aria-busy', String(busy))
   }
 
-  async function run(action) {
+  async function run(action, { clearStatus = true } = {}) {
     if (busy) return
     busy = true
     buttons()
-    status.textContent = ''
+    if (clearStatus) status.textContent = ''
     try {
       await action()
     } catch (error) {
@@ -82,12 +84,12 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
     details.elements.tags.value = record.tags.join(', ')
   }
 
-  async function search(from = 0) {
+  async function search(from = 0, { preserveAsset = false } = {}) {
     const params = new URLSearchParams({ q: query.value, library: selection.value, kind: $('kind').value, offset: from })
     const page = await json('/api/index/search?' + params)
     offset = from
     nextOffset = page.nextOffset
-    setAsset(null)
+    if (!preserveAsset) setAsset(null)
     results.replaceChildren()
     if (!page.assets.length) {
       const empty = document.createElement('li')
@@ -123,6 +125,8 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
     $('cancel-scan').hidden = !activeJob()
     $('retry-scan').hidden = !['failed', 'interrupted', 'cancelled'].includes(job?.status) || job.attempts >= 3
     buttons()
+    const poll = activeJob() ? 500 : watching() ? 2000 : 0
+    if (poll && dialog.open) pollTimer = setTimeout(() => void pollJob(), poll)
     if (!job) return
     const messages = {
       pending: 'Сканирование в очереди.',
@@ -132,28 +136,37 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
       failed: job.error,
     }
     const report = job.result
-    output.textContent = job.cancelRequested && activeJob() ? 'Отменяю сканирование…' :
+    const text = job.cancelRequested && activeJob() ? 'Отменяю сканирование…' :
       report ? 'Добавлено: ' + report.added + ' · Изменено: ' + report.changed +
         ' · Перемещено: ' + report.moved + ' · Отсутствует: ' + report.missing : messages[job.status]
-    if (activeJob() && dialog.open) pollTimer = setTimeout(() => void pollJob(job.id), 500)
+    if (text !== output.textContent) output.textContent = text
   }
 
-  async function pollJob(id) {
-    if (!dialog.open || job?.id !== id) return
+  async function pollJob() {
+    if (!dialog.open || !selection.value) return
     if (busy) {
-      pollTimer = setTimeout(() => void pollJob(id), 500)
+      pollTimer = setTimeout(() => void pollJob(), 500)
       return
     }
     await run(async () => {
       try {
-        const { job: current } = await json('/api/index/jobs/' + id)
-        showJob(current)
-        if (current.status === 'completed') { await refreshLibraries(current.libraryId); await search() }
+        const previous = job
+        if (activeJob()) {
+          const { job: current } = await json('/api/index/jobs/' + previous.id)
+          showJob(current)
+        } else await refreshJob()
+        if (job?.status === 'completed' && (job.id !== previous?.id || previous?.status !== 'completed')) {
+          await refreshLibraries(job.libraryId)
+          // Automatic scans must not dismiss metadata fields while the user is editing them.
+          const automatic = job.trigger === 'watch'
+          await search(automatic ? offset : 0, { preserveAsset: automatic })
+        }
       } catch (error) {
-        if (activeJob() && dialog.open) pollTimer = setTimeout(() => void pollJob(id), 1500)
+        clearTimeout(pollTimer)
+        if ((activeJob() || watching()) && dialog.open) pollTimer = setTimeout(() => void pollJob(), 1500)
         throw error
       }
-    })
+    }, { clearStatus: false })
   }
 
   async function refreshJob() {
@@ -191,6 +204,17 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
   selection.addEventListener('change', () => void run(async () => { await refreshLibraries(); await search(); await refreshJob() }))
   $('kind').addEventListener('change', () => void run(() => search()))
   $('rescan').addEventListener('click', () => void run(() => scan(selection.value)))
+  $('watch').addEventListener('click', () => void run(async () => {
+    const id = selection.value
+    const { library } = await json('/api/index/libraries/' + id + '/watch', post({ enabled: !watching() }))
+    await refreshLibraries(id)
+    await refreshJob()
+    if (library.watching && job?.status === 'completed') {
+      await refreshLibraries(id)
+      await search(offset, { preserveAsset: true })
+    }
+    status.textContent = library.watching ? 'Наблюдение за папкой включено.' : 'Наблюдение за папкой выключено.'
+  }))
   $('cancel-scan').addEventListener('click', () => void run(async () => {
     const { job: current } = await json('/api/index/jobs/' + job.id + '/cancel', post({}))
     showJob(current)

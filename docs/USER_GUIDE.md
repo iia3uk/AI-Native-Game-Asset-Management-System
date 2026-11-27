@@ -14,6 +14,14 @@ Select a result to edit its metadata or click **Открыть во вьювер
 
 Scans keep running if you close the index dialog. Open it and select the library to see progress or the last result. Use **Отменить сканирование** while a job is active. Use **Повторить задание** after a failure or interruption. Queued jobs persist across restarts.
 
+## Watch for changes
+
+Select a library in **Индекс** and turn on **Следить за папкой**. This setting is off by default and applies to the selected library. Asset Viewer groups nearby changes into a scan. It keeps existing metadata and history when it can identify a moved file. Deletions mark files missing in the index and retain their metadata and history.
+
+Watching runs while Asset Viewer or its local server is open. On startup, watched libraries are reconciled to catch changes made while it was closed. An incremental check runs every 15 minutes to catch missed notifications. These scans reuse existing hashes for files with matching fingerprints. Click the same button to turn watching off. **Пересканировать** remains available.
+
+Use `npm run cli -- libraries` to find the library ID. Set its preference with `npm run cli -- watch <library-id> on` or `npm run cli -- watch <library-id> off`. The running server picks up CLI changes within a few seconds.
+
 ## Data, backups and export
 
 On Windows, the database and backups live under `%APPDATA%\AssetViewer`. Demo assets and cache data live under `%LOCALAPPDATA%\AssetViewer`. Other platforms use their application data and cache directories. `ASSET_VIEWER_DATA_DIR` overrides data paths with an absolute directory for source or desktop sessions.

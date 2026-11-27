@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { transaction } from './index-schema.mjs'
 
 const fields = 'id, library_id AS libraryId, type, status, priority, created_at AS createdAt, started_at AS startedAt,' +
-  ' finished_at AS finishedAt, attempts, progress, result, error, cancel_requested AS cancelRequested'
+  ' finished_at AS finishedAt, attempts, progress, result, error, trigger, cancel_requested AS cancelRequested'
 const leaseMs = 15_000
 const now = () => new Date().toISOString()
 const shape = job => job && { ...job, result: job.result && JSON.parse(job.result), cancelRequested: Boolean(job.cancelRequested) }
@@ -26,27 +26,42 @@ export class ProcessingJobs {
       .all(...args, limit, offset).map(shape)
   }
 
-  enqueue(libraryId, priority = 0) {
+  enqueue(libraryId, { priority = 0, trigger = 'manual' } = {}) {
     return transaction(this.#db, () => {
-      if (!this.#db.prepare('SELECT id FROM libraries WHERE id = ? AND enabled = 1').get(libraryId)) return null
-      const current = this.#db.prepare(`SELECT id FROM processing_jobs WHERE library_id = ? AND type = 'scan'
+      const library = this.#db.prepare('SELECT watch_enabled FROM libraries WHERE id = ? AND enabled = 1').get(libraryId)
+      if (!library || (trigger === 'watch' && !library.watch_enabled)) return null
+      const current = this.#db.prepare(`SELECT id, trigger, cancel_requested FROM processing_jobs WHERE library_id = ? AND type = 'scan'
         AND status IN ('pending','running')`).get(libraryId)
-      if (current) return this.get(current.id)
+      if (current) {
+        if (trigger === 'manual' && current.trigger === 'watch' && !current.cancel_requested) {
+          this.#db.prepare("UPDATE processing_jobs SET trigger = 'manual', priority = MAX(priority, ?) WHERE id = ?")
+            .run(priority, current.id)
+        }
+        return this.get(current.id)
+      }
       const id = randomUUID()
-      this.#db.prepare(`INSERT INTO processing_jobs (id, library_id, type, status, priority, created_at)
-        VALUES (?, ?, 'scan', 'pending', ?, ?)`).run(id, libraryId, priority, now())
+      this.#db.prepare(`INSERT INTO processing_jobs (id, library_id, type, status, priority, created_at, trigger)
+        VALUES (?, ?, 'scan', 'pending', ?, ?, ?)`).run(id, libraryId, priority, now(), trigger)
       return this.get(id)
     })
   }
 
+  cancelWatch(libraryId) {
+    this.#cancelWhere("library_id = ? AND trigger = 'watch'", libraryId)
+  }
+
   cancel(id) {
+    this.#cancelWhere('id = ?', id)
+    return this.get(id)
+  }
+
+  #cancelWhere(condition, argument) {
     this.#db.prepare(`
       UPDATE processing_jobs SET cancel_requested = 1,
         status = CASE WHEN status = 'pending' THEN 'cancelled' ELSE status END,
         finished_at = CASE WHEN status = 'pending' THEN ? ELSE finished_at END
-      WHERE id = ? AND status IN ('pending','running')
-    `).run(now(), id)
-    return this.get(id)
+      WHERE (${condition}) AND status IN ('pending','running')
+    `).run(now(), argument)
   }
 
   retry(id) {
@@ -57,7 +72,8 @@ export class ProcessingJobs {
       const other = this.#db.prepare(`SELECT id FROM processing_jobs WHERE library_id = ? AND status IN ('pending','running')`).get(job.libraryId)
       if (!library || other) return null
       this.#db.prepare(`UPDATE processing_jobs SET status = 'pending', progress = 0, started_at = NULL,
-        finished_at = NULL, result = NULL, error = NULL, cancel_requested = 0 WHERE id = ?`).run(id)
+        finished_at = NULL, result = NULL, error = NULL, cancel_requested = 0, trigger = 'manual', priority = MAX(priority, 0)
+        WHERE id = ?`).run(id)
       return this.get(id)
     })
   }

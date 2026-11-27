@@ -27,4 +27,4 @@ $env:ASSET_VIEWER_DATA_DIR = Join-Path ([System.IO.Path]::GetTempPath()) ('asset
 npm run test:desktop
 ```
 
-Set `ASSET_VIEWER_SMOKE_SCREENSHOT` to an absolute PNG path to capture the demo. The smoke test checks renderer isolation, the utility server, the local session token, the rendered demo and a background scan through the UI. It blocks external HTTP requests from the renderer during the demo and scan. Set a distinct data directory when testing an unpacked, portable or installed binary.
+Set `ASSET_VIEWER_SMOKE_SCREENSHOT` to an absolute PNG path to capture the demo. The smoke test checks renderer isolation, the utility server, the local session token, the rendered demo, a background scan and watched updates with an unsaved metadata form open. It blocks external HTTP requests from the renderer during these checks. Set a distinct data directory when testing an unpacked, portable or installed binary.

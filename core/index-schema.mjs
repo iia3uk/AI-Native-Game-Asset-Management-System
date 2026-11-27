@@ -83,7 +83,13 @@ const processing = `
   CREATE INDEX jobs_by_library ON processing_jobs (library_id, created_at DESC);
 `
 
-export const schemaVersion = 2
+const watching = `
+  ALTER TABLE libraries ADD COLUMN watch_enabled INTEGER NOT NULL DEFAULT 0 CHECK (watch_enabled IN (0, 1));
+  ALTER TABLE processing_jobs ADD COLUMN trigger TEXT NOT NULL DEFAULT 'manual' CHECK (trigger IN ('manual', 'watch'));
+  CREATE INDEX watched_libraries ON libraries (id) WHERE enabled = 1 AND watch_enabled = 1;
+`
+
+export const schemaVersion = 3
 
 export function transaction(db, write) {
   db.exec('BEGIN IMMEDIATE')
@@ -107,6 +113,7 @@ export function migrate(db) {
     if (lockedVersion > schemaVersion) throw new Error('The asset index was created by a newer version.')
     if (lockedVersion === 0) db.exec(initial)
     if (lockedVersion < 2) db.exec(processing)
+    if (lockedVersion < 3) db.exec(watching)
     db.exec('PRAGMA user_version = ' + schemaVersion)
   })
 }

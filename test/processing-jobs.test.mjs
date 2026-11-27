@@ -21,12 +21,17 @@ test('queue migration retains assets, leases recover, and retries commit matchin
   initial.updateAsset(asset.id, { note: 'Keep this during migration' })
   await initial.close()
   const raw = new DatabaseSync(database)
-  raw.exec('DROP TABLE processing_jobs; PRAGMA user_version = 1')
+  raw.exec(`
+    DROP INDEX watched_libraries;
+    ALTER TABLE libraries DROP COLUMN watch_enabled;
+    DROP TABLE processing_jobs;
+    PRAGMA user_version = 1;
+  `)
   const index = await AssetIndex.open(database)
   const other = await AssetIndex.open(database)
   let worker
   try {
-    assert.equal(index.integrity().schemaVersion, 2)
+    assert.equal(index.integrity().schemaVersion, 3)
     assert.equal(index.asset(asset.id).note, 'Keep this during migration')
     const queued = index.jobs.enqueue(id)
     assert.equal(other.jobs.enqueue(id).id, queued.id)

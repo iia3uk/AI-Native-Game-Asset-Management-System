@@ -110,19 +110,41 @@ export class AssetIndex {
 
   libraries() {
     return this.#db.prepare(`
-      SELECT l.id, l.root, l.name, l.indexed_at AS indexedAt, COUNT(a.id) AS assets,
+      SELECT l.id, l.root, l.name, l.indexed_at AS indexedAt, l.watch_enabled AS watching, COUNT(a.id) AS assets,
         COUNT(CASE WHEN a.kind = 'model' THEN 1 END) AS models,
         COUNT(CASE WHEN a.kind = 'image' THEN 1 END) AS images,
         COALESCE(SUM(a.size), 0) AS bytes
       FROM libraries l LEFT JOIN assets a ON a.library_id = l.id AND a.missing_since IS NULL
       WHERE l.enabled = 1 GROUP BY l.id ORDER BY l.name, l.id
-    `).all()
+    `).all().map(library => ({ ...library, watching: Boolean(library.watching) }))
+  }
+
+  watchedLibraries() {
+    return this.#db.prepare('SELECT id, root FROM libraries WHERE enabled = 1 AND watch_enabled = 1').all()
+  }
+
+  setWatching(id, enabled) {
+    validateId(id)
+    if (typeof enabled !== 'boolean') throw new IndexInputError('Укажите, включено ли наблюдение.')
+    return transaction(this.#db, () => {
+      const library = this.#db.prepare('UPDATE libraries SET watch_enabled = ? WHERE id = ? AND enabled = 1 RETURNING id')
+        .get(Number(enabled), id)
+      if (!library) throw new IndexInputError('Библиотека не подключена.')
+      if (!enabled) this.jobs.cancelWatch(id)
+      return { id, watching: enabled }
+    })
   }
 
   disconnect(id) {
     validateId(id)
-    const { changes } = this.#db.prepare('UPDATE libraries SET enabled = 0, generation = generation + 1 WHERE id = ? AND enabled = 1').run(id)
-    return Boolean(changes)
+    return transaction(this.#db, () => {
+      const { changes } = this.#db.prepare(`
+        UPDATE libraries SET enabled = 0, watch_enabled = 0, generation = generation + 1
+        WHERE id = ? AND enabled = 1
+      `).run(id)
+      if (changes) this.jobs.cancelWatch(id)
+      return Boolean(changes)
+    })
   }
 
   async scan(id, { signal, onProgress, beforeCommit, onCommit } = {}) {

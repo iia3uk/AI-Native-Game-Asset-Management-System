@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { setTimeout } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
@@ -56,8 +56,24 @@ void startDesktop(root).then(async ({ window, origin }) => {
   await waitFor("document.querySelector('#index-count').textContent.includes('10 файлов')")
   await waitFor("document.querySelector('#index-job-status').textContent.includes('Добавлено: 10')")
   await waitFor("document.querySelector('#index-results').textContent.includes('woodland-cabin.glb')")
+  await webContents.executeJavaScript(`
+    Array.from(document.querySelectorAll('#index-results button'))
+      .find(button => button.textContent.startsWith('woodland-cabin.glb')).click()
+  `)
+  await waitFor("!document.querySelector('#index-metadata').hidden && !document.querySelector('#index-watch').disabled")
+  await webContents.executeJavaScript(`
+    document.querySelector('#index-metadata').elements.note.value = 'Unsaved smoke test note'
+    document.querySelector('#index-watch').click()
+  `)
+  await waitFor("document.querySelector('#index-watch').getAttribute('aria-pressed') === 'true'")
+  await copyFile(join(fixtures, 'Architecture', 'woodland-cabin.glb'), join(fixtures, 'watched-cabin.glb'))
+  await waitFor("document.querySelector('#index-count').textContent.includes('11 файлов')")
+  await waitFor("document.querySelector('#index-results').textContent.includes('watched-cabin.glb') && !document.querySelector('#index-watch').disabled")
+  assert.equal(await webContents.executeJavaScript("document.querySelector('#index-metadata').elements.note.value"), 'Unsaved smoke test note')
+  await webContents.executeJavaScript("document.querySelector('#index-watch').click()")
+  await waitFor("document.querySelector('#index-watch').getAttribute('aria-pressed') === 'false'")
   assert.deepEqual(externalRequests, [])
-  console.log('Desktop demo, background library scan, Node utility process, sandbox, native folder bridge and session token passed.')
+  console.log('Desktop demo, library scanning and watching, metadata draft, Node utility process, sandbox, folder bridge and session token passed.')
   app.quit()
 }).catch(error => {
   console.error(error)

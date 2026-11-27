@@ -12,6 +12,7 @@ const commands = {
   libraries: { args: [], options: {} },
   connect: { args: ['absolute-path'], options: { 'dry-run': flag } },
   scan: { args: ['library-id'], options: { 'dry-run': flag } },
+  watch: { args: ['library-id', 'on|off'], options: {} },
   search: { args: ['query?'], options: { ...paging, library: string, kind: string, hash: string } },
   inspect: { args: ['asset-id'], options: {} },
   duplicates: { args: [], options: paging },
@@ -45,10 +46,11 @@ function print(data, json) {
   else console.dir(data, { depth: 4, colors: Boolean(process.stdout.isTTY) })
 }
 
-async function execute(index, paths, command, input, values) {
+async function execute(index, paths, command, [input, setting], values) {
   switch (command) {
     case 'libraries': return index.libraries()
     case 'connect': return index.connect(input)
+    case 'watch': return index.setWatching(input, setting === 'on')
     case 'scan': {
       if (!values['dry-run']) return index.scan(input)
       const library = index.libraries().find(library => library.id === input)
@@ -93,7 +95,10 @@ async function main([command, ...args]) {
   if (positionals.length < required || positionals.length > spec.args.length) {
     throw new IndexInputError('Incorrect arguments for ' + command + '. Run asset-viewer --help.')
   }
-  const [input] = positionals
+  const [input, setting] = positionals
+  if (command === 'watch' && !['on', 'off'].includes(setting)) {
+    throw new IndexInputError('Use on or off to set library watching.')
+  }
   const paths = dataPaths()
   if (command === 'connect' && values['dry-run']) {
     return print({ dryRun: true, root: await folderPath(input) }, values.json)
@@ -109,10 +114,10 @@ async function main([command, ...args]) {
     await startMcp(paths.database)
     return
   }
-  const readOnly = !['connect', 'scan'].includes(command) || Boolean(values['dry-run'])
+  const readOnly = !['connect', 'scan', 'watch'].includes(command) || Boolean(values['dry-run'])
   const index = readOnly ? new AssetIndex(paths.database, { readOnly }) : await AssetIndex.open(paths.database)
   try {
-    const result = await execute(index, paths, command, input, values)
+    const result = await execute(index, paths, command, positionals, values)
     if (command === 'doctor' && !result.ok) process.exitCode = 1
     print(result, values.json || command === 'export')
   } finally {

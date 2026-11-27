@@ -1,16 +1,21 @@
 import { existsSync } from 'node:fs'
 import { AssetIndex, IndexInputError } from './asset-index.mjs'
 import { fileInfo, ScanChangeError } from './asset-files.mjs'
+import { LibraryWatcher } from './library-watcher.mjs'
 import { ScanWorker } from './scan-worker.mjs'
 
-export function indexRoutes({ database, json, body, allowsWrite, openFolder, invalidateFolder }) {
+export function indexRoutes({ database, ignoredWatchPaths, json, body, allowsWrite, openFolder, invalidateFolder }) {
   let pendingIndex
   let worker
+  let watcher
   const shutdown = new AbortController()
 
   function openIndex() {
     return pendingIndex ??= AssetIndex.open(database).then(index => {
-      if (!shutdown.signal.aborted) worker = new ScanWorker(index, invalidateFolder)
+      if (!shutdown.signal.aborted) {
+        worker = new ScanWorker(index, invalidateFolder)
+        watcher = new LibraryWatcher(index, () => worker.wake(), { ignoredPaths: ignoredWatchPaths })
+      }
       return index
     }).catch(error => {
       pendingIndex = undefined
@@ -50,8 +55,15 @@ export function indexRoutes({ database, json, body, allowsWrite, openFolder, inv
       }
       if (method === 'POST' && resource === 'libraries' && action === 'disconnect') {
         const disconnected = index.disconnect(id)
+        watcher?.refresh()
         invalidateFolder(id)
         return json(response, 200, { disconnected })
+      }
+      if (method === 'POST' && resource === 'libraries' && action === 'watch') {
+        const input = await body(request).catch(() => null)
+        const library = index.setWatching(id, input?.enabled)
+        watcher?.refresh()
+        return json(response, 200, { library })
       }
       if (resource === 'jobs') {
         if (method === 'GET' && !id) {
@@ -122,10 +134,12 @@ export function indexRoutes({ database, json, body, allowsWrite, openFolder, inv
     },
     abort() {
       shutdown.abort()
+      void watcher?.stop()
       void worker?.stop()
     },
     async close() {
       const index = await pendingIndex
+      await watcher?.stop()
       await worker?.stop()
       await index?.close()
     },
