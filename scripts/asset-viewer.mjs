@@ -9,6 +9,7 @@ import { ThumbnailCache } from '../core/thumbnails/thumbnail-cache.mjs'
 import { assetThumbnail } from '../core/thumbnails/thumbnail-service.mjs'
 import { inspectUnityPackage } from '../core/packages/unity/inspect.mjs'
 import { packageSource } from '../core/packages/unity/paths.mjs'
+import { importUnityBundle } from '../core/packages/unity/bundle/import.mjs'
 import { engineInventory } from '../core/engines/inventory.mjs'
 import { packageExportFormats } from '../core/conversion/formats.mjs'
 import { unityImportOptions } from '../core/engines/unity/options.mjs'
@@ -31,6 +32,7 @@ const commands = {
   'package-inspect': { args: ['absolute-path'], options: {} },
   'package-import': { args: ['absolute-path'], options: { 'dry-run': flag, queue: flag, export: string,
     mode: string, 'unity-version': string } },
+  'unity-bundle': { args: ['absolute-path'], options: { inspect: flag } },
   'unreal-inspect': { args: ['absolute-path'], options: {} },
   'unreal-export': { args: ['absolute-path'], options: { 'unreal-version': string } },
   'unreal-extract': { args: ['absolute-path'], options: { inspect: flag } },
@@ -93,7 +95,7 @@ async function waitForJob(index, id, options) {
   }
 }
 
-async function unrealOperation(paths, operation) {
+async function runPackageOperation(paths, label, operation) {
   const stop = new AbortController()
   const abort = () => stop.abort()
   for (const event of ['SIGINT', 'SIGTERM']) process.once(event, abort)
@@ -105,7 +107,7 @@ async function unrealOperation(paths, operation) {
     }
     const index = await AssetIndex.open(paths.database)
     try {
-      const library = index.registerLibrary(report.output, 'Unreal · ' + report.sourceName)
+      const library = index.registerLibrary(report.output, label + ' · ' + report.sourceName)
       return { ...report, library, scan: await index.scan(library.id, { signal: stop.signal }) }
     } finally {
       await index.close()
@@ -206,9 +208,11 @@ async function main([command, ...args]) {
   if (command === 'unreal-inspect') {
     return print(await inspectUnreal(input, { signal: AbortSignal.timeout(120_000) }), values.json)
   }
-  if (command === 'unreal-export') return print(await unrealOperation(paths, options =>
+  if (command === 'unity-bundle') return print(await runPackageOperation(paths, 'Unity Bundle', options =>
+    importUnityBundle(input, { ...options, inspectOnly: values.inspect })), values.json)
+  if (command === 'unreal-export') return print(await runPackageOperation(paths, 'Unreal', options =>
     exportUnrealWithEditor(input, { ...options, unrealVersion: values['unreal-version'] })), values.json)
-  if (command === 'unreal-extract') return print(await unrealOperation(paths, options =>
+  if (command === 'unreal-extract') return print(await runPackageOperation(paths, 'Unreal', options =>
     extractUnrealPak(input, { ...options, inspectOnly: values.inspect })), values.json)
   if (command === 'package-inspect' || command === 'package-import') {
     if (values.queue && values['dry-run']) throw new IndexInputError('Use only one of --queue or --dry-run.')

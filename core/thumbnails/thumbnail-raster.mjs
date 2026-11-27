@@ -1,5 +1,5 @@
-import { crc32, deflateSync } from 'node:zlib'
 import { Box3, Matrix4, Vector3 } from 'three'
+import { encodePngScanlines } from '../files/png.mjs'
 import { thumbnailSize as size } from './thumbnail-input.mjs'
 
 const faceLimit = 75_000
@@ -7,24 +7,6 @@ const rasterLimit = 30_000_000
 const camera = new Matrix4().lookAt(new Vector3(3, 2, 4), new Vector3(), new Vector3(0, 1, 0)).transpose()
 const light = new Vector3(-.35, .65, .65).normalize()
 const toByte = value => Math.round(255 * Math.min(1, Math.max(0, value)))
-
-function chunk(type, data) {
-  const result = Buffer.alloc(12 + data.length)
-  result.writeUInt32BE(data.length)
-  result.write(type, 4, 4, 'ascii')
-  data.copy(result, 8)
-  result.writeUInt32BE(crc32(result.subarray(4, -4)), result.length - 4)
-  return result
-}
-
-function png(pixels) {
-  const header = Buffer.alloc(13)
-  header.writeUInt32BE(size)
-  header.writeUInt32BE(size, 4)
-  header.set([8, 2], 8)
-  return Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', header),
-    chunk('IDAT', deflateSync(pixels)), chunk('IEND', Buffer.alloc(0))])
-}
 
 function geometry(scene) {
   const bounds = new Box3()
@@ -112,5 +94,5 @@ export function renderThumbnail(scene) {
     }
   }
   if (!painted) throw new Error('Грани модели не видны с ракурса миниатюры.')
-  return png(pixels)
+  return encodePngScanlines(size, size, pixels)
 }

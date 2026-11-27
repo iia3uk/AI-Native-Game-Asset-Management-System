@@ -6,3 +6,5 @@ fab-downloader/
 release/
 core/engines/unreal/decoder/worker/bin/
 core/engines/unreal/decoder/worker/obj/
+core/engines/unity/bundle/worker/bin/
+core/engines/unity/bundle/worker/obj/

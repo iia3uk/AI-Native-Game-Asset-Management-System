@@ -24,6 +24,10 @@ Install the .NET 10 SDK on the build machine and run `npm run build:cue4parse`. 
 
 Keep the published files together. Runtime use does not require a .NET SDK or Unreal Editor. Linux still needs the platform libraries required by .NET, including ICU. The source CLI discovers the published worker automatically. For a different location, set `ASSET_VIEWER_CUE4PARSE` to the absolute path of the worker executable. The default Electron installer does not include this optional worker.
 
+## Build the optional Unity AssetBundle worker
+
+Run `npm run build:unity-bundle` with the .NET 10 SDK. As with the Pak worker, you can explicitly select `win-x64` or `linux-x64`. The self-contained output is in `release/unity-bundle/<target>/`. Keep the published files together. The source CLI discovers the worker automatically, or you can set `ASSET_VIEWER_UNITY_BUNDLE` to its absolute executable path. The default installer does not include the worker. The worker does not use Unity or a separately installed .NET SDK at runtime.
+
 ## Isolated desktop smoke
 
 On Windows, from PowerShell:

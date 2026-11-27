@@ -39,6 +39,17 @@ npm run cli -- jobs --type package-import --json
 
 The default CLI command waits for extraction and indexing. Add `--queue` to hand processing to the running desktop app or loopback server.
 
+## Inspect and import a Unity AssetBundle
+
+The CLI recognizes stock UnityFS by its file signature. Follow the [worker build instructions](BUILD.md), then run:
+
+```sh
+npm run cli -- unity-bundle "/absolute/path/example.bundle" --inspect --json
+npm run cli -- unity-bundle "/absolute/path/example.bundle" --json
+```
+
+Inspection lists the archive and Unity versions and up to 500 serialized objects with their IDs and support status. Import decodes inline RGBA32 textures with an embedded type tree and publishes PNGs to the managed import folder. The index makes them searchable by texture name. The first version handles stored and LZ4 blocks. It reports meshes and other unsupported classes in the manifest. Streamed textures, other pixel formats, dependency analysis, conversion cache and background jobs remain pending.
+
 ## Detect installed editors and Blender
 
 Use **Найти установленные инструменты** in the Unity package importer, or run the diagnostics from the CLI. Discovery checks standard locations, Unity Hub, Epic Launcher metadata and Steam libraries where applicable. The package importer can still extract supported files when the list is empty.

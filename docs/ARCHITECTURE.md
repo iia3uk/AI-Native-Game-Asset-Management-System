@@ -32,6 +32,8 @@ Schema 9 adds the mode and requested Unity version to the job and to the cache r
 
 `core/engines/unreal/decoder/` contains the independent decoder process launcher and response validation. Its `worker/Pak/` contains container indexing, path policy and payload extraction for stock Unreal Pak archives. The worker uses a private directory with a fixed request file, a staged input and numbered output files. `core/conversion/unreal/` validates and publishes Editor and Pak outputs through the shared artifact store. The CLI publishes to the managed import directory and scans it with `AssetIndex`. The Unreal queue and conversion cache are pending.
 
+`core/packages/unity/bundle/` handles UnityFS source selection and publication. `core/engines/unity/bundle/` manages the AssetsTools.NET worker and validates its responses. Inside the worker, `UnityFs/` validates the bundle and reads serialized object identities, and `Objects/` contains the supported object decoders. `core/conversion/unity/` encodes texture output, and the worker uses the same local process runner, artifact store and asset index as the Unreal importer.
+
 `core/engines/blender/batch.mjs` runs the bundled Python adapter for formats that need conversion. The adapter stages OBJ and glTF dependencies, imports each model once and uses the same scene for the requested derivatives. Legacy previews and package conversions share a serial Blender runner within the server process. The two features have separate scripts and timeout policies.
 
 The CLI and stdio MCP interfaces call `AssetIndex` directly. The MCP connector opens the database read-only and applies a library scope to every asset query.
