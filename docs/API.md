@@ -28,6 +28,7 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | POST | `/api/index/quality-profiles/:id` | `{"revision":0,"limits":{"maxTriangles":12000}}` replaces the enabled limits. `{"revision":0,"reset":true}` restores defaults. Stale revisions return 409 |
 | POST | `/api/index/packages/inspect` | `{"path":"<absolute local file>"}` returns the detected Unity package format, SHA-256, sizes, entry count and up to 500 preview entries |
 | POST | `/api/index/packages/import` | `{"path":"<absolute local file>","hash":"<SHA-256 from inspection>"}` returns 202 and the new or active import job |
+| GET | `/api/index/engines` | Lists detected Unity, Unreal and Blender executables and available version metadata without starting an editor |
 | POST | `/api/demo` | Creates and opens a separate procedural demo session on demand |
 
 Failed scans preserve the last committed index. Disconnection and removal of original files retain history. Search excludes disconnected and missing assets.

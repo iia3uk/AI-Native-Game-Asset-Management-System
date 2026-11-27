@@ -22,6 +22,8 @@ Generated 160 × 160 PNGs live in an application-owned directory shared by the H
 
 Inspection streams TAR.GZ content and fingerprints the compressed bytes. Import checks that fingerprint before publishing to `imports/unitypackage-v1/<sha256>` under the data directory. The original Unity tree is kept in `Source/`, with package PNG previews beside it in `Previews/`. Library registration, follow-up scan creation and completion of the import job share one SQLite transaction. A crash after directory publication can leave a reusable completed export on disk. A retry verifies the archive SHA-256 and reuses the output.
 
+`core/engines/` combines Unity, Unreal and Blender discovery adapters. Each reads a bounded set of local directories and installation metadata. Unity matches `ProjectSettings/ProjectVersion.txt` against Hub versions and can identify a candidate from the same series. Unreal matches `EngineAssociation` against known versions or registered build IDs. Discovery reads installation and project metadata without launching the editors. The existing Blender preview calls the Blender discovery adapter when its explicit executable setting is absent.
+
 The CLI and stdio MCP interfaces call `AssetIndex` directly. The MCP connector opens the database read-only and applies a library scope to every asset query.
 
 The Electron main process launches the loopback server in a UtilityProcess and injects an ephemeral authorization header in its dedicated browser session. The isolated renderer can choose a folder or resolve the path of a file selected or dropped in the importer. The desktop app prefers port 8178, permits a configured port, and can fall back to an ephemeral port. Indexed user metadata stays independent of the browser port.

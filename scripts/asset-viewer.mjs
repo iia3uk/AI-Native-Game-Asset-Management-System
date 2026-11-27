@@ -9,6 +9,7 @@ import { ThumbnailCache } from '../core/thumbnails/thumbnail-cache.mjs'
 import { assetThumbnail } from '../core/thumbnails/thumbnail-service.mjs'
 import { inspectUnityPackage } from '../core/packages/unity/inspect.mjs'
 import { packageSource } from '../core/packages/unity/paths.mjs'
+import { engineInventory } from '../core/engines/inventory.mjs'
 
 const string = { type: 'string' }
 const flag = { type: 'boolean' }
@@ -24,6 +25,7 @@ const commands = {
   jobs: { args: ['job-id?'], options: { ...paging, library: string, type: string, cancel: flag, retry: flag } },
   'package-inspect': { args: ['absolute-path'], options: {} },
   'package-import': { args: ['absolute-path'], options: { 'dry-run': flag, queue: flag } },
+  engines: { args: [], options: { 'unity-project': string, 'unreal-project': string } },
   'thumbnail-cache': { args: [], options: { clear: flag, 'dry-run': flag } },
   profiles: { args: [], options: {} },
   profile: { args: ['profile-id'], options: { 'set-json': string, reset: flag } },
@@ -167,6 +169,9 @@ async function main([command, ...args]) {
     throw new IndexInputError('Use either --set-json or --reset.')
   }
   const paths = dataPaths()
+  if (command === 'engines') return print(await engineInventory({
+    unityProject: values['unity-project'], unrealProject: values['unreal-project'],
+  }), values.json)
   if (command === 'package-inspect' || command === 'package-import') {
     if (values.queue && values['dry-run']) throw new IndexInputError('Use only one of --queue or --dry-run.')
     const source = await packageSource(input)

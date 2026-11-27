@@ -239,6 +239,8 @@ test('thumbnail cache evicts by use and expires old entries without touching oth
   await cache.put(c, image)
   assert.equal(await cache.get(b), null)
   assert.ok(await cache.get(a))
+  // Distinguish the two writes even on a filesystem that records the same mtime for both.
+  await utimes((await cache.get(a)).path, yesterday, yesterday)
   await cache.put(old, image)
   const expired = new Date(Date.now() - 31 * 86_400_000)
   await utimes((await cache.get(old)).path, expired, expired)

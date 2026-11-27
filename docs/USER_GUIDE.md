@@ -31,6 +31,20 @@ npm run cli -- jobs --type package-import --json
 
 The default CLI command waits for extraction and indexing. Add `--queue` to hand processing to the running desktop app or loopback server.
 
+## Detect installed editors and Blender
+
+Use **Найти установленные инструменты** in the Unity package importer, or run the diagnostics from the CLI. Discovery checks standard locations, Unity Hub, Epic Launcher metadata and Steam libraries where applicable. The package importer can still extract supported files when the list is empty.
+
+```sh
+npm run cli -- engines --json
+npm run cli -- engines --unity-project "/absolute/path/UnityProject" --json
+npm run cli -- engines --unreal-project "/absolute/path/Game.uproject" --json
+```
+
+The Unity check reports an exact project version if installed, or a candidate from the same release series. The Unreal check reports an installation matching the project association. These results describe the installed editors. Editor-assisted export remains pending.
+
+Set `ASSET_VIEWER_UNITY` or `ASSET_VIEWER_BLENDER` to an absolute executable path. Set `ASSET_VIEWER_UNITY_ROOTS` or `ASSET_VIEWER_UNREAL_ROOTS` to absolute installation directories using the operating system's PATH separator. Start or restart the app with those settings.
+
 ## Generate model thumbnails
 
 In an indexed GLB, glTF, binary VRM or polygonal OBJ card, click **Создать миниатюру**. Generation runs in the background and uses the model's base geometry and glTF base colors at 160 × 160 pixels. The renderer supports triangle meshes within its size and complexity limits. Texture maps, animation, skinning, morphs, sparse accessors and Draco or meshopt compression are outside its support. Use **Открыть во вьювере** for interactive inspection.

@@ -113,6 +113,8 @@ void startDesktop(root).then(async ({ window, origin }) => {
     document.querySelector('#package-form').requestSubmit()
   }`)
   await waitFor("document.querySelector('#package-plans summary')?.textContent.includes('Smoke.unitypackage · 6')")
+  await webContents.executeJavaScript("document.querySelector('#package-engines').click()")
+  await waitFor("document.querySelector('#package-engine-list').textContent.includes('Unreal Editor') && !document.querySelector('#package-engines').disabled")
   await webContents.executeJavaScript("document.querySelector('#package-plans button').click()")
   await waitFor("document.querySelector('#package-jobs').textContent.includes('В индексе')")
   await webContents.executeJavaScript("Array.from(document.querySelectorAll('#package-jobs button')).find(button => button.textContent === 'Показать в индексе').click()")

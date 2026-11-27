@@ -1,23 +1,14 @@
-import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdtemp, readdir, rename, rm } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
+import { readdir } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { promisify } from 'node:util'
 import { blenderModels, browserImages, browserModels, formatOrder, previewCandidates } from '../core/files/formats.mjs'
 import { connectUnityMaterials } from './unity-materials.mjs'
-import { discoverAssets, fileInfo, folderPath, pathKey } from '../core/files/asset-files.mjs'
+import { discoverAssets, folderPath, pathKey } from '../core/files/asset-files.mjs'
 
-const runFile = promisify(execFile)
-const exportScript = process.env.ASSET_VIEWER_BLEND_SCRIPT ?? fileURLToPath(new URL('./export-blend.py', import.meta.url))
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 24)
 const sortByPath = (a, b) => a.path.localeCompare(b.path, 'ru', { numeric: true })
 const encodePath = path => path.split('/').map(encodeURIComponent).join('/')
-let cacheDirectory
-const previewAbort = new AbortController()
-let conversionTail = Promise.resolve()
-let pendingConversions = 0
 
 export async function browseFolder(path) {
   const root = await folderPath(path || homedir())
@@ -75,69 +66,4 @@ export async function scanFolder(path, { canonical = false } = {}) {
     Number(Boolean(b.models)) - Number(Boolean(a.models)) || a.title.localeCompare(b.title, 'ru', { numeric: true }))
   return { id, key, root, files, fileIds, packs, unityMaterials, previews: new Map(),
     info: { id, key, root, packs: summaries, files: files.size, resources: [...files.values()] } }
-}
-
-async function blenderCommands() {
-  if (process.env.ASSET_VIEWER_BLENDER) return [process.env.ASSET_VIEWER_BLENDER]
-  if (process.platform === 'win32') {
-    const install = process.env.ProgramFiles ?? 'C:/Program Files'
-    const steam = process.env['ProgramFiles(x86)'] ?? 'C:/Program Files (x86)'
-    const base = join(install, 'Blender Foundation')
-    const versions = await readdir(base, { withFileTypes: true }).catch(() => [])
-    return ['blender.exe', join(steam, 'Steam/steamapps/common/Blender/blender.exe'),
-      ...versions.filter(item => item.isDirectory() && item.name.startsWith('Blender'))
-        .sort((a, b) => b.name.localeCompare(a.name, 'en', { numeric: true })).map(item => join(base, item.name, 'blender.exe'))]
-  }
-  return process.platform === 'darwin' ? ['blender', '/Applications/Blender.app/Contents/MacOS/Blender'] : ['blender']
-}
-
-async function convertWithBlender(library, file) {
-  previewAbort.signal.throwIfAborted()
-  const inputFile = await fileInfo(library.root, file.path)
-  if (!inputFile) throw new Error('Исходный файл недоступен.')
-  if (inputFile.info.size > 512 * 1024 ** 2) throw new Error('Исходный файл превышает лимит преобразования 512 МиБ.')
-  const { path: source } = inputFile
-  cacheDirectory ??= mkdtemp(join(tmpdir(), 'asset-viewer-'))
-  const target = join(await cacheDirectory, library.id + '-' + file.id + '.glb')
-  const partial = target + '.partial.glb'
-  const commands = await blenderCommands()
-  for (const executable of commands) {
-    try {
-      const input = file.ext === 'blend' ? [source] : []
-      await runFile(executable, ['--background', '--factory-startup', '--disable-autoexec', ...input, '--python-exit-code', '1',
-        '--python', exportScript, '--', partial, library.root, ...(input.length ? [] : [source])],
-      { timeout: 500_000, windowsHide: true, maxBuffer: 2 * 1024 ** 2, signal: previewAbort.signal })
-      await rename(partial, target)
-      return target
-    } catch (error) {
-      if (error.code === 'ENOENT') continue
-      console.error('Blender preview:', file.name, error.stderr?.slice(-1200) || error.message)
-      throw new Error('Blender не смог подготовить GLB-предпросмотр этого файла.')
-    } finally {
-      await rm(partial, { force: true })
-    }
-  }
-  throw new Error('Для предпросмотра этого формата нужен Blender в PATH или путь в ASSET_VIEWER_BLENDER.')
-}
-
-export async function blenderPreview(library, file) {
-  if (!library.previews.has(file.id)) {
-    if (pendingConversions >= 8) throw new Error('Очередь Blender заполнена. Повторите позже.')
-    pendingConversions++
-    const operation = conversionTail.then(() => convertWithBlender(library, file)).catch(error => {
-      library.previews.delete(file.id)
-      throw error
-    }).finally(() => {
-      pendingConversions--
-    })
-    conversionTail = operation.catch(() => undefined)
-    library.previews.set(file.id, operation)
-  }
-  return library.previews.get(file.id)
-}
-
-export async function closePreviews() {
-  previewAbort.abort()
-  await conversionTail
-  if (cacheDirectory) await rm(await cacheDirectory, { recursive: true, force: true })
 }

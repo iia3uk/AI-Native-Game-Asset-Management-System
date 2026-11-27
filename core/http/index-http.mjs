@@ -8,6 +8,7 @@ import { ProcessingWorker } from '../processing/processing-worker.mjs'
 import { ThumbnailCache } from '../thumbnails/thumbnail-cache.mjs'
 import { assetThumbnail } from '../thumbnails/thumbnail-service.mjs'
 import { packageRoutes } from './package-routes.mjs'
+import { engineInventory } from '../engines/inventory.mjs'
 
 export function indexRoutes({ database, thumbnailDirectory, importDirectory, ignoredWatchPaths,
   json, body, allowsWrite, openFolder, invalidateFolder }) {
@@ -19,6 +20,7 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
   const cache = new ThumbnailCache(thumbnailDirectory)
   const shutdown = new AbortController()
   const packages = packageRoutes({ json, body, shutdown: shutdown.signal, wake: () => importer?.wake() })
+  let currentInventory
 
   function openIndex() {
     return pendingIndex ??= AssetIndex.open(database).then(index => {
@@ -44,6 +46,10 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
     if (method === 'POST' && !allowsWrite(request)) return json(response, 403, { error: 'Недопустимый источник запроса' })
 
     if (shutdown.signal.aborted) return json(response, 503, { error: 'Сервер завершает работу.' })
+    if (method === 'GET' && resource === 'engines' && !id && !action) {
+      currentInventory ??= engineInventory().finally(() => { currentInventory = null })
+      return json(response, 200, await currentInventory)
+    }
     let index
     try {
       index = await openIndex()

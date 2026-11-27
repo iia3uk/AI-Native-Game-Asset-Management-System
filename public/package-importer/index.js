@@ -1,3 +1,5 @@
+import { mountEngineStatus } from './engine-status.js'
+
 const $ = name => document.getElementById('package-' + name)
 const jobsRoute = '/api/index/jobs'
 const packagesRoute = '/api/index/packages'
@@ -27,6 +29,7 @@ function button(text, action) {
 }
 
 export function mountPackageImporter({ dialog, json, post, openLibrary }) {
+  mountEngineStatus({ json })
   const section = $('importer')
   const plans = $('plans')
   const jobs = $('jobs')
