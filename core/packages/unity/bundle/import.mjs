@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { renameSync } from 'node:fs'
-import { lstat, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { artifactHash, ExportArtifacts, exportFolders } from '../../../conversion/artifacts.mjs'
@@ -9,24 +9,9 @@ import { saveBundleTexture } from '../../../conversion/unity/bundle-texture.mjs'
 import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
 import { bundleResult } from '../../../engines/unity/bundle/protocol.mjs'
 import { assetsToolsVersion, locateBundleWorker, runBundleWorker, stageBundle } from '../../../engines/unity/bundle/run.mjs'
-import { checkedPath } from '../../../files/asset-files.mjs'
-import { IndexInputError } from '../../../index/index-errors.mjs'
+import { packageWorkspaceRoot } from '../../workspace.mjs'
 import { bundleRecipe, bundleVersion, readBundleCache } from './cache.mjs'
 import { readBundleSource, selectBundlePath } from './source.mjs'
-
-async function bundleRoot(directory) {
-  await mkdir(directory, { recursive: true, mode: 0o700 })
-  const imports = await realpath(directory)
-  const root = join(imports, 'unity-bundle-v' + bundleVersion)
-  await mkdir(root, { recursive: true, mode: 0o700 })
-  if (!await checkedPath(imports, root)) throw new IndexInputError('Каталог импорта UnityFS недоступен.')
-  for (const entry of await readdir(root, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !/^\.stage-[a-zA-Z0-9]{6}$/.test(entry.name)) continue
-    const path = await checkedPath(root, entry.name)
-    if (path && Date.now() - (await lstat(path)).mtimeMs > 60 * 60_000) await rm(path, { recursive: true, force: true })
-  }
-  return root
-}
 
 async function saveOutputs(workspace, source, hash, recipe, report, { withFbx, blender, signal, onProgress }) {
   const output = join(workspace, 'publish')
@@ -69,7 +54,7 @@ export async function processUnityBundle(selected, { directory, inspectOnly = fa
   signal, onProgress, publish = (result, move) => { move(); return result } }) {
   const source = await readBundleSource(selected, signal)
   if (source.status) return source
-  const root = inspectOnly ? await realpath(tmpdir()) : await bundleRoot(directory)
+  const root = inspectOnly ? await realpath(tmpdir()) : await packageWorkspaceRoot(directory, 'unity-bundle-v' + bundleVersion)
   const workspace = await mkdtemp(join(root, inspectOnly ? 'asset-viewer-bundle-' : '.stage-'))
   try {
     const stageError = await stageBundle(source, workspace, inspectOnly, signal)

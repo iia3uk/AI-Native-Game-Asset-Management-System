@@ -1,8 +1,7 @@
 import { IndexInputError } from '../index/index-errors.mjs'
 import { detectPackage } from '../packages/detect.mjs'
 import { inspectPackage, packageOptions } from '../packages/dispatch.mjs'
-import { packageSource } from '../packages/unity/paths.mjs'
-import { hashPattern as packageHash } from '../packages/unity/policy.mjs'
+import { packageHashPattern, packageSource } from '../packages/source.mjs'
 
 export function packageRoutes({ json, body, shutdown, wake }) {
   let inspecting = false
@@ -28,7 +27,7 @@ export function packageRoutes({ json, body, shutdown, wake }) {
         inspecting = false
       }
     }
-    if (typeof input?.hash !== 'string' || !packageHash.test(input.hash)) {
+    if (typeof input?.hash !== 'string' || !packageHashPattern.test(input.hash)) {
       throw new IndexInputError('Сначала проанализируйте пакет.')
     }
     const { formats, ...options } = packageOptions(await detectPackage(source), input)

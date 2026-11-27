@@ -4,7 +4,7 @@ const artifactStatus = {
   unsupported: 'Не поддерживается', failed: 'Ошибка',
 }
 
-const unityIssues = {
+const packageIssues = {
   'unity-material-yaml-unrecognized': 'Не удалось разобрать описание материала Unity',
   'unity-material-output-limit': 'Достигнут лимит описаний материалов',
   'unity-version-unavailable': 'Запрошенная версия Unity недоступна',
@@ -15,6 +15,11 @@ const unityIssues = {
   'unity-texture-png-unavailable': 'Unity не смогла сохранить эту текстуру в PNG',
   'unity-animation-requires-target-rig': 'Для анимации требуется исходный риг',
   'unity-synthetic-animation-hierarchy': 'Иерархия анимации восстановлена по путям объектов',
+  'unreal-pak-encrypted-entry': 'Запись зашифрована',
+  'unreal-pak-invalid-payload': 'Файл не прошёл проверку формата',
+  'unreal-pak-orphan-companion': 'Отсутствует связанный пакет Unreal',
+  'unreal-pak-unsupported-compression': 'Тип сжатия не поддерживается',
+  'unreal-pak-unsupported-entry': 'Тип файла не поддерживается',
 }
 
 const artifactRoles = {
@@ -22,10 +27,10 @@ const artifactRoles = {
   animation: 'Анимация', texture: 'Текстура', material: 'Материал',
 }
 
-export const describeIssue = issue => unityIssues[issue] ?? issue
+export const describeIssue = issue => packageIssues[issue] ?? issue
 
 export function assetLabel(asset) {
-  return asset.sourcePath ?? [asset.name, [asset.member, asset.pathId].filter(Boolean).join(' #')].filter(Boolean).join(' · ')
+  return asset.sourcePath ?? asset.path ?? [asset.name, [asset.member, asset.pathId].filter(Boolean).join(' #')].filter(Boolean).join(' · ')
 }
 
 export function appendManifest({ details, record, json, element, button, assetStatus }) {
@@ -40,7 +45,7 @@ export function appendManifest({ details, record, json, element, button, assetSt
       const page = await json('/api/index/jobs/' + record.id + '/manifest?offset=' + offset)
       for (const asset of page.assets) {
         const row = element('li', assetLabel(asset) + ' · ' + (assetStatus[asset.status] ?? asset.status))
-        const issues = [asset.issue, ...(asset.issues ?? [])].filter(issue => issue?.startsWith('unity-'))
+        const issues = [asset.issue, ...(asset.issues ?? [])].filter(issue => /^(unity|unreal)-/.test(issue))
         if (issues.length) row.append(element('p', issues.map(describeIssue).join(' · ')))
         if (asset.materialDescription) {
           const { path, shader } = asset.materialDescription

@@ -281,6 +281,7 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
   })
   $('close').addEventListener('click', () => dialog.close())
   dialog.addEventListener('close', () => {
+    if (dialog.open) return
     clearTimeout(pollTimer)
     thumbnail.select(null)
   })

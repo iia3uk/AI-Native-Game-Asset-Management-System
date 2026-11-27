@@ -4,7 +4,7 @@ import { Worker } from 'node:worker_threads'
 import { IndexInputError } from '../index/index-errors.mjs'
 import { ScanChangeError } from '../files/asset-files.mjs'
 import { thumbnailCurrent } from '../thumbnails/thumbnail-input.mjs'
-import { packageSource, watchedPackageSource } from '../packages/unity/paths.mjs'
+import { packageSource, watchedPackageSource } from '../packages/source.mjs'
 import { stagePackage } from '../packages/dispatch.mjs'
 
 const timeouts = { scan: 300_000, thumbnail: 25_000, 'package-import': 600_000 }

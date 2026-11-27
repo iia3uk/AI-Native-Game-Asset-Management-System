@@ -8,12 +8,12 @@ import { ProcessingWorker } from '../core/processing/processing-worker.mjs'
 import { ThumbnailCache } from '../core/thumbnails/thumbnail-cache.mjs'
 import { assetThumbnail } from '../core/thumbnails/thumbnail-service.mjs'
 import { inspectPackage, packageOptions } from '../core/packages/dispatch.mjs'
-import { packageSource } from '../core/packages/unity/paths.mjs'
+import { packageSource } from '../core/packages/source.mjs'
 import { importUnityBundle } from '../core/packages/unity/bundle/import.mjs'
 import { engineInventory } from '../core/engines/inventory.mjs'
 import { inspectUnreal } from '../core/packages/unreal/inspect.mjs'
 import { exportUnrealWithEditor } from '../core/packages/unreal/export.mjs'
-import { extractUnrealPak } from '../core/packages/unreal/extract.mjs'
+import { extractUnrealPak } from '../core/packages/unreal/pak/import.mjs'
 
 const string = { type: 'string' }
 const flag = { type: 'boolean' }

@@ -16,7 +16,7 @@ Scans keep running if you close the index dialog. Open it and select the library
 
 ## Import a Unity package
 
-Open **Индекс → Импорт пакетов Unity**. In the desktop app, select or drop up to 16 `.unitypackage` or UnityFS files. In the browser, enter the full local path and click **Проанализировать**. Expand a package to see its contents. Select **FBX** or **GLB-предпросмотр** to request model exports, then choose **Обработать и добавить в индекс**. With multiple packages analyzed, **Обработать все пакеты** queues the remaining packages with the same formats. The jobs list displays progress and offers cancellation or retry where available.
+Open **Индекс → Импорт пакетов Unity и Unreal**. In the desktop app, select or drop up to 16 Unity packages, UnityFS containers or Unreal Pak archives. In the browser, enter the full local path and click **Проанализировать**. Expand a package to see its contents. Select **FBX** or **GLB-предпросмотр** to request Unity model exports, then choose **Обработать и добавить в индекс**. With multiple packages analyzed, **Обработать все пакеты** queues the remaining packages using settings supported by each format. The jobs list displays progress and offers cancellation or retry where available.
 
 Use **Показать в индексе** after the scan completes. Supported originals such as FBX, GLB and PNG retain their original bytes and `Assets/` or `Packages/` paths. The application copies them into its data directory and uses the existing viewer. The report shows unavailable and excluded entries.
 
@@ -41,7 +41,7 @@ The default CLI command waits for extraction and indexing. Add `--queue` to hand
 
 ## Inspect and import a Unity AssetBundle
 
-The importer recognizes stock UnityFS by its file signature. Select or drop a bundle in **Импорт пакетов Unity**, or enter its path and click **Проанализировать**. Expand the result for the container version, Unity version and serialized object IDs. **Обработать и добавить в индекс** queues PNG and GLB output. Select **FBX** to request an additional Blender export. UnityFS always uses the independent decoder, including when it is submitted with `.unitypackage` files configured to use Unity Editor.
+The importer recognizes stock UnityFS by its file signature. Select or drop a bundle in **Импорт пакетов Unity и Unreal**, or enter its path and click **Проанализировать**. Expand the result for the container version, Unity version and serialized object IDs. **Обработать и добавить в индекс** queues PNG and GLB output. Select **FBX** to request an additional Blender export. UnityFS always uses the independent decoder, including when it is submitted with `.unitypackage` files configured to use Unity Editor.
 
 The Windows app includes the decoder. For source runs, follow the [worker build instructions](BUILD.md). The same interface is available in the CLI:
 
@@ -57,7 +57,7 @@ The report marks unsupported layouts and classes. Meshes with skinning, blend sh
 
 ## Automatically import a Unity package folder
 
-Open **Индекс**, connect the folder with incoming `.unitypackage` files, select it under **Библиотека** and enable **Автоимпорт Unity**. Existing archives and new or changed files in subfolders are picked up while the app or local server is running. The importer extracts originals and requests FBX and GLB exports for supported models. This mode runs without Unity Editor and uses Blender where available. Follow progress and reports in **Импорт пакетов Unity**. Results are indexed in managed libraries.
+Open **Индекс**, connect the folder with incoming `.unitypackage` files, select it under **Библиотека** and enable **Автоимпорт Unity**. Existing archives and new or changed files in subfolders are picked up while the app or local server is running. The importer extracts originals and requests FBX and GLB exports for supported models. This mode runs without Unity Editor and uses Blender where available. Follow progress and reports in **Импорт пакетов Unity и Unreal**. Results are indexed in managed libraries.
 
 Turning off **Автоимпорт Unity** cancels active automatic imports for that source. Use **Повторить** in a job row to retry a failed, interrupted or cancelled import. The setting and the archive SHA-256 history survive restarts.
 
@@ -92,14 +92,15 @@ npm run cli -- unreal-export "/absolute/path/Project.uproject" --unreal-version 
 
 The bridge requests FBX for static meshes, skeletal meshes and animation sequences, PNG for supported textures and WAV for audio. Materials and standalone skeletons produce JSON metadata. Verified outputs publish under the app's managed import folder and discoverable files are added to the shared index. The manifest records source paths and hashes. The Editor bridge still needs end-to-end validation with a native Unreal installation.
 
-Use `unreal-extract` with a standard unencrypted Pak to list and extract supported files without Unreal Editor. Follow the [worker build instructions](BUILD.md) to make the CUE4Parse executable available. With `--inspect`, the command lists up to 500 entries without opening the database. Remove `--inspect` to save supported files under `imports/unreal-pak-v1/` in the app data directory and add them to the shared index.
+Use **Индекс → Импорт пакетов Unity и Unreal** to inspect a stock Pak with a supported unencrypted index. The desktop window accepts files selected or dropped into the importer. The same path works in the CLI. Make the separate CUE4Parse executable available with the [worker build instructions](BUILD.md). Inspection lists up to 500 entries. Click **Обработать и добавить в индекс** to queue extraction into `imports/unreal-pak-v1/`. The job shows status, opens the report and links to the indexed files when available.
 
 ```sh
-npm run cli -- unreal-extract "/absolute/path/example.pak" --inspect --json
-npm run cli -- unreal-extract "/absolute/path/example.pak" --json
+npm run cli -- package-inspect "/absolute/path/example.pak" --json
+npm run cli -- package-import "/absolute/path/example.pak" --json
+npm run cli -- package-import "/absolute/path/example.pak" --queue --json
 ```
 
-The independent worker handles stored and Zlib-compressed entries from supported stock Pak layouts. Supported embedded FBX, GLB, PNG and WAV files retain their bytes. Valid loose Unreal packages and matching companions are saved to `Source/` with their archive-relative paths. Reports record each result and source hashes. Cooked object decoding, IoStore extraction, dependency resolution and background processing for Unreal remain pending.
+The independent worker handles stored and Zlib-compressed entries from supported stock Pak layouts. Supported embedded FBX, GLB, PNG and WAV files retain their bytes. Valid loose Unreal packages and matching companions are saved to `Source/` with their archive-relative paths. The report records each result and source hash. Repeated imports reuse verified artifacts. The dedicated `unreal-extract` command remains available. Cooked object decoding, IoStore extraction, dependency resolution, new format conversion and folder watching for Pak remain pending.
 
 Set `ASSET_VIEWER_UNITY` or `ASSET_VIEWER_BLENDER` to an absolute executable path. Set `ASSET_VIEWER_UNITY_ROOTS` or `ASSET_VIEWER_UNREAL_ROOTS` to absolute installation directories using the operating system's PATH separator. Start or restart the app with those settings.
 

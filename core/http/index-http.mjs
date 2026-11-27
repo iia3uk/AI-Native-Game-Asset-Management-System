@@ -8,7 +8,7 @@ import { ProcessingWorker } from '../processing/processing-worker.mjs'
 import { ThumbnailCache } from '../thumbnails/thumbnail-cache.mjs'
 import { assetThumbnail } from '../thumbnails/thumbnail-service.mjs'
 import { packageRoutes } from './package-routes.mjs'
-import { packageManifestPage } from '../packages/unity/manifest-page.mjs'
+import { packageManifestPage } from '../packages/manifest-page.mjs'
 import { engineInventory } from '../engines/inventory.mjs'
 
 export function indexRoutes({ database, thumbnailDirectory, importDirectory, ignoredWatchPaths = [],

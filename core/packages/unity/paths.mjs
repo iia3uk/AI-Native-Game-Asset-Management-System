@@ -1,18 +1,11 @@
-import { basename, dirname, isAbsolute } from 'node:path'
-import { fileInfo, folderPath } from '../../files/asset-files.mjs'
+import { validPackageSegment } from '../source.mjs'
 import { invalid } from './policy.mjs'
 
 const decoder = new TextDecoder('utf-8', { fatal: true })
 
-function validSegment(segment) {
-  return segment.length > 0 && segment.length <= 180 && !/[\x00-\x1f\x7f\\:*?"<>|]/.test(segment) &&
-    !/[. ]$/.test(segment) && !/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³]|conin\$|conout\$)(?:[. ]|$)/i.test(segment) &&
-    !/^[^~.]{1,6}~\d+(?:\.|$)/i.test(segment)
-}
-
 export function segments(path) {
   const parts = path.split('/')
-  if (path.length > 1024 || parts.length > 32 || !parts.every(validSegment)) throw invalid('опасный путь в архиве.')
+  if (path.length > 1024 || parts.length > 32 || !parts.every(validPackageSegment)) throw invalid('опасный путь в архиве.')
   return parts
 }
 
@@ -35,23 +28,4 @@ export function checkPathTree(tree, path, directory) {
     if (!existing) tree.set(key, { name, children: (!last || directory) ? new Map() : null })
     tree = tree.get(key).children
   }
-}
-
-export async function packageSource(input) {
-  const path = typeof input === 'string' ? input.trim().replace(/^"(.*)"$/, '$1') : ''
-  if (!isAbsolute(path) || path.length > 4096 || !validSegment(basename(path))) {
-    throw invalid('укажите полный путь к локальному файлу.')
-  }
-  const root = await folderPath(dirname(path)).catch(() => null)
-  const file = root && await fileInfo(root, basename(path))
-  if (!file) throw invalid('файл не найден или недоступен.')
-  return { root, path: file.path, name: basename(file.path) }
-}
-
-export async function watchedPackageSource({ root, path, enabled }) {
-  const name = basename(path)
-  if (!enabled || isAbsolute(path) || !validSegment(name)) throw invalid('недоступный источник автоимпорта.')
-  const file = await fileInfo(root, path)
-  if (!file) throw invalid('архив больше не доступен в наблюдаемой папке.')
-  return { root, path: file.path, name }
 }

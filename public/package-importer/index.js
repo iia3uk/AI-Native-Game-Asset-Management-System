@@ -9,7 +9,7 @@ const active = job => ['pending', 'running'].includes(job.status)
 const assetStatus = {
   ready: 'Готово', extracted: 'Прямое извлечение', unsupported: 'Не поддерживается',
   available: 'Доступно для декодирования', 'requires-engine': 'Требуется обработчик Unity', failed: 'Ошибка обработки',
-  'missing-dependencies': 'Отсутствуют зависимости', converted: 'Сконвертировано',
+  'missing-dependencies': 'Отсутствуют зависимости', converted: 'Сконвертировано', skipped: 'Пропущено',
 }
 const jobStatus = {
   pending: 'В очереди', running: 'Обработка', completed: 'Обработан',
@@ -89,6 +89,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     let label = jobStatus[record.status]
     if (active(record) && record.cancelRequested) label = 'Отмена запрошена'
     else if (record.status === 'running') label += ' · ' + record.progress + '%'
+    else if (record.result?.report?.status === 'no-compatible-inputs') label = 'Нет совместимых файлов'
     if (scan) label += ' · ' + (active(scan) ? 'Индексация' : scan.status === 'completed' ? 'В индексе' : 'Индексация прервана')
     row.append(element('p', record.packageName + (record.trigger === 'watch' ? ' · Автоимпорт' : '') + ' · ' + label))
     if (record.error || scan?.error) row.append(element('p', record.error ?? scan.error))
@@ -112,6 +113,10 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
       if (record.result.report.packageFormat === 'unityfs') {
         const { format, unityVersion, converted, total } = record.result.report
         details.append(element('p', 'UnityFS ' + format + ' · Unity ' + unityVersion + ' · Декодировано ' + converted + ' из ' + total))
+      }
+      if (record.result.report.packageFormat === 'unreal-pak') {
+        const { containerVersion, extracted, total } = record.result.report
+        details.append(element('p', 'Unreal Pak ' + containerVersion + ' · Извлечено ' + extracted + ' из ' + total))
       }
       if (record.result.report.export) {
         details.append(element('p', 'Моделей сконвертировано · ' + record.result.report.converted))
@@ -138,6 +143,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
 
   async function queuePlan(path, plan, options) {
     if (plan.format === 'unityfs') options = { mode: 'engineless', formats: options.formats }
+    if (plan.format === 'unreal-pak') options = { mode: 'engineless' }
     await json(packagesRoute + '/import', post({ path, hash: plan.hash, ...options }))
     queuedPlans.get(path)?.row.remove()
     queuedPlans.delete(path)
@@ -166,10 +172,17 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     const details = element('details')
     const preview = element('ul')
     const shown = plan.assets.slice(0, 50)
-    for (const asset of shown) preview.append(element('li', assetLabel(asset) + ' · ' + (assetStatus[asset.status] ?? asset.status)))
+    for (const asset of shown) {
+      const status = plan.format === 'unreal-pak' && asset.status === 'available' ? 'Доступно для извлечения' :
+        assetStatus[asset.status] ?? asset.status
+      preview.append(element('li', [assetLabel(asset), status, asset.issue && describeIssue(asset.issue)].filter(Boolean).join(' · ')))
+    }
     details.append(element('summary', path.split(/[\\/]/).at(-1) + ' · ' + plan.total + ' записей'), preview)
     if (plan.format === 'unityfs') {
       details.insertBefore(element('p', 'UnityFS ' + plan.containerVersion + ' · Unity ' + plan.unityVersion + ' · Без Unity Editor'), preview)
+    }
+    if (plan.format === 'unreal-pak') {
+      details.insertBefore(element('p', 'Unreal Pak ' + plan.containerVersion + ' · Извлечение исходных файлов'), preview)
     }
     if (plan.total > shown.length) details.append(element('p', 'Показано ' + shown.length + ' из ' + plan.total + ' записей.'))
     const start = button('Обработать и добавить в индекс', async () => {
@@ -217,7 +230,9 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     if (pathInput.value.trim()) void inspect([pathInput.value.trim()])
   })
   section.addEventListener('toggle', () => void refresh())
-  dialog.addEventListener('close', () => clearTimeout(timer))
+  dialog.addEventListener('close', () => {
+    if (!dialog.open) void refresh()
+  })
   if (bridge?.selectedFilePath) {
     const select = files => void inspect(Array.from(files, file => bridge.selectedFilePath(file)))
     $('drop').hidden = $('pick').hidden = false

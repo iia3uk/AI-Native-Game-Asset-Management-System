@@ -9,6 +9,7 @@ import { generateFixtures } from '../../scripts/generate-fixtures.mjs'
 import { verifyPackageWatch } from './package-watch.mjs'
 import { verifyStartupWithoutInterface } from './startup.mjs'
 import { verifyUnityBundle } from './unity-bundle.mjs'
+import { verifyUnrealPak } from './unreal-pak.mjs'
 import { verifyUnityPreview } from './unity-preview.mjs'
 import { unityEntries, unityFixtureEntries, writeUnityFixture } from '../fixtures/unitypackage.mjs'
 
@@ -156,11 +157,14 @@ void startDesktop(root, { showWindow: false }).then(async ({ window, origin }) =
   await verifyPackageWatch(webContents, waitFor, fixtures)
   const bundle = process.env.ASSET_VIEWER_SMOKE_BUNDLE
   if (bundle) await verifyUnityBundle(webContents, waitFor, bundle)
+  const pak = process.env.ASSET_VIEWER_SMOKE_PAK === '1'
+  if (pak) await verifyUnrealPak(webContents, waitFor, fixtures)
   await verifyStartupWithoutInterface()
   assert.deepEqual(externalRequests, [])
   assert.equal(window.isVisible(), false)
   console.log('Desktop startup, demo, library watching, thumbnail cache, analysis, metadata, manual and watched Unity import, PBR material preview and renderer isolation passed.')
   if (bundle) console.log('UnityFS inspection, queued import, artifact report and indexed GLB preview passed.')
+  if (pak) console.log('Unreal Pak inspection, queued import, artifact report and indexed GLB preview passed.')
   app.quit()
 }).catch(error => {
   console.error(error)

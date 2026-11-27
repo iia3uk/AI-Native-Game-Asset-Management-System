@@ -174,7 +174,7 @@
       </div>
     </form>
     <details id="package-importer" class="index-analysis">
-      <summary>Импорт пакетов Unity</summary>
+      <summary>Импорт пакетов Unity и Unreal</summary>
       <form id="package-form">
         <label for="package-path">Полный путь к пакету</label>
         <div class="folder-path-row">
@@ -184,14 +184,14 @@
         </div>
         <input id="package-files" type="file" multiple hidden>
       </form>
-      <p id="package-drop" class="notice" hidden>Можно перетащить архивы .unitypackage и контейнеры UnityFS.</p>
+      <p id="package-drop" class="notice" hidden>Можно перетащить архивы .unitypackage и контейнеры UnityFS или Unreal Pak.</p>
       <div class="index-toolbar" role="group" aria-label="Форматы экспорта моделей">
         <label><input id="package-export-fbx" type="checkbox"> FBX</label>
         <label><input id="package-export-glb" type="checkbox"> GLB-предпросмотр</label>
         <button id="package-start-all" class="control" type="button" hidden>Обработать все пакеты</button>
       </div>
       <div class="index-toolbar">
-        <label for="package-engine-mode">Режим</label>
+        <label for="package-engine-mode">Режим .unitypackage</label>
         <select id="package-engine-mode">
           <option value="engineless">Без Unity</option>
           <option value="auto">Авто</option>
