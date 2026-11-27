@@ -1,5 +1,5 @@
 import { Box3, Matrix4, Quaternion, Vector3 } from 'three'
-import { isCollisionName } from '../../public/model-names.js'
+import { isCollisionName } from '../../public/shared/model-names.js'
 
 const array = value => Array.isArray(value) ? value : []
 const count = value => Number.isSafeInteger(value) && value >= 0 ? value : null

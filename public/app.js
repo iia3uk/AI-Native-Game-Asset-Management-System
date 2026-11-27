@@ -1,9 +1,17 @@
-import { ModelStage, convertedImages, decodedImages, decodedImageUrl } from './stage.js'
-import { isDataMap } from './textures.js'
-import { isCollisionFile, visualModelFor } from './model-names.js'
-import { ModelThumbnails } from './thumbnails.js'
-import { storageNamespace, storedValue } from './viewer-storage.js'
-import { mountIndex } from './index-library.js'
+import { ModelStage } from './preview/stage.js'
+import { convertedImages, decodedImages, decodedImageUrl } from './preview/loaders/image-preview.js'
+import { isDataMap } from './preview/materials/textures.js'
+import { isCollisionFile, visualModelFor } from './shared/model-names.js'
+import { ModelThumbnails } from './preview/thumbnails.js'
+import { markKey, readLocal, storageKey } from './catalog/viewer-storage.js'
+import { createClassification, newCategory } from './catalog/classification.js'
+import { createFolderCatalog, localTextures } from './catalog/folders.js'
+import { counted, counts, label, normalize, sizeLabel } from './catalog/format.js'
+import { renderPackList } from './catalog/pack-list.js'
+import { renderFileList } from './catalog/file-list.js'
+import { ensurePreview } from './preview/loaders/prepare.js'
+import { json, post } from './shared/http.js'
+import { mountIndex } from './library/index.js'
 
 const $ = id => document.getElementById(id)
 const ui = Object.fromEntries([
@@ -20,79 +28,20 @@ const ui = Object.fromEntries([
   'folder-category', 'new-folder-category', 'model-category-tools', 'model-category', 'new-model-category',
   'save-model-category', 'model-category-status',
 ].map(id => [id, $(id)]))
-const formatter = new Intl.NumberFormat('ru-RU')
-const counts = number => formatter.format(number)
-const plurals = new Intl.PluralRules('ru-RU')
-const counted = (number, one, few, many) => counts(number) + ' ' + ({ one, few, many }[plurals.select(number)] ?? many)
-const categories = {
-  Animals: 'Животные', Animations: 'Анимации', Architecture: 'Архитектура', Bushes: 'Кустарники', Characters: 'Персонажи',
-  Crafting: 'Ремесло', Dungeons: 'Подземелья', Fishing: 'Рыбалка', Magic: 'Магия', Mixed_Packs: 'Смешанные наборы',
-  Mounts: 'Ездовые животные', Nature: 'Природа', Resources: 'Ресурсы', Rocks: 'Камни', Terrain: 'Рельеф', Textures: 'Текстуры',
-  Trees: 'Деревья', Vegetation: 'Растительность', VFX: 'Эффекты', Villages: 'Поселения',
-  Local: 'Папка',
-}
 const filePageSize = 65
 const state = { packs: [], marks: {}, active: null, file: null, candidates: false, kind: 'model',
   limit: filePageSize, load: 0, packLoad: 0, folder: null }
 const fab = { packs: [], marks: {}, selection: null }
-const localFolders = new Map()
-const foldersStorage = storageNamespace + '.folders.v1'
-const classificationStorage = storageNamespace + '.classification.v1'
-const newCategory = '__new_category__'
-const noCategory = '__no_category__'
+const { localFolders, userFolders, savedFolders, saveFolders, registerFolder, restoreFolders, fetchPack, modelResources } =
+  createFolderCatalog(localStorage)
+const classification = createClassification(localStorage)
+const { folderCategory, modelCategory, categoryLabel, fillCategories, categoryValue } = classification
 let localSelection
-let categoryRevision = 0
 let stage
 let pendingSave = false
 let imageZoom = 1
 let imageObjectUrl
 let openingFolder = false
-const localTextures = file => file.kind === 'image' && (file.preview || convertedImages.has(file.ext))
-const storageKey = (folder, kind) => `${storageNamespace}.${kind}.${folder.key}`
-const post = value => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) })
-
-function readLocal(folder, kind) {
-  try { return JSON.parse(storedValue(localStorage, storageKey(folder, kind)) ?? '{}') ?? {} }
-  catch { return {} }
-}
-
-function savedFolders() {
-  try {
-    const saved = JSON.parse(storedValue(localStorage, foldersStorage) ?? '[]')
-    return Array.isArray(saved) ? saved.filter(item => typeof item?.root === 'string' && typeof item.id === 'string') : []
-  } catch { return [] }
-}
-
-function saveFolders() {
-  localStorage.setItem(foldersStorage, JSON.stringify(userFolders().map(({ id, root }) => ({ id, root }))))
-}
-
-function registerFolder(info, indexed = false) {
-  if (indexed) {
-    for (const [key, folder] of localFolders) if (folder.indexed) localFolders.delete(key)
-    info = { ...info, key: 'indexed.' + info.key, indexed }
-  }
-  const name = info.root.split(/[\\/]/).filter(Boolean).at(-1) ?? info.root
-  const previous = localFolders.get(info.key)
-  if (previous && previous.id !== info.id) {
-    for (const url of packRequests.keys()) if (url.startsWith(`/api/folder/${previous.id}/`)) packRequests.delete(url)
-  }
-  const resources = info.resources.map(file => ({ ...file, selectionId: info.key + '.' + file.id }))
-  const folder = { ...info, name, images: resources.filter(localTextures), resources,
-    marks: indexed ? {} : readLocal(info, 'review'), maps: readLocal(info, 'textures'),
-  }
-  localFolders.set(folder.key, folder)
-  return folder
-}
-
-async function restoreFolders() {
-  const entries = savedFolders()
-  const results = await Promise.allSettled(entries.map(entry => json('/api/folder/' + encodeURIComponent(entry.id))
-    .catch(() => json('/api/folder', post({ path: entry.root })))))
-  for (const result of results) if (result.status === 'fulfilled') registerFolder(result.value)
-}
-
-const userFolders = () => [...localFolders.values()].filter(folder => !folder.demo && !folder.indexed)
 const activeFolders = () => state.folder?.demo || state.folder?.indexed ? [state.folder] : userFolders()
 const localMarks = () => Object.assign({}, ...activeFolders().map(folder => folder.marks))
 const combinedImages = () => activeFolders().flatMap(folder => folder.images)
@@ -113,62 +62,13 @@ function manualTextureScope() {
   return state.folder ?? { key: 'fab.' + state.active.id }
 }
 
-function loadClassification() {
-  try {
-    const data = JSON.parse(storedValue(localStorage, classificationStorage) ?? '{}')
-    return { names: data.names ?? {}, roots: data.roots ?? {}, models: data.models ?? {} }
-  } catch { return { names: {}, roots: {}, models: {} } }
-}
-
-const classification = loadClassification()
 const thumbnails = new ModelThumbnails(ui['pack-list'])
-const packRequests = new Map()
-const folderCategory = pack => pack.folderKey ? classification.roots[pack.folderKey] ?? noCategory : pack.category ?? noCategory
-const modelCategory = (pack, file) => classification.models[markKey(pack.id, file.id)] ?? folderCategory(pack)
 const categoryMatches = (pack, file) => !ui.category.value || (file.kind === 'model' && modelCategory(pack, file) === ui.category.value)
 const eligibleFile = (pack, file) => categoryMatches(pack, file) &&
   (!state.candidates || state.marks[markKey(pack.id, file.id)]?.status === 'candidate')
 
-function modelsInCategory(pack) {
-  const selected = ui.category.value
-  if (!selected) return pack.models
-  if (pack.modelIds) {
-    return pack.modelIds.reduce((sum, id) => sum + Number((classification.models[markKey(pack.id, id)] ?? folderCategory(pack)) === selected), 0)
-  }
-  let count = folderCategory(pack) === selected ? pack.models : 0
-  for (const [key, category] of Object.entries(classification.models)) if (key.startsWith(pack.id + ':')) {
-    count += Number(category === selected) - Number(folderCategory(pack) === selected)
-  }
-  return count
-}
-
-function knownCategories() {
-  return Object.entries({ ...categories, ...classification.names }).filter(([id]) => id !== 'Local')
-    .sort((a, b) => a[1].localeCompare(b[1], 'ru'))
-}
-
-function fillCategories(select, empty, editable) {
-  const value = select.value
-  select.replaceChildren(new Option(empty, ''), ...knownCategories().map(([id, title]) => new Option(title, id)),
-    new Option('Без категории', noCategory))
-  if (editable) select.append(new Option('Новая категория…', newCategory))
-  if (Array.from(select.options).some(item => item.value === value)) select.value = value
-}
-
-function categoryValue(select, input) {
-  if (select.value !== newCategory) return select.value
-  const title = input.value.trim().replace(/\s+/g, ' ')
-  if (!title) throw new Error('Введите название категории.')
-  const existing = knownCategories().find(([, name]) => normalize(name) === normalize(title))
-  if (existing) return existing[0]
-  const id = 'custom-' + crypto.randomUUID()
-  classification.names[id] = title
-  return id
-}
-
 function persistCategories() {
-  localStorage.setItem(classificationStorage, JSON.stringify(classification))
-  categoryRevision++
+  classification.persistCategories()
   fillCategories(ui.category, 'Все категории', false)
 }
 
@@ -180,55 +80,11 @@ function modelCategoryControls() {
   ui['model-category-status'].textContent = ''
   if (!show) return
   fillCategories(ui['model-category'], 'По умолчанию · ' + categoryLabel(folderCategory(state.active)), true)
-  ui['model-category'].value = classification.models[markKey(state.active.id, state.file.id)] ?? ''
+  ui['model-category'].value = classification.modelOverride(markKey(state.active.id, state.file.id)) ?? ''
 }
 
-function label(tag, className, text) {
-  const element = document.createElement(tag)
-  if (className) element.className = className
-  if (text !== undefined) element.textContent = text
-  return element
-}
-const normalize = text => text.toLocaleLowerCase().trim()
-const markKey = (pack, file) => pack + ':' + file
 const currentMark = () => state.active && state.file ? state.marks[markKey(state.active.id, state.file.id)] : null
-const categoryLabel = key => key === noCategory ? 'Без категории' : classification.names[key] ?? categories[key] ?? key
 const chosen = () => Object.values(state.marks).filter(mark => mark.status === 'candidate')
-const sizeLabel = size => {
-  if (size >= 1024 ** 3) return (size / 1024 ** 3).toLocaleString('ru-RU', { maximumFractionDigits: 2 }) + ' ГиБ'
-  if (size >= 1024 ** 2) return (size / 1024 ** 2).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + ' МиБ'
-  return counts(Math.ceil(size / 1024)) + ' КиБ'
-}
-
-async function json(url, options) {
-  const response = await fetch(url, options)
-  const body = await response.json().catch(() => null)
-  if (!response.ok || !body) throw new Error(body?.error || 'Локальный сервер вернул HTTP ' + response.status)
-  return body
-}
-
-async function fetchPack(pack) {
-  const folder = pack.folderKey && localFolders.get(pack.folderKey)
-  const url = folder ? `/api/folder/${folder.id}/group/${pack.groupId}` : '/api/packs/' + pack.id
-  if (!packRequests.has(url)) {
-    const request = json(url).catch(error => { packRequests.delete(url); throw error })
-    packRequests.set(url, request)
-  }
-  return packRequests.get(url)
-}
-
-async function ensurePreview(file, folder) {
-  if (!file.convertible || file.preview || !folder) return file
-  const { preview } = await json(`/api/folder/${folder.id}/blend/${file.id}`, post({}))
-  return { ...file, preview, previewFormat: 'glb' }
-}
-
-function modelResources(folder, files) {
-  if (!folder) return files
-  const otherImages = folder.demo || folder.indexed ? [] : userFolders().filter(other => other.key !== folder.key).flatMap(other => other.images)
-  return otherImages.length ? folder.resources.concat(otherImages) : folder.resources
-}
-
 async function thumbnailInput(pack, category, candidateIds) {
   const data = await fetchPack(pack)
   const folder = localFolders.get(pack.folderKey)
@@ -261,111 +117,13 @@ function updateTabs() {
 }
 
 function renderPacks() {
-  thumbnails.clearObserved()
-  const query = normalize(ui.search.value)
-  const selectedCategory = ui.category.value
-  const scroll = ui['pack-list'].scrollTop
-  const focused = ui['pack-list'].contains(document.activeElement) ? document.activeElement.dataset.pack : null
-  const roots = [...localFolders.values()].map(folder => folder.id).join(',')
-  const packsById = new Map(state.packs.map(pack => [pack.id, pack]))
-  const candidateFiles = new Map()
-  for (const [key, candidate] of Object.entries(state.marks)) {
-    if (candidate.status !== 'candidate') continue
-    const id = candidate.packId ?? candidate.fabId
-    const pack = packsById.get(id)
-    if (!pack) continue
-    const fileId = key.slice(id.length + 1)
-    const file = state.active?.id === id && state.active.files.find(file => file.id === fileId)
-    if (selectedCategory && (file ? !categoryMatches(pack, file) :
-      (pack.modelIds && !pack.modelIds.includes(fileId)) ||
-      (classification.models[key] ?? folderCategory(pack)) !== selectedCategory)) continue
-    if (!candidateFiles.has(id)) candidateFiles.set(id, [])
-    candidateFiles.get(id).push(fileId)
-  }
-  const visible = state.packs.filter(pack => (!state.candidates || candidateFiles.has(pack.id)) &&
-    (!selectedCategory || modelsInCategory(pack) > 0) &&
-    (!query || normalize([pack.title, pack.author, categoryLabel(pack.category), ...pack.formats].join(' ')).includes(query)))
-  const fragment = document.createDocumentFragment()
-  let nextFocus
-  for (const pack of visible) {
-    const button = label('button', 'pack')
-    button.dataset.pack = pack.id
-    if (pack.id === focused) nextFocus = button
-    if (pack.folderKey) button.title = localFolders.get(pack.folderKey)?.root + ' / ' + pack.localPath
-    button.setAttribute('aria-current', String(pack.id === state.active?.id))
-    const icon = label('span', 'pack-icon')
-    icon.textContent = pack.models ? '3D' : 'IMG'
-    if (pack.models) {
-      const candidateIds = state.candidates ? candidateFiles.get(pack.id) : null
-      const key = [pack.id, selectedCategory, pack.folderKey ? roots : '', selectedCategory ? categoryRevision : 0,
-        candidateIds ? [...candidateIds].sort().join(',') : ''].join(':')
-      const fallback = selectedCategory || state.candidates ? null : pack.previewImage
-      thumbnails.observe(icon, key, () => thumbnailInput(pack, selectedCategory, candidateIds), fallback)
-    } else if (pack.previewImage) thumbnails.paint(icon, pack.previewImage)
-    const text = label('span', 'pack-text')
-    text.append(label('span', 'pack-title', pack.title), label('span', 'pack-meta', state.folder
-      ? localFolders.get(pack.folderKey)?.name + ' · ' + counts(modelsInCategory(pack)) + ' 3D'
-      : categoryLabel(selectedCategory || pack.category) + ' · ' + counts(modelsInCategory(pack)) + ' 3D'))
-    button.append(icon, text)
-    if (candidateFiles.has(pack.id)) button.append(label('span', 'pack-count', counts(candidateFiles.get(pack.id).length)))
-    fragment.append(button)
-  }
-  if (!visible.length) fragment.append(label('p', 'list-empty', state.candidates ? 'Подходящих отметок пока нет.' :
-    state.folder ? 'Подходящие файлы не найдены.' : 'Наборы не найдены.'))
-  ui['pack-list'].replaceChildren(fragment)
-  ui['pack-list'].scrollTop = scroll
-  nextFocus?.focus({ preventScroll: true })
-  ui['result-count'].textContent = counts(visible.length) + ' из ' + counts(state.packs.length)
+  const visible = renderPackList({ ui, state, localFolders, classification, categoryMatches, thumbnails, thumbnailInput })
   updateTabs()
   return visible
 }
 
 function renderFiles(revealSelection = false) {
-  const query = normalize(ui['file-search'].value)
-  const pack = state.active
-  const hideColliders = state.kind === 'model' && !state.candidates &&
-    pack?.files.some(file => file.kind === 'model' && !isCollisionFile(file) && eligibleFile(pack, file))
-  const files = !pack ? [] : pack.files.filter(file => (state.kind === 'all' || state.kind === file.kind) &&
-    eligibleFile(pack, file) && (!hideColliders || !isCollisionFile(file)) &&
-    (!query || normalize(file.displayPath).includes(query)))
-  if (revealSelection && state.file) {
-    const index = files.findIndex(file => file.id === state.file.id)
-    if (index >= state.limit) state.limit = Math.ceil((index + 1) / filePageSize) * filePageSize
-  }
-  const list = ui['file-list']
-  const scroll = list.scrollTop
-  const focused = list.contains(document.activeElement) ? document.activeElement.dataset.file : null
-  const fragment = document.createDocumentFragment()
-  let nextFocus
-  let selected
-  for (const file of files.slice(0, state.limit)) {
-    const button = label('button', 'file')
-    button.title = file.displayPath + (file.kind === 'model' ? ' · ' + categoryLabel(modelCategory(pack, file)) : '')
-    button.dataset.file = file.id
-    if (file.id === focused) nextFocus = button
-    button.setAttribute('aria-current', String(state.file?.id === file.id))
-    if (state.file?.id === file.id) selected = button
-    button.append(label('span', 'file-name', file.name),
-      label('span', 'file-type', isCollisionFile(file) ? 'Коллизия' : file.ext.toUpperCase()))
-    const status = state.marks[markKey(pack.id, file.id)]?.status
-    if (status) button.append(label('span', 'file-mark', { candidate: '✓', later: '◷', excluded: '×' }[status]))
-    fragment.append(button)
-  }
-  if (!files.length && pack) fragment.append(label('p', 'list-empty', 'В этой подборке файлов нет.'))
-  if (files.length > state.limit) {
-    const more = label('button', 'more-files', 'Показать ещё · ' + counts(files.length - state.limit))
-    more.dataset.more = 'true'
-    fragment.append(more)
-  }
-  list.replaceChildren(fragment)
-  list.scrollTop = scroll
-  nextFocus?.focus({ preventScroll: true })
-  if (revealSelection && selected) {
-    const viewport = list.getBoundingClientRect()
-    const item = selected.getBoundingClientRect()
-    if (item.top < viewport.top) list.scrollTop += item.top - viewport.top
-    else if (item.bottom > viewport.bottom) list.scrollTop += item.bottom - viewport.bottom
-  }
+  renderFileList({ ui, state, eligibleFile, classification, pageSize: filePageSize }, revealSelection)
   updateTabs()
 }
 
@@ -459,7 +217,7 @@ async function restoreManualTextures(file) {
   const images = manualImages()
   if (!images.length || !stage.manualMaterials.length) return false
   const scope = manualTextureScope()
-  const maps = scope.maps ?? readLocal(scope, 'textures')
+  const maps = scope.maps ?? readLocal(localStorage, scope, 'textures')
   const lookup = new Map(images.map(image => [imageId(image), image]))
   await Promise.all(stage.manualMaterials.map(async (_, index) => {
     const remembered = maps[markKey(file.id, index)]
@@ -775,7 +533,7 @@ async function openPath(path, rescan = false) {
     const info = await json('/api/folder', post({ path }))
     if (rescan && state.folder?.id !== previousFolder) return
     const folder = registerFolder(info)
-    if (category) classification.roots[folder.key] = category
+    if (category) classification.setFolderCategory(folder.key, category)
     persistCategories()
     saveFolders()
     if (ui['folder-dialog'].open) ui['folder-dialog'].close()
@@ -893,8 +651,7 @@ ui['save-model-category'].addEventListener('click', () => {
   try {
     const selected = categoryValue(ui['model-category'], ui['new-model-category'])
     const key = markKey(pack.id, file.id)
-    if (selected) classification.models[key] = selected
-    else delete classification.models[key]
+    classification.setModelCategory(key, selected)
     persistCategories()
     modelCategoryControls()
     ui['model-category-status'].textContent = 'Категория сохранена.'
@@ -916,7 +673,7 @@ ui['manual-apply'].addEventListener('click', async () => {
   try {
     await stage.setManualTexture(index, file)
     if (load !== state.load) return
-    const maps = { ...(scope.maps ?? readLocal(scope, 'textures')) }
+    const maps = { ...(scope.maps ?? readLocal(localStorage, scope, 'textures')) }
     if (file) maps[key] = imageId(file)
     else delete maps[key]
     localStorage.setItem(storageKey(scope, 'textures'), JSON.stringify(maps))

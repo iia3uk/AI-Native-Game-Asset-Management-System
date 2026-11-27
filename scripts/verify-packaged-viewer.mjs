@@ -14,7 +14,16 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
   const archive = join(resources, 'app.asar')
   for (const path of [
     'public/app.js',
-    'public/index-thumbnail.js',
+    'public/catalog/classification.js',
+    'public/catalog/pack-list.js',
+    'public/catalog/file-list.js',
+    'core/library/local-folders.mjs',
+    'core/materials/unity/folder-bindings.mjs',
+    'public/library/index-thumbnail.js',
+    'public/preview/stage.js',
+    'public/preview/loaders/model.js',
+    'public/preview/materials/external-textures.js',
+    'public/styles/viewer.css',
     'core/thumbnails/thumbnail-render.mjs',
     'core/packages/unity/import.mjs',
     'core/packages/unity/bundle/import.mjs',

@@ -2,13 +2,17 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as THREE from 'three'
 import { PLYLoader } from 'three/addons/loaders/PLYLoader.js'
-import { geometryBounds, hasTextureImage, PreviewParts } from '../public/parts.js'
-import { findColorTexture, ModelStage, normalizeFbx, normalizeFbxVertexColors } from '../public/stage.js'
+import { geometryBounds, PreviewParts } from '../public/preview/scene/parts.js'
+import { hasTextureImage } from '../public/preview/materials/texture-image.js'
+import { ModelStage } from '../public/preview/stage.js'
+import { findColorTexture } from '../public/preview/materials/color-selection.js'
+import { normalizeFbx, normalizeFbxVertexColors } from '../public/preview/materials/normalize.js'
 import { companionTexture, copyTextureMapping, idSuffix, isDataMap, isSingleChannelSignal, opacitySuffix,
-  preferColoredImage, resemblesVertexMask } from '../public/textures.js'
-import { isCollisionFile, visualModelFor } from '../public/model-names.js'
-import { animatedTranslationRoot } from '../public/animation-motion.js'
-import { storedValue } from '../public/viewer-storage.js'
+  preferColoredImage, resemblesVertexMask } from '../public/preview/materials/textures.js'
+import { isCollisionFile, visualModelFor } from '../public/shared/model-names.js'
+import { animatedTranslationRoot } from '../public/preview/scene/animation-motion.js'
+import { storedValue } from '../public/catalog/viewer-storage.js'
+import { createClassification } from '../public/catalog/classification.js'
 
 function fbxMesh(material) {
   const geometry = new THREE.BoxGeometry()
@@ -309,4 +313,23 @@ test('single-channel vertex signals are distinct from multichannel paint', () =>
   const multichannel = new THREE.Float32BufferAttribute([0, 0, 0, .8, 0, 0, .4, .7, .3], 3)
   assert.equal(isSingleChannelSignal(redSignal), true)
   assert.equal(isSingleChannelSignal(multichannel), false)
+})
+
+test('catalog categories retain saved folder defaults and model overrides', () => {
+  const key = 'asset-viewer.classification.v1'
+  const values = new Map([[key, JSON.stringify({
+    names: { 'custom-garden': 'Сад' }, roots: { local: 'Architecture' }, models: { 'pack:flower': 'custom-garden' },
+  })]])
+  const storage = {
+    getItem: name => values.get(name) ?? null,
+    setItem: (name, value) => values.set(name, value),
+  }
+  const pack = { id: 'pack', folderKey: 'local', models: 2, modelIds: ['house', 'flower'] }
+  const catalog = createClassification(storage)
+  assert.equal(catalog.categoryLabel(catalog.modelCategory(pack, { id: 'flower' })), 'Сад')
+  assert.equal(catalog.modelsInCategory(pack, 'Architecture'), 1)
+  catalog.setModelCategory('pack:flower', '')
+  catalog.persistCategories()
+  assert.equal(catalog.revision, 1)
+  assert.equal(createClassification(storage).modelsInCategory(pack, 'Architecture'), 2)
 })

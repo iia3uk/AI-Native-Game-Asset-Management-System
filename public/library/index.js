@@ -1,6 +1,6 @@
 import { mountQualityProfile } from './quality-profile.js'
 import { mountIndexThumbnail } from './index-thumbnail.js'
-import { mountPackageImporter } from './package-importer/index.js'
+import { mountPackageImporter } from '../package-importer/index.js'
 
 const $ = id => document.getElementById('index-' + id)
 const number = new Intl.NumberFormat('ru')

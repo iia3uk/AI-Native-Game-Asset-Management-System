@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { VTKLoader } from 'three/addons/loaders/VTKLoader.js'
-import { geometryModel, parseOff } from '../public/extra-models.js'
+import { geometryModel, parseOff } from '../public/preview/loaders/extra-models.js'
 import { blenderModels, browserImages, browserModels, formatOrder, imageFormats, modelFormats } from '../core/files/formats.mjs'
 
 test('preview format registry covers direct models, Blender conversion and raster files', () => {

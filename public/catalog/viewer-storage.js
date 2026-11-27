@@ -14,3 +14,12 @@ export function storedValue(storage, key) {
   }
   return inherited
 }
+
+export const storageKey = (folder, kind) => `${storageNamespace}.${kind}.${folder.key}`
+
+export function readLocal(storage, folder, kind) {
+  try { return JSON.parse(storedValue(storage, storageKey(folder, kind)) ?? '{}') ?? {} }
+  catch { return {} }
+}
+
+export const markKey = (pack, file) => pack + ':' + file

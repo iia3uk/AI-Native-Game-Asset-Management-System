@@ -2,9 +2,9 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
-import { blenderModels, browserImages, browserModels, formatOrder, previewCandidates } from '../core/files/formats.mjs'
-import { connectUnityMaterials } from './unity-materials.mjs'
-import { discoverAssets, folderPath, pathKey } from '../core/files/asset-files.mjs'
+import { blenderModels, browserImages, browserModels, formatOrder, previewCandidates } from '../files/formats.mjs'
+import { connectUnityMaterials } from '../materials/unity/folder-bindings.mjs'
+import { discoverAssets, folderPath, pathKey } from '../files/asset-files.mjs'
 
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 24)
 const sortByPath = (a, b) => a.path.localeCompare(b.path, 'ru', { numeric: true })

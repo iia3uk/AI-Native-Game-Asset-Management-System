@@ -1,5 +1,5 @@
-import { readBoundedText } from '../core/files/asset-files.mjs'
-import { prefabMeshes } from './unity-prefabs.mjs'
+import { readBoundedText } from '../../files/asset-files.mjs'
+import { prefabMeshes } from './prefabs.mjs'
 
 const textureFormats = new Set(['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'tga', 'tif', 'tiff', 'avif'])
 const colorSlots = ['_BaseMap', '_BaseColorMap', '_MainTex', '_AlbedoMap']

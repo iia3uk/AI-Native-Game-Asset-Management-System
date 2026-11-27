@@ -1,6 +1,11 @@
 # Architecture
 
-`server.mjs` is the loopback HTTP adapter. The browser renderer lives in `public/`, with the 3D stage separated from catalog UI and thumbnail scheduling. Legacy local grouping and Unity material resolution are currently in `scripts/`. Fab remains a separate file-backed source.
+`server.mjs` is the loopback HTTP adapter. The browser renderer starts in `public/app.js`. Fab remains a separate file-backed source. The browser components use the following boundaries.
+
+- `public/catalog/` owns folder sessions, saved categories, and the pack and file list views.
+- `public/library/` owns the indexed library interface, quality profiles and cached thumbnails. The importer is in `public/package-importer/`.
+- `public/preview/loaders/` loads models, decodes images and resolves preview resources. `public/preview/materials/` binds textures and normalizes preview materials. `public/preview/scene/` handles scene parts, root motion and resource disposal. The stage coordinates these components and renders the result.
+- `core/library/local-folders.mjs` groups assets discovered in a user-selected folder. `core/materials/unity/` resolves Unity material, prefab and texture metadata for that library. The backend and browser share the pure collision naming rules in `public/shared/`.
 
 `core/files/` owns scoped file access, discovery and the shared format registry. `core/index/` owns SQLite, migrations, assets, version history, full-text search and review fields. `core/analysis/` contains technical analysis and quality profiles. `core/processing/` owns the durable queue, worker lifecycle and library watching. `core/thumbnails/` contains the PNG renderer and its cache. `core/http/` adapts the core APIs for the browser. Indexed search results open in the existing renderer.
 
