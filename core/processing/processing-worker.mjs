@@ -4,7 +4,7 @@ import { Worker } from 'node:worker_threads'
 import { IndexInputError } from '../index/index-errors.mjs'
 import { ScanChangeError } from '../files/asset-files.mjs'
 import { thumbnailCurrent } from '../thumbnails/thumbnail-input.mjs'
-import { packageSource, watchedPackageSource } from '../packages/source.mjs'
+import { queuedPackageSource, watchedPackageSource } from '../packages/source.mjs'
 import { stagePackage } from '../packages/dispatch.mjs'
 
 const timeouts = { scan: 300_000, thumbnail: 25_000, 'package-import': 600_000 }
@@ -108,7 +108,7 @@ export class ProcessingWorker {
 
   async #import(job, signal, onProgress) {
     const watched = this.index.jobs.watchedImportSource(job.id)
-    const source = watched ? await watchedPackageSource(watched) : await packageSource(this.index.jobs.importSource(job.id))
+    const source = watched ? await watchedPackageSource(watched) : await queuedPackageSource(this.index.jobs.importSource(job.id))
     await stagePackage(this.importDirectory, source, job, {
       signal, onProgress, expectedFormat: job.trigger === 'watch' ? watched?.format : undefined,
       publish: (result, move, hasAssets) => {

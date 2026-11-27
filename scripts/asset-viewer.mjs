@@ -14,6 +14,7 @@ import { engineInventory } from '../core/engines/inventory.mjs'
 import { inspectUnreal } from '../core/packages/unreal/inspect.mjs'
 import { exportUnrealWithEditor } from '../core/packages/unreal/export.mjs'
 import { extractUnrealPak } from '../core/packages/unreal/pak/import.mjs'
+import { runPackageFolder } from './cli/package-folder.mjs'
 
 const string = { type: 'string' }
 const flag = { type: 'boolean' }
@@ -29,6 +30,8 @@ const commands = {
   preview: { args: ['asset-id'], options: { 'dry-run': flag, queue: flag, status: flag } },
   jobs: { args: ['job-id?'], options: { ...paging, library: string, type: string, cancel: flag, retry: flag } },
   'package-inspect': { args: ['absolute-path'], options: {} },
+  'package-folder': { args: ['absolute-folder'], options: { import: flag, export: string,
+    mode: string, 'unity-version': string } },
   'package-import': { args: ['absolute-path'], options: { 'dry-run': flag, queue: flag, export: string,
     mode: string, 'unity-version': string } },
   'unity-bundle': { args: ['absolute-path'], options: { inspect: flag, fbx: flag } },
@@ -81,17 +84,26 @@ async function preview(index, cache, id, values) {
   return { ...result, job: finished }
 }
 
-async function waitForJob(index, id, options) {
+async function waitForJob(index, id, options, signal) {
   const worker = new ProcessingWorker(index, { ...options, targetId: id })
   const stop = new AbortController()
   const abort = () => stop.abort()
-  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, abort)
+  const events = signal ? [] : ['SIGINT', 'SIGTERM']
+  for (const event of events) process.once(event, abort)
   try {
-    return await worker.wait(id, stop.signal)
+    return await worker.wait(id, signal ?? stop.signal)
   } finally {
     await worker.stop()
-    for (const signal of ['SIGINT', 'SIGTERM']) process.off(signal, abort)
+    for (const event of events) process.off(event, abort)
   }
+}
+
+async function waitForImport(index, id, importDirectory, signal) {
+  const job = await waitForJob(index, id, { type: 'package-import', importDirectory }, signal)
+  signal?.throwIfAborted()
+  const scan = job.result?.scanJobId ? await waitForJob(index, job.result.scanJobId, { type: 'scan' }, signal) : null
+  if (job.status !== 'completed' || (scan && scan.status !== 'completed')) process.exitCode = 1
+  return { job, scan }
 }
 
 async function runPackageOperation(paths, label, operation) {
@@ -214,6 +226,11 @@ async function main([command, ...args]) {
     exportUnrealWithEditor(input, { ...options, unrealVersion: values['unreal-version'] })), values.json)
   if (command === 'unreal-extract') return print(await runPackageOperation(paths, 'Unreal', options =>
     extractUnrealPak(input, { ...options, inspectOnly: values.inspect })), values.json)
+  if (command === 'package-folder') {
+    const report = await runPackageFolder(input, paths, values, waitForImport)
+    if (report.truncated || report.skipped || report.results?.some(result => result.error)) process.exitCode = 1
+    return print(report, values.json)
+  }
   if (command === 'package-inspect' || command === 'package-import') {
     if (values.queue && values['dry-run']) throw new IndexInputError('Use only one of --queue or --dry-run.')
     const source = await packageSource(input)
@@ -228,10 +245,7 @@ async function main([command, ...args]) {
     try {
       const queued = index.jobs.enqueueImport(source.path, report.hash, exportFormats, options)
       if (values.queue) return print({ job: queued }, values.json)
-      const job = await waitForJob(index, queued.id, { type: 'package-import', importDirectory: paths.imports })
-      const scan = job.result?.scanJobId ? await waitForJob(index, job.result.scanJobId, { type: 'scan' }) : null
-      if (job.status !== 'completed' || (scan && scan.status !== 'completed')) process.exitCode = 1
-      return print({ job, scan }, values.json)
+      return print(await waitForImport(index, queued.id, paths.imports), values.json)
     } finally {
       await index.close()
     }

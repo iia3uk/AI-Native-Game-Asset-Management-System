@@ -185,10 +185,29 @@
         <input id="package-files" type="file" multiple hidden>
       </form>
       <p id="package-drop" class="notice" hidden>Можно перетащить архивы .unitypackage и контейнеры UnityFS или Unreal Pak.</p>
+      <details class="index-analysis">
+        <summary>Найти пакеты в папке</summary>
+        <form id="package-folder-form">
+          <label for="package-folder-path">Полный путь к папке</label>
+          <div class="folder-path-row">
+            <input id="package-folder-path" maxlength="4096" autocomplete="off" spellcheck="false" required>
+            <button id="package-folder-pick" type="button" class="control" hidden>Выбрать папку…</button>
+            <button id="package-folder-search" class="control">Найти пакеты</button>
+          </div>
+        </form>
+        <p id="package-folder-status" class="notice" role="status"></p>
+        <ul id="package-folder-results" class="index-results" aria-label="Найденные пакеты"></ul>
+        <div id="package-folder-controls" class="index-toolbar" hidden>
+          <button id="package-folder-prev" type="button" class="control">Назад</button>
+          <span id="package-folder-page" role="status"></span>
+          <button id="package-folder-next" type="button" class="control">Дальше</button>
+          <button id="package-folder-inspect" type="button" class="control">Проанализировать выбранные</button>
+        </div>
+      </details>
       <div class="index-toolbar" role="group" aria-label="Форматы экспорта моделей">
         <label><input id="package-export-fbx" type="checkbox"> FBX</label>
         <label><input id="package-export-glb" type="checkbox"> GLB-предпросмотр</label>
-        <button id="package-start-all" class="control" type="button" hidden>Обработать все пакеты</button>
+        <button id="package-start-all" class="control" type="button" hidden>Обработать проанализированные пакеты</button>
       </div>
       <div class="index-toolbar">
         <label for="package-engine-mode">Режим .unitypackage</label>

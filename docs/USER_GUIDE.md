@@ -16,7 +16,16 @@ Scans keep running if you close the index dialog. Open it and select the library
 
 ## Import a Unity package
 
-Open **Индекс → Импорт пакетов Unity и Unreal**. In the desktop app, select or drop up to 16 Unity packages, UnityFS containers or Unreal Pak archives. In the browser, enter the full local path and click **Проанализировать**. Expand a package to see its contents. Select **FBX** or **GLB-предпросмотр** to request Unity model exports, then choose **Обработать и добавить в индекс**. With multiple packages analyzed, **Обработать все пакеты** queues the remaining packages using settings supported by each format. The jobs list displays progress and offers cancellation or retry where available.
+Open **Индекс → Импорт пакетов Unity и Unreal**. In the desktop app, select or drop up to 16 Unity packages, UnityFS containers or Unreal Pak archives. In the browser, enter the full local path and click **Проанализировать**. Expand a package to see its contents. Select **FBX** or **GLB-предпросмотр** to request Unity model exports, then choose **Обработать и добавить в индекс**. With multiple packages analyzed, **Обработать проанализированные пакеты** queues the remaining packages using settings supported by each format. The jobs list displays progress and offers cancellation or retry where available.
+
+For one-time folder import, expand **Найти пакеты в папке** and choose the directory or enter its absolute path. Search checks nested files by header or trailer, including renamed files. A GZIP file is a Unity Package candidate until analysis checks its archive contents. Select files and click **Проанализировать выбранные**, then queue the analyzed packages. Each page contains up to 16 files. Queue a page before analyzing the next one. Use a smaller subfolder if the search reaches its limit of 500 candidates or 20,000 directory entries.
+
+```sh
+npm run cli -- package-folder "/absolute/path/incoming" --json
+npm run cli -- package-folder "/absolute/path/incoming" --import --json
+```
+
+The CLI lists candidates by default. With `--import`, it analyzes, queues and indexes each successful package in sequence. You can add `--export fbx,glb`. The command prints a per-file result and exits with a failure code if it encounters an analysis, import or indexing error. Both folder workflows leave automatic watching settings intact.
 
 Use **Показать в индексе** after the scan completes. Supported originals such as FBX, GLB and PNG retain their original bytes and `Assets/` or `Packages/` paths. The application copies them into its data directory and uses the existing viewer. The report shows unavailable and excluded entries.
 

@@ -1,11 +1,17 @@
 import { open } from 'node:fs/promises'
 import { checkedPath, fileInfo, sameFile } from '../files/asset-files.mjs'
 import { IndexInputError } from '../index/index-errors.mjs'
-import { inspectUnrealFile } from './unreal/inspect.mjs'
+import { pakFooter } from './unreal/containers.mjs'
 
 export const unityFsMagic = Buffer.from('UnityFS\0')
 
 export async function detectPackage(source, { signal } = {}) {
+  const format = await probePackageFormat(source, { signal })
+  if (format) return format
+  throw new IndexInputError('Ожидается архив Unity Package, UnityFS или Unreal Pak.')
+}
+
+export async function probePackageFormat(source, { signal } = {}) {
   signal?.throwIfAborted()
   const changed = () => new IndexInputError('Исходный пакет изменился или стал недоступен.')
   const file = await fileInfo(source.root, source.path)
@@ -14,13 +20,25 @@ export async function detectPackage(source, { signal } = {}) {
   try {
     if (!sameFile(file.info, await handle.stat()) || !await checkedPath(source.root, source.path)) throw changed()
     const prefix = Buffer.alloc(unityFsMagic.length)
-    const { bytesRead } = await handle.read(prefix)
-    if (bytesRead === prefix.length && prefix.equals(unityFsMagic)) return 'unityfs'
-    if (bytesRead >= 2 && prefix[0] === 0x1f && prefix[1] === 0x8b) return 'unitypackage'
+    const { bytesRead } = await handle.read(prefix, 0, prefix.length, 0)
+    let format = null
+    if (bytesRead === prefix.length && prefix.equals(unityFsMagic)) format = 'unityfs'
+    else if (bytesRead >= 2 && prefix[0] === 0x1f && prefix[1] === 0x8b) format = 'unitypackage'
+    else if (file.info.size >= 45) {
+      const footer = Buffer.alloc(Math.min(file.info.size, 1024))
+      const start = file.info.size - footer.length
+      let read = 0
+      while (read < footer.length) {
+        signal?.throwIfAborted()
+        const { bytesRead } = await handle.read(footer, read, footer.length - read, start + read)
+        if (!bytesRead) throw changed()
+        read += bytesRead
+      }
+      if (pakFooter(footer, file.info.size)) format = 'unreal-pak'
+    }
+    if (!sameFile(file.info, await handle.stat())) throw changed()
+    return format
   } finally {
     await handle.close()
   }
-  const footer = await inspectUnrealFile(source.root, { ...source, file, type: 'pak' }, signal)
-  if (footer.storage === 'container') return 'unreal-pak'
-  throw new IndexInputError('Ожидается архив Unity Package, UnityFS или Unreal Pak.')
 }

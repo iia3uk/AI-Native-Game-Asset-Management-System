@@ -1,10 +1,14 @@
 import { mountEngineStatus } from './engine-status.js'
+import { mountPackageFolder } from './folder.js'
 import { appendManifest, assetLabel, describeIssue } from './report.js'
 import { mountImportOptions } from './import-options.js'
 
 const $ = name => document.getElementById('package-' + name)
 const jobsRoute = '/api/index/jobs'
 const packagesRoute = '/api/index/packages'
+const batchSize = 16
+const selectionKey = ({ root, path }) => JSON.stringify([root, path])
+const selectionLabel = ({ root, path }) => root ? path : path.split(/[\\/]/).at(-1)
 const active = job => ['pending', 'running'].includes(job.status)
 const assetStatus = {
   ready: 'Готово', extracted: 'Прямое извлечение', unsupported: 'Не поддерживается',
@@ -141,12 +145,13 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     })
   }
 
-  async function queuePlan(path, plan, options) {
+  async function queuePlan(target, plan, options) {
     if (plan.format === 'unityfs') options = { mode: 'engineless', formats: options.formats }
     if (plan.format === 'unreal-pak') options = { mode: 'engineless' }
-    await json(packagesRoute + '/import', post({ path, hash: plan.hash, ...options }))
-    queuedPlans.get(path)?.row.remove()
-    queuedPlans.delete(path)
+    await json(packagesRoute + '/import', post({ ...target, hash: plan.hash, ...options }))
+    const key = selectionKey(target)
+    queuedPlans.get(key)?.row.remove()
+    queuedPlans.delete(key)
     startAll.hidden = queuedPlans.size < 2
   }
 
@@ -155,9 +160,9 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     busy = startAll.disabled = true
     const options = importOptions()
     try {
-      for (const [path, { plan, start }] of queuedPlans) {
+      for (const { target, plan, start } of queuedPlans.values()) {
         start.disabled = true
-        try { await queuePlan(path, plan, options) }
+        try { await queuePlan(target, plan, options) }
         catch (error) { showError(error); start.disabled = false }
       }
       await refresh()
@@ -166,7 +171,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     }
   })
 
-  function planRow(path, plan) {
+  function planRow(target, plan) {
     const row = element('li')
     row.className = 'index-analysis'
     const details = element('details')
@@ -177,7 +182,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
         assetStatus[asset.status] ?? asset.status
       preview.append(element('li', [assetLabel(asset), status, asset.issue && describeIssue(asset.issue)].filter(Boolean).join(' · ')))
     }
-    details.append(element('summary', path.split(/[\\/]/).at(-1) + ' · ' + plan.total + ' записей'), preview)
+    details.append(element('summary', selectionLabel(target) + ' · ' + plan.total + ' записей'), preview)
     if (plan.format === 'unityfs') {
       details.insertBefore(element('p', 'UnityFS ' + plan.containerVersion + ' · Unity ' + plan.unityVersion + ' · Без Unity Editor'), preview)
     }
@@ -187,38 +192,42 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     if (plan.total > shown.length) details.append(element('p', 'Показано ' + shown.length + ' из ' + plan.total + ' записей.'))
     const start = button('Обработать и добавить в индекс', async () => {
       if (busy) return
+      busy = true
       start.disabled = true
       try {
-        await queuePlan(path, plan, importOptions())
+        await queuePlan(target, plan, importOptions())
         await refresh()
       } catch (error) {
         showError(error)
         start.disabled = false
+      } finally {
+        busy = false
       }
     })
     row.append(details, start)
-    queuedPlans.set(path, { plan, row, start })
+    queuedPlans.set(selectionKey(target), { target, plan, row, start })
     return row
   }
 
-  async function inspect(paths) {
+  async function inspect(targets) {
     if (busy) return
     busy = true
-    status.textContent = 'Анализ пакетов…'
     plans.replaceChildren()
     queuedPlans.clear()
     startAll.hidden = true
+    const unique = [...new Map(targets.filter(target => target.path).map(target => [selectionKey(target), target])).values()]
+    const batch = unique.slice(0, batchSize)
     try {
-      for (const path of [...new Set(paths)].filter(Boolean).slice(0, 16)) {
+      for (const [index, target] of batch.entries()) {
+        status.textContent = `Анализ пакета ${index + 1} из ${batch.length}…`
         try {
-          const { package: plan } = await json(packagesRoute + '/inspect', post({ path }))
-          plans.append(planRow(path, plan))
+          const { package: plan } = await json(packagesRoute + '/inspect', post(target))
+          plans.append(planRow(target, plan))
         } catch (error) {
-          const name = path.split(/[\\/]/).at(-1)
-          plans.append(element('li', name + ' · ' + error.message))
+          plans.append(element('li', selectionLabel(target) + ' · ' + error.message))
         }
       }
-      status.textContent = paths.length > 16 ? 'За один раз можно проанализировать до 16 пакетов.' : ''
+      status.textContent = unique.length > batchSize ? 'За один раз можно проанализировать до ' + batchSize + ' пакетов.' : ''
       startAll.hidden = queuedPlans.size < 2
     } finally {
       busy = false
@@ -227,14 +236,14 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
 
   $('form').addEventListener('submit', event => {
     event.preventDefault()
-    if (pathInput.value.trim()) void inspect([pathInput.value.trim()])
+    if (pathInput.value.trim()) void inspect([{ path: pathInput.value.trim() }])
   })
   section.addEventListener('toggle', () => void refresh())
   dialog.addEventListener('close', () => {
     if (!dialog.open) void refresh()
   })
   if (bridge?.selectedFilePath) {
-    const select = files => void inspect(Array.from(files, file => bridge.selectedFilePath(file)))
+    const select = files => void inspect(Array.from(files, file => ({ path: bridge.selectedFilePath(file) })))
     $('drop').hidden = $('pick').hidden = false
     $('pick').addEventListener('click', () => fileInput.click())
     fileInput.addEventListener('change', () => { select(fileInput.files); fileInput.value = '' })
@@ -247,5 +256,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
       select(event.dataTransfer.files)
     })
   }
+  mountPackageFolder({ $, scan: path => json(packagesRoute + '/folder', post({ path })), inspect,
+    chooseFolder: bridge?.chooseFolder, batchSize })
   return { refresh }
 }

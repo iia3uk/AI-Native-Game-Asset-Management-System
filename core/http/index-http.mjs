@@ -20,7 +20,8 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
   let watcher
   const cache = new ThumbnailCache(thumbnailDirectory)
   const shutdown = new AbortController()
-  const packages = packageRoutes({ json, body, shutdown: shutdown.signal, wake: () => importer?.wake() })
+  const packages = packageRoutes({ json, body, shutdown: shutdown.signal, ignoredPaths: ignoredWatchPaths,
+    wake: () => importer?.wake() })
   let currentInventory
 
   function openIndex() {
@@ -60,17 +61,17 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
       currentInventory ??= engineInventory().finally(() => { currentInventory = null })
       return json(response, 200, await currentInventory)
     }
+    const packageAction = method === 'POST' && resource === 'packages' && !action &&
+      ['inspect', 'import', 'folder'].includes(id) ? id : null
     let index
     try {
-      index = await openIndex()
+      if (packageAction !== 'folder') index = await openIndex()
     } catch (error) {
       console.error('Asset index:', error.message)
       return json(response, 503, { error: 'Индекс недоступен. Проверьте каталог данных и резервные копии.' })
     }
     try {
-      if (method === 'POST' && resource === 'packages' && !action && ['inspect', 'import'].includes(id)) {
-        return await packages(index, request, response, id)
-      }
+      if (packageAction) return await packages(index, request, response, packageAction)
       if (method === 'GET' && resource === 'libraries' && !id) return json(response, 200, { libraries: index.libraries() })
       if (method === 'POST' && resource === 'libraries' && !id) {
         const input = await body(request).catch(() => null)

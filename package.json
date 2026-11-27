@@ -53,6 +53,7 @@
       "assets/icon.ico",
       "scripts/export-blend.py",
       "scripts/*.mjs",
+      "scripts/cli/*.mjs",
       {
         "from": "node_modules/three/examples/jsm",
         "to": "node_modules/three/examples/jsm",

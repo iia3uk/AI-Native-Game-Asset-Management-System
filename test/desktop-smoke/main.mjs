@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { app } from 'electron'
 import { startDesktop } from '../../desktop/bootstrap.mjs'
 import { generateFixtures } from '../../scripts/generate-fixtures.mjs'
+import { verifyPackageFolder } from './package-folder.mjs'
 import { verifyPackageWatch } from './package-watch.mjs'
 import { verifyStartupWithoutInterface } from './startup.mjs'
 import { verifyUnityBundle } from './unity-bundle.mjs'
@@ -154,6 +155,7 @@ void startDesktop(root, { showWindow: false }).then(async ({ window, origin }) =
   await waitFor("document.querySelector('#index-name').textContent === 'fixture-package.obj' && !document.querySelector('#index-preview').disabled")
   await webContents.executeJavaScript("document.querySelector('#index-preview').click()")
   await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('1 треугольник')")
+  await verifyPackageFolder(webContents, waitFor, join(process.env.ASSET_VIEWER_DATA_DIR, 'incoming-packages'))
   const bundle = process.env.ASSET_VIEWER_SMOKE_BUNDLE
   const pak = process.env.ASSET_VIEWER_SMOKE_PAK === '1'
   await verifyPackageWatch(webContents, waitFor, fixtures, { bundle, pak })
@@ -162,7 +164,7 @@ void startDesktop(root, { showWindow: false }).then(async ({ window, origin }) =
   await verifyStartupWithoutInterface()
   assert.deepEqual(externalRequests, [])
   assert.equal(window.isVisible(), false)
-  console.log('Desktop startup, demo, library watching, thumbnail cache, analysis, metadata, manual and watched Unity import, PBR material preview and renderer isolation passed.')
+  console.log('Desktop startup, demo, library watching, thumbnail cache, analysis, metadata, single-file, folder and watched Unity import, PBR material preview and renderer isolation passed.')
   if (bundle) console.log('UnityFS folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
   if (pak) console.log('Unreal Pak folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
   app.quit()
