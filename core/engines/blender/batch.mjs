@@ -1,10 +1,12 @@
 import { stat, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { discoverBlender } from './discovery.mjs'
 import { runBlender } from './runner.mjs'
 
-const bundledScript = fileURLToPath(new URL('./scripts/batch.py', import.meta.url))
+const root = fileURLToPath(new URL('../../../', import.meta.url))
+const scriptRoot = basename(root) === 'app.asar' ? join(root, '..', 'app.asar.unpacked') : root
+const bundledScript = join(scriptRoot, 'core', 'engines', 'blender', 'scripts', 'batch.py')
 
 export async function locateBatchBlender() {
   const [candidate] = await discoverBlender()
