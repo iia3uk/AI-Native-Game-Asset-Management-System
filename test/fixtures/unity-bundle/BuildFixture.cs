@@ -29,6 +29,7 @@ public static class AssetViewerBundleFixture
         AssetDatabase.CreateAsset(line, root + "/Line.asset");
 
         var textures = BundleFixtureTextures.Create(root);
+        var sprites = BundleFixtureSprites.Create(root);
         AssetDatabase.SaveAssets();
 
         var output = Path.GetFullPath(Path.Combine(Application.dataPath, "../..", "Bundles"));
@@ -38,14 +39,17 @@ public static class AssetViewerBundleFixture
             assetBundleName = "fixture.bundle",
             assetNames = new[] { root + "/Triangle.asset", root + "/Line.asset" }.Concat(textures).ToArray()
         };
-        if (BuildPipeline.BuildAssetBundles(output, new[] { mapping },
+        var mappings = new[] { mapping, new AssetBundleBuild {
+            assetBundleName = "sprites.bundle", assetNames = sprites,
+        } };
+        if (BuildPipeline.BuildAssetBundles(output, mappings,
             BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.StrictMode,
             BuildTarget.StandaloneWindows64) == null)
             throw new System.InvalidOperationException("Unity failed to build the fixture AssetBundle.");
 
         var uncompressed = Path.Combine(output, "uncompressed");
         Directory.CreateDirectory(uncompressed);
-        if (BuildPipeline.BuildAssetBundles(uncompressed, new[] { mapping },
+        if (BuildPipeline.BuildAssetBundles(uncompressed, mappings,
             BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.StrictMode,
             BuildTarget.StandaloneWindows64) == null)
             throw new System.InvalidOperationException("Unity failed to build the uncompressed fixture AssetBundle.");

@@ -21,6 +21,11 @@ const packageIssues = {
   'unity-bundle-texture-stream-path': 'Текстура ссылается за пределы своего раздела UnityFS',
   'unity-bundle-texture-stream-missing': 'Раздел с данными текстуры отсутствует',
   'unity-bundle-texture-stream-range': 'Данные текстуры выходят за границы раздела',
+  'unity-bundle-sprite-atlas': 'Для спрайта требуется декодирование SpriteAtlas',
+  'unity-bundle-sprite-packing': 'Способ упаковки спрайта не поддерживается',
+  'unity-bundle-sprite-alpha': 'Раздельный альфа-канал спрайта не поддерживается',
+  'unity-bundle-sprite-texture-reference': 'Текстура спрайта недоступна в этом разделе UnityFS',
+  'unity-bundle-sprite-rect': 'Область спрайта выходит за границы текстуры или задана дробными координатами',
   'unreal-pak-encrypted-entry': 'Запись зашифрована',
   'unreal-pak-invalid-payload': 'Файл не прошёл проверку формата',
   'unreal-pak-orphan-companion': 'Отсутствует связанный пакет Unreal',
@@ -36,7 +41,8 @@ const artifactRoles = {
 export const describeIssue = issue => packageIssues[issue] ?? issue
 
 export function assetLabel(asset) {
-  return asset.sourcePath ?? asset.path ?? [asset.name, asset.textureEncoding?.toUpperCase(),
+  const sprite = asset.sprite && `Спрайт ${asset.width} × ${asset.height} (текстура #${asset.sprite.texturePathId})`
+  return asset.sourcePath ?? asset.path ?? [asset.name, sprite, asset.textureEncoding?.toUpperCase(),
     [asset.member, asset.pathId].filter(Boolean).join(' #')].filter(Boolean).join(' · ')
 }
 

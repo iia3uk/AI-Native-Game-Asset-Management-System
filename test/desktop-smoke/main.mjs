@@ -10,6 +10,7 @@ import { verifyPackageFolder } from './package-folder.mjs'
 import { verifyPackageWatch } from './package-watch.mjs'
 import { verifyStartupWithoutInterface } from './startup.mjs'
 import { verifyUnityBundle } from './unity-bundle.mjs'
+import { verifyUnitySprites } from './unity-sprites.mjs'
 import { verifyUnrealPak } from './unreal-pak.mjs'
 import { verifyUnityPreview } from './unity-preview.mjs'
 import { unityEntries, unityFixtureEntries, writeUnityFixture } from '../fixtures/unitypackage.mjs'
@@ -157,15 +158,18 @@ void startDesktop(root, { showWindow: false }).then(async ({ window, origin }) =
   await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('1 треугольник')")
   await verifyPackageFolder(webContents, waitFor, join(process.env.ASSET_VIEWER_DATA_DIR, 'incoming-packages'))
   const bundle = process.env.ASSET_VIEWER_SMOKE_BUNDLE
+  const sprites = process.env.ASSET_VIEWER_SMOKE_SPRITES
   const pak = process.env.ASSET_VIEWER_SMOKE_PAK === '1'
   await verifyPackageWatch(webContents, waitFor, fixtures, { bundle, pak })
   if (bundle) await verifyUnityBundle(webContents, waitFor, bundle)
+  if (sprites) await verifyUnitySprites(webContents, waitFor, sprites)
   if (pak) await verifyUnrealPak(webContents, waitFor, fixtures)
   await verifyStartupWithoutInterface()
   assert.deepEqual(externalRequests, [])
   assert.equal(window.isVisible(), false)
   console.log('Desktop startup, demo, library watching, thumbnail cache, analysis, metadata, single-file, folder and watched Unity import, PBR material preview and renderer isolation passed.')
   if (bundle) console.log('UnityFS folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
+  if (sprites) console.log('UnityFS sprite inspection, queued import, dependency reporting and indexed PNG preview passed.')
   if (pak) console.log('Unreal Pak folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
   app.quit()
 }).catch(error => {

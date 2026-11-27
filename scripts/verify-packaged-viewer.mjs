@@ -46,6 +46,7 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'core/packages/source.mjs',
     'core/packages/workspace.mjs',
     'core/packages/unity/bundle/cache.mjs',
+    'core/packages/unity/bundle/dependencies.mjs',
     'core/packages/unity/bundle/source.mjs',
     'core/packages/unity/bundle/import.mjs',
     'core/packages/unreal/pak/cache.mjs',

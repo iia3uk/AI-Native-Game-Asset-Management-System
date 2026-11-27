@@ -62,6 +62,8 @@ npm run cli -- package-import "/absolute/path/example.bundle" --export fbx --que
 
 Inspection lists the archive and Unity versions and up to 500 serialized objects with their IDs and support status. The worker handles stored and LZ4 blocks. It reads embedded type trees and publishes the highest-resolution mip of supported RGBA32, DXT1 and DXT5 textures as PNG. Texture data can be inline or in a matching `.resS` member inside the same archive. External resource files, other texture encodings and textures larger than 2048 × 2048 are outside this path. The worker exports supported static triangle meshes as GLB with positions, normals, UV0 and separate submeshes. If Blender is unavailable, the GLB and PNG still reach the index.
 
+Unpacked sprites with an integer pixel rectangle and a supported base texture in the same serialized member produce individual `Sprite-*.png` files. Multiple sprites can come from one sheet. Their PNGs keep the source transparency, and the report records each rectangle and texture reference. Packed atlases, separate alpha textures and cross-member sprite references are reported as unsupported. [Unity Sprite API](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/Sprite.html).
+
 The report marks unsupported layouts and classes. Meshes with skinning, blend shapes, mesh compression, extra vertex attributes or multiple vertex streams are outside the current decoder. Streamed textures, additional pixel formats, material bindings and bundle dependency analysis remain pending. A repeated import with the same SHA-256, output formats and tool versions reuses verified results.
 
 ## Automatically import packages from a folder
@@ -69,7 +71,7 @@ The report marks unsupported layouts and classes. Meshes with skinning, blend sh
 Open **Индекс**, connect the incoming folder, select it under **Библиотека**, then expand **Автоимпорт пакетов** and enable the formats you want. The app checks existing files and new or changed files in subfolders while it is running. It confirms the format from the contents before extracting anything. Results are indexed in managed libraries, and progress and reports appear in **Импорт пакетов Unity и Unreal**.
 
 - **.unitypackage** extracts the originals and requests FBX and GLB for supported models.
-- **UnityFS** watches `.bundle` and `.unity3d`, decodes supported textures and static meshes, and requests FBX where Blender is available.
+- **UnityFS** watches `.bundle` and `.unity3d`, decodes supported textures, sprites and static meshes, and requests FBX where Blender is available.
 - **Unreal Pak** watches `.pak` and extracts supported original files using the independent CUE4Parse worker.
 
 Turning off a format cancels its active automatic imports for that folder. The settings and SHA-256 history survive restarts. Use **Повторить** in a job row to retry a failed, interrupted or cancelled import. For a renamed archive, use manual inspection to detect the format by contents.

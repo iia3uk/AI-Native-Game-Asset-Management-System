@@ -7,7 +7,6 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { inflateSync } from 'node:zlib'
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { locateBatchBlender } from '../core/engines/blender/batch.mjs'
@@ -16,6 +15,8 @@ import { bundleDecoderRevision, bundleResult } from '../core/engines/unity/bundl
 import { locateBundleWorker } from '../core/engines/unity/bundle/run.mjs'
 import { buildAssetBundleFixture } from './fixtures/unity-bundle/project.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
+import { readTexture } from './unity-bundle/png.mjs'
+import { verifyBundleSprites } from './unity-bundle/sprites.mjs'
 
 const run = promisify(execFile)
 const cli = fileURLToPath(new URL('../scripts/asset-viewer.mjs', import.meta.url))
@@ -51,20 +52,6 @@ async function waitForJob(server, id) {
   assert.fail('UnityFS job did not reach a terminal state.')
 }
 
-async function readTexture(manifest, output, name) {
-  const entry = manifest.assets.find(asset => asset.name === name)
-  assert.equal(entry.artifact.method, 'assetstools-unityfs-' + entry.textureEncoding)
-  const png = await readFile(join(output, entry.artifact.path))
-  assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20), png[25]], [entry.width, entry.height, 6])
-  assert.equal(png.subarray(37, 41).toString('ascii'), 'IDAT')
-  const pixels = inflateSync(png.subarray(41, 41 + png.readUInt32BE(33)))
-  const pixel = (x, y) => {
-    const offset = y * (entry.width * 4 + 1) + 1 + x * 4
-    return [...pixels.subarray(offset, offset + 4)]
-  }
-  return { entry, pixel }
-}
-
 test('UnityFS validates decoder reports and rejects non-bundle sources without touching the index', async t => {
   const root = await testDirectory(t)
   const path = join(root, 'Fixture.bundle')
@@ -87,9 +74,16 @@ test('UnityFS validates decoder reports and rejects non-bundle sources without t
   assert.equal(bundleResult({ ...report, decoderRevision: bundleDecoderRevision - 1 }, false), null)
   assert.equal(bundleResult(report, true), null)
   assert.equal(bundleResult({ ...report, assets: [row, { ...row, output: 1 }] }, false), null)
+  const sprite = { ...row, pathId: '-502', classId: 213, output: 1, width: 3, height: 2, bytes: 24,
+    sprite: { texturePathId: row.pathId, x: 1, y: 2 } }
+  assert.deepEqual(bundleResult({ ...report, assets: [row, sprite] }, false).assets[1].sprite, sprite.sprite)
+  for (const invalid of [null, { ...sprite.sprite, texturePathId: -1 }, { ...sprite.sprite, texturePathId: '999' },
+    { ...sprite.sprite, x: -1 }, { ...sprite.sprite, y: 2047 }, { ...sprite.sprite, x: 1.5 }]) {
+    assert.equal(bundleResult({ ...report, assets: [row, { ...sprite, sprite: invalid }] }, false), null)
+  }
 })
 
-test('Unity builds a native UnityFS bundle and the independent worker indexes decoded texture and static mesh outputs', {
+test('Unity builds native UnityFS bundles and the independent worker indexes texture, sprite and static mesh outputs', {
   skip: process.env.ASSET_VIEWER_TEST_NATIVE_BUNDLE !== '1', timeout: 180_000,
 }, async t => {
   const root = await testDirectory(t)
@@ -246,4 +240,6 @@ test('Unity builds a native UnityFS bundle and the independent worker indexes de
   } finally {
     await server.close()
   }
+  const spriteData = join(root, 'sprite-data')
+  await verifyBundleSprites(root, spriteData, client(spriteData))
 })

@@ -11,6 +11,7 @@ import { bundleDecoderRevision, bundleResult } from '../../../engines/unity/bund
 import { assetsToolsVersion, locateBundleWorker, runBundleWorker, stageBundle } from '../../../engines/unity/bundle/run.mjs'
 import { packageWorkspaceRoot } from '../../workspace.mjs'
 import { bundleRecipe, bundleVersion, readBundleCache } from './cache.mjs'
+import { bundleDependencies } from './dependencies.mjs'
 import { readBundleSource, selectBundlePath } from './source.mjs'
 
 async function saveOutputs(workspace, source, hash, recipe, report, { withFbx, blender, signal, onProgress }) {
@@ -42,7 +43,7 @@ async function saveOutputs(workspace, source, hash, recipe, report, { withFbx, b
   const documents = {
     manifest: { version: bundleVersion, recipe, source: { name: source.name, size: source.file.info.size, sha256: hash, license: null },
       method: summary.method, converterVersion: assetsToolsVersion, decoderRevision: report.decoderRevision, assets },
-    dependencies: { version: 1, status: 'unavailable', entries: [] },
+    dependencies: bundleDependencies(assets),
     'conversion-report': summary,
   }
   await Promise.all(Object.entries(documents).map(([name, payload]) =>

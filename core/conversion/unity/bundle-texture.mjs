@@ -21,9 +21,11 @@ export async function saveBundleTexture(asset, stage, store, converterVersion, s
   const { id, label } = bundleIdentity(entry)
   const target = join(stage, id + '.png')
   await writeFile(target, png, { signal, flag: 'wx' })
-  const filename = label ? 'Texture-' + label + '.png' : 'Texture.png'
+  const kind = entry.sprite ? 'Sprite' : 'Texture'
+  const filename = kind + (label ? '-' + label : '') + '.png'
   const artifact = await store.save('Textures/' + id + '/' + filename, await fileInfo(stage, target), {
-    status: 'converted', format: 'png', method: 'assetstools-unityfs-' + entry.textureEncoding, converterVersion,
+    status: 'converted', format: 'png', method: 'assetstools-unityfs-' +
+      (entry.sprite ? 'sprite-' : '') + entry.textureEncoding, converterVersion,
   })
   return { ...entry, id, status: artifact.status, artifact }
 }

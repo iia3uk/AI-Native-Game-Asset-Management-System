@@ -36,6 +36,8 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 
 For a UnityFS container, package inspection returns `format: "unityfs"`, `containerVersion`, `unityVersion`, `decoderRevision`, `hash`, `total` and up to 500 serialized objects in `assets`. Use the same import route with the inspection hash. UnityFS jobs decode supported textures to PNG and meshes to GLB. Request `"fbx"` in `formats` for an additional Blender export. The UnityFS result has `report.packageFormat: "unityfs"`. The manifest exposes serialized member names, object path IDs and per-format results. Supported textures include `textureEncoding` (`rgba32`, `dxt1` or `dxt5`) and `textureStorage` (`inline` or `bundle-member`).
 
+Supported UnityFS sprites have class ID 213 and publish individual PNGs. Inspection and manifest entries include `width`, `height` and `sprite: { texturePathId, x, y }`. The texture path ID refers to a Texture2D in the same serialized member. The coordinates are integer pixels from the lower left of the texture, and the PNG stores rows from the top. The dependency report lists verified `sprite-texture` links and marks coverage as partial.
+
 For a Pak archive, inspection returns `format: "unreal-pak"`, `containerVersion`, `hash`, `total` and up to 500 entries in `assets`. Import accepts `auto` or `engineless` with no export formats or editor version. Pak jobs extract supported originals and report `report.packageFormat: "unreal-pak"`. The manifest page includes archive paths, extracted file hashes and reasons for skipped entries.
 
 Failed scans preserve the last committed index. Disconnection and removal of original files retain history. Search excludes disconnected and missing assets.
