@@ -3,6 +3,7 @@ import { isDataMap } from './textures.js'
 import { isCollisionFile, visualModelFor } from './model-names.js'
 import { ModelThumbnails } from './thumbnails.js'
 import { storageNamespace, storedValue } from './viewer-storage.js'
+import { mountIndex } from './index-library.js'
 
 const $ = id => document.getElementById(id)
 const ui = Object.fromEntries([
@@ -66,7 +67,11 @@ function saveFolders() {
   localStorage.setItem(foldersStorage, JSON.stringify(userFolders().map(({ id, root }) => ({ id, root }))))
 }
 
-function registerFolder(info) {
+function registerFolder(info, indexed = false) {
+  if (indexed) {
+    for (const [key, folder] of localFolders) if (folder.indexed) localFolders.delete(key)
+    info = { ...info, key: 'indexed.' + info.key, indexed }
+  }
   const name = info.root.split(/[\\/]/).filter(Boolean).at(-1) ?? info.root
   const previous = localFolders.get(info.key)
   if (previous && previous.id !== info.id) {
@@ -74,7 +79,7 @@ function registerFolder(info) {
   }
   const resources = info.resources.map(file => ({ ...file, selectionId: info.key + '.' + file.id }))
   const folder = { ...info, name, images: resources.filter(localTextures), resources,
-    marks: readLocal(info, 'review'), maps: readLocal(info, 'textures'),
+    marks: indexed ? {} : readLocal(info, 'review'), maps: readLocal(info, 'textures'),
   }
   localFolders.set(folder.key, folder)
   return folder
@@ -87,8 +92,8 @@ async function restoreFolders() {
   for (const result of results) if (result.status === 'fulfilled') registerFolder(result.value)
 }
 
-const userFolders = () => [...localFolders.values()].filter(folder => !folder.demo)
-const activeFolders = () => state.folder?.demo ? [state.folder] : userFolders()
+const userFolders = () => [...localFolders.values()].filter(folder => !folder.demo && !folder.indexed)
+const activeFolders = () => state.folder?.demo || state.folder?.indexed ? [state.folder] : userFolders()
 const localMarks = () => Object.assign({}, ...activeFolders().map(folder => folder.marks))
 const combinedImages = () => activeFolders().flatMap(folder => folder.images)
 const localGroupId = (folder, group) => folder.key + '.' + group
@@ -168,7 +173,7 @@ function persistCategories() {
 }
 
 function modelCategoryControls() {
-  const show = state.active && state.file?.kind === 'model'
+  const show = state.active && state.file?.kind === 'model' && !state.folder?.indexed
   ui['model-category-tools'].hidden = !show
   ui['new-model-category'].hidden = true
   ui['new-model-category'].value = ''
@@ -220,7 +225,7 @@ async function ensurePreview(file, folder) {
 
 function modelResources(folder, files) {
   if (!folder) return files
-  const otherImages = folder.demo ? [] : userFolders().filter(other => other.key !== folder.key).flatMap(other => other.images)
+  const otherImages = folder.demo || folder.indexed ? [] : userFolders().filter(other => other.key !== folder.key).flatMap(other => other.images)
   return otherImages.length ? folder.resources.concat(otherImages) : folder.resources
 }
 
@@ -244,7 +249,7 @@ async function thumbnailInput(pack, category, candidateIds) {
 
 function updateTabs() {
   pressed(ui['fab-mode'], !state.folder)
-  pressed(ui['open-folder'], Boolean(state.folder && !state.folder.demo))
+  pressed(ui['open-folder'], Boolean(state.folder && !state.folder.demo && !state.folder.indexed))
   pressed(ui['demo-mode'], Boolean(state.folder?.demo))
   ui['all-packs'].setAttribute('aria-pressed', String(!state.candidates))
   ui['candidate-packs'].setAttribute('aria-pressed', String(state.candidates))
@@ -389,12 +394,13 @@ function zoom(inward) {
 
 function renderDecision() {
   const mark = currentMark()
+  const disabled = !state.file || pendingSave || Boolean(state.folder?.indexed)
   for (const button of ui.decision.querySelectorAll('button')) {
-    button.disabled = !state.file || pendingSave
+    button.disabled = disabled
     pressed(button, mark?.status === button.dataset.status)
   }
-  ui.note.disabled = !state.file || pendingSave
-  ui['save-note'].disabled = !state.file || pendingSave
+  ui.note.disabled = disabled
+  ui['save-note'].disabled = disabled
 }
 
 function showLicense(pack) {
@@ -414,13 +420,17 @@ function showLicense(pack) {
 }
 
 function rememberLocation() {
+  if (state.folder?.indexed) {
+    history.replaceState(null, '', location.pathname)
+    return
+  }
   const query = new URLSearchParams()
   if (state.folder) query.set('folder', state.folder.id)
   if (state.active) query.set('pack', state.active.groupId ?? state.active.id)
   if (state.file) query.set('file', state.file.id)
   history.replaceState(null, '', query.size ? '?' + query : location.pathname)
   if (!state.folder && state.active) fab.selection = { pack: state.active.id, file: state.file?.id }
-  if (state.folder && state.active) localSelection = { pack: state.active.id, file: state.file?.id }
+  if (state.folder && !state.folder.demo && state.active) localSelection = { pack: state.active.id, file: state.file?.id }
 }
 
 function renderManualImages() {
@@ -723,8 +733,8 @@ async function activateCatalog(folder, selection = {}) {
   void selectFile(null)
   ui.search.value = ''
   ui.search.placeholder = folder ? 'Название папки или формат' : 'Название или автор'
-  ui['library-title'].textContent = folder?.demo ? 'Демобиблиотека' : folder ? 'Папки' : 'Наборы'
-  ui['folder-tools'].hidden = !folder || folder.demo
+  ui['library-title'].textContent = folder?.demo ? 'Демобиблиотека' : folder?.indexed ? 'Папка из индекса' : folder ? 'Папки' : 'Наборы'
+  ui['folder-tools'].hidden = !folder || folder.demo || folder.indexed
   ui['folder-root'].textContent = folder?.root ?? ''
   ui['folder-root'].title = folder?.root ?? ''
   ui['category-wrap'].hidden = false
@@ -791,7 +801,7 @@ function showFolderDialog() {
   ui['folder-dialog'].showModal()
 }
 ui['open-folder'].addEventListener('click', async () => {
-  const entering = !state.folder || state.folder.demo
+  const entering = !state.folder || state.folder.demo || state.folder.indexed
   if (entering && !userFolders().length && savedFolders().length) await restoreFolders()
   if (entering && userFolders().length) return activateCatalog(userFolders()[0], localSelection)
   showFolderDialog()
@@ -807,6 +817,13 @@ ui['demo-mode'].addEventListener('click', async () => {
   } finally {
     ui['demo-mode'].disabled = false
   }
+})
+mountIndex({ json, post,
+  currentFolder: () => state.folder?.demo ? null : state.folder?.root,
+  openPreview: async ({ folder: info, groupId, fileId }) => {
+    const folder = registerFolder(info, true)
+    await activateCatalog(folder, { pack: localGroupId(folder, groupId), file: fileId })
+  },
 })
 ui['add-folder'].addEventListener('click', showFolderDialog)
 ui['remove-folder'].addEventListener('click', () => {

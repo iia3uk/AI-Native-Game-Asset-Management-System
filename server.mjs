@@ -9,6 +9,7 @@ import { blenderPreview, browseFolder, closePreviews, scanFolder } from './scrip
 import { checkedPath, fileInfo, readBoundedText } from './core/asset-files.mjs'
 import { dataPaths } from './core/data-paths.mjs'
 import { generateFixtures } from './scripts/generate-fixtures.mjs'
+import { indexRoutes } from './core/index-http.mjs'
 
 const project = fileURLToPath(new URL('.', import.meta.url))
 try {
@@ -40,7 +41,10 @@ let reviewWrites = Promise.resolve()
 let viewFiles
 let viewFilesUpdated
 const folders = new Map()
+const indexedFolders = new Map()
 let demoRequest
+const indexed = indexRoutes({ database: dataPaths().database, json, body, allowsWrite,
+  openFolder: openIndexedFolder, invalidateFolder: invalidateIndexedFolder })
 
 async function safeFile(base, subpath) {
   const file = await fileInfo(base, subpath)
@@ -151,10 +155,33 @@ async function isAsset(path) {
   return viewFiles.has(path)
 }
 
-async function openFolder(path) {
-  const folder = await scanFolder(path)
+async function openFolder(path, options) {
+  const folder = await scanFolder(path, options)
   folders.set(folder.id, folder)
   return folder
+}
+
+function invalidateIndexedFolder(id) {
+  const entry = indexedFolders.get(id)
+  indexedFolders.delete(id)
+  void entry?.folder.then(folder => folders.delete(folder.id), () => undefined)
+}
+
+async function openIndexedFolder(asset) {
+  const current = indexedFolders.get(asset.libraryId)
+  if (current?.generation === asset.generation) {
+    const folder = await current.folder
+    if (folder.files.has(asset.path)) return folder
+  }
+  invalidateIndexedFolder(asset.libraryId)
+  const next = { generation: asset.generation, folder: openFolder(asset.root, { canonical: true }) }
+  indexedFolders.set(asset.libraryId, next)
+  try {
+    return await next.folder
+  } catch (error) {
+    if (indexedFolders.get(asset.libraryId) === next) indexedFolders.delete(asset.libraryId)
+    throw error
+  }
 }
 
 async function openDemo() {
@@ -273,6 +300,10 @@ const server = createServer(async (request, response) => {
       demoRequest ??= openDemo().catch(error => { demoRequest = undefined; throw error })
       return json(response, 200, await demoRequest)
     }
+    if (path.startsWith('/api/index/')) {
+      await indexed.handle(request, response, path)
+      return
+    }
     if (request.method === 'POST' && path === '/api/review') {
       await changeReview(request, response)
       return
@@ -330,7 +361,9 @@ const server = createServer(async (request, response) => {
   }
 })
 server.listen(port, '127.0.0.1', () => console.log(`Asset Viewer · http://127.0.0.1:${server.address().port}`))
-for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
-  server.close()
+function shutdown() {
+  indexed.abort()
+  server.close(() => void indexed.close().catch(error => console.error(error.message)))
   void closePreviews().catch(error => console.error(error.message))
-})
+}
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, shutdown)

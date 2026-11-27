@@ -1,0 +1,326 @@
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdir, open, rename, rm } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
+import { backup, DatabaseSync } from 'node:sqlite'
+import { checkedPath, discoverAssets, folderPath, pathKey } from './asset-files.mjs'
+import { migrate, schemaVersion, transaction } from './index-schema.mjs'
+
+const readable = 'a.id, a.library_id AS libraryId, l.name AS library, a.path, a.name, a.ext, a.kind,' +
+  ' a.size, a.mtime, a.hash, a.first_seen AS firstSeen, a.missing_since AS missingSince,' +
+  ' a.category, a.tags, a.note, a.review, a.license'
+const kinds = new Set(['model', 'image', 'other'])
+const reviews = new Set(['', 'candidate', 'later', 'excluded'])
+const libraryIdPattern = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/
+const maxHashedSize = 1024 ** 3
+const timestamp = () => new Date().toISOString()
+const folded = value => value.normalize('NFKC').toLowerCase()
+const content = (path, metadata = {}) =>
+  folded([path, metadata.category, ...JSON.parse(metadata.tags ?? '[]'), metadata.note, metadata.license].join('\n'))
+const shape = asset => asset && { ...asset, tags: JSON.parse(asset.tags) }
+
+export class IndexInputError extends Error {}
+
+function sameFile(a, b) {
+  return a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs
+}
+
+async function hashFile(root, file, signal) {
+  const handle = await open(file.absolute, 'r')
+  try {
+    const opened = await handle.stat()
+    const changed = () => new IndexInputError('Файл изменился во время индексации. Повторите сканирование.')
+    if (!opened.isFile() || !sameFile(opened, file.info) || !await checkedPath(root, file.absolute)) throw changed()
+    const hash = createHash('sha256')
+    const stream = handle.createReadStream({ autoClose: false, signal })
+    for await (const bytes of stream) hash.update(bytes)
+    if (!sameFile(opened, await handle.stat())) throw changed()
+    return hash.digest('hex')
+  } finally {
+    await handle.close()
+  }
+}
+
+function countHashes(files) {
+  const counts = new Map()
+  for (const { hash } of files) if (hash) counts.set(hash, (counts.get(hash) ?? 0) + 1)
+  return counts
+}
+
+function stringField(value, max) {
+  if (typeof value !== 'string' || value.length > max || value.includes('\0')) {
+    throw new IndexInputError('Некорректное текстовое поле.')
+  }
+  return value.trim()
+}
+
+function validateId(id) {
+  if (typeof id !== 'string' || !libraryIdPattern.test(id)) throw new IndexInputError('Некорректный идентификатор.')
+}
+
+export class AssetIndex {
+  #db
+  #scans = new Map()
+
+  static async open(path) {
+    if (path !== ':memory:') await mkdir(dirname(path), { recursive: true })
+    return new AssetIndex(path)
+  }
+
+  constructor(path, { readOnly = false } = {}) {
+    this.#db = new DatabaseSync(path, { readOnly })
+    try {
+      this.#db.exec('PRAGMA busy_timeout=4000; PRAGMA foreign_keys=ON;')
+      if (readOnly) {
+        if (this.#db.prepare('PRAGMA user_version').get().user_version !== schemaVersion) {
+          throw new Error('The asset index schema does not match this application.')
+        }
+      } else {
+        this.#db.exec('PRAGMA journal_mode=WAL;')
+        migrate(this.#db)
+      }
+    } catch (error) {
+      this.#db.close()
+      throw error
+    }
+  }
+
+  async close() {
+    await Promise.allSettled(this.#scans.values())
+    this.#db.close()
+  }
+
+  async connect(path) {
+    const root = await folderPath(path).catch(() => { throw new IndexInputError('Папка не найдена или недоступна.') })
+    this.#db.prepare(`
+      INSERT INTO libraries (id, root, root_key, name, created_at) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(root_key) DO UPDATE SET enabled = 1, generation = generation + 1 WHERE enabled = 0
+    `).run(randomUUID(), root, pathKey(root), basename(root) || root, timestamp())
+    return this.#db.prepare('SELECT id, root, name FROM libraries WHERE root_key = ?').get(pathKey(root))
+  }
+
+  libraries() {
+    return this.#db.prepare(`
+      SELECT l.id, l.root, l.name, l.indexed_at AS indexedAt, COUNT(a.id) AS assets,
+        COUNT(CASE WHEN a.kind = 'model' THEN 1 END) AS models,
+        COUNT(CASE WHEN a.kind = 'image' THEN 1 END) AS images,
+        COALESCE(SUM(a.size), 0) AS bytes
+      FROM libraries l LEFT JOIN assets a ON a.library_id = l.id AND a.missing_since IS NULL
+      WHERE l.enabled = 1 GROUP BY l.id ORDER BY l.name, l.id
+    `).all()
+  }
+
+  disconnect(id) {
+    validateId(id)
+    const { changes } = this.#db.prepare('UPDATE libraries SET enabled = 0, generation = generation + 1 WHERE id = ? AND enabled = 1').run(id)
+    return Boolean(changes)
+  }
+
+  async scan(id, { signal } = {}) {
+    validateId(id)
+    if (this.#scans.has(id)) return this.#scans.get(id)
+    const pending = this.#scan(id, signal)
+    this.#scans.set(id, pending)
+    try {
+      return await pending
+    } finally {
+      this.#scans.delete(id)
+    }
+  }
+
+  async #scan(id, signal) {
+    const library = this.#db.prepare('SELECT * FROM libraries WHERE id = ? AND enabled = 1').get(id)
+    if (!library) throw new IndexInputError('Библиотека не подключена.')
+    const previous = this.#db.prepare('SELECT * FROM assets WHERE library_id = ?').all(id)
+    const byPath = new Map(previous.map(item => [item.path_key, item]))
+    const discovered = new Map()
+    let hashed = 0
+    let reused = 0
+    let skippedHashes = 0
+    for await (const file of discoverAssets(library.root, { strict: true, signal })) {
+      const key = pathKey(file.path)
+      if (discovered.has(key)) throw new IndexInputError('В папке обнаружены имена, отличающиеся только регистром.')
+      const existing = byPath.get(key)
+      const { size, mtimeMs: mtime, ctimeMs: ctime } = file.info
+      let hash = null
+      if (size > maxHashedSize) {
+        skippedHashes++
+      } else if (existing?.hash && existing.size === size && existing.mtime === mtime && existing.ctime === ctime) {
+        hash = existing.hash
+        reused++
+      } else {
+        hash = await hashFile(library.root, file, signal)
+        hashed++
+      }
+      discovered.set(key, { path: file.path, name: basename(file.path), ext: file.ext,
+        kind: file.kind, size, mtime, ctime, hash })
+    }
+    signal?.throwIfAborted()
+    const summary = { assets: discovered.size, added: 0, changed: 0, moved: 0, missing: 0, hashed, reused, skippedHashes }
+    // A failed walk leaves the last successful scan intact. Never commit a stale scan from another process.
+    return transaction(this.#db, () => {
+      const now = timestamp()
+      const { changes } = this.#db.prepare(`
+        UPDATE libraries SET indexed_at = ?, generation = generation + 1
+        WHERE id = ? AND generation = ? AND enabled = 1
+      `).run(now, id, library.generation)
+      if (!changes) throw new IndexInputError('Состояние библиотеки изменилось. Повторите сканирование.')
+      this.#recordScan(id, now, discovered, previous, byPath, summary)
+      return summary
+    })
+  }
+
+  #recordScan(id, now, discovered, previous, byPath, summary) {
+    const oldHashes = countHashes(previous.filter(item => !item.missing_since))
+    const newHashes = countHashes(discovered.values())
+    const unmatched = previous.filter(item => !item.missing_since && !discovered.has(item.path_key))
+    const moves = new Map(unmatched.filter(item => oldHashes.get(item.hash) === 1 && newHashes.get(item.hash) === 1)
+      .map(item => [item.hash, item]))
+    const update = this.#db.prepare(`
+      UPDATE assets SET path = ?, path_key = ?, name = ?, ext = ?, kind = ?, size = ?, mtime = ?, ctime = ?,
+        hash = ?, missing_since = NULL, search_text = ? WHERE id = ?
+    `)
+    const insert = this.#db.prepare(`
+      INSERT INTO assets(id, library_id, path, path_key, name, ext, kind, size, mtime, ctime, hash, first_seen, search_text)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    const version = this.#db.prepare('INSERT INTO asset_versions(asset_id, path, size, mtime, hash, recorded_at) VALUES (?, ?, ?, ?, ?, ?)')
+    const markMissing = this.#db.prepare('UPDATE assets SET missing_since = ? WHERE id = ?')
+    const fields = this.#db.prepare('SELECT category, tags, note, license FROM assets WHERE id = ?')
+    for (const [key, file] of discovered) {
+      const data = [file.path, key, file.name, file.ext, file.kind, file.size, file.mtime, file.ctime, file.hash]
+      const present = byPath.get(key)
+      const before = present ?? moves.get(file.hash)
+      if (before) {
+        const changed = before.size !== file.size || before.hash !== file.hash || before.mtime !== file.mtime || before.path !== file.path
+        if (!changed && !before.missing_since && before.ctime === file.ctime) continue
+        // A review can be edited while hashing runs. Read its latest search fields under the write lock.
+        const metadata = fields.get(before.id)
+        update.run(...data, content(file.path, metadata), before.id)
+        if (changed || before.missing_since) version.run(before.id, file.path, file.size, file.mtime, file.hash, now)
+        if (present) {
+          summary.changed++
+        } else {
+          summary.moved++
+          moves.delete(file.hash)
+          before.moved = true
+        }
+      } else {
+        const assetId = randomUUID()
+        insert.run(assetId, id, ...data, now, content(file.path))
+        version.run(assetId, file.path, file.size, file.mtime, file.hash, now)
+        summary.added++
+      }
+    }
+    for (const file of unmatched) if (!file.moved) {
+      markMissing.run(now, file.id)
+      summary.missing++
+    }
+  }
+
+  search({ q = '', libraryId, kind, hash, limit = 50, offset = 0 } = {}) {
+    const query = folded(stringField(q, 200))
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(offset) || offset < 0) {
+      throw new IndexInputError('Некорректная страница результатов.')
+    }
+    const condition = ['l.enabled = 1', 'a.missing_since IS NULL']
+    const args = []
+    if (libraryId) {
+      validateId(libraryId)
+      condition.push('a.library_id = ?')
+      args.push(libraryId)
+    }
+    if (kind) {
+      if (!kinds.has(kind)) throw new IndexInputError('Неизвестный тип файла.')
+      condition.push('a.kind = ?')
+      args.push(kind)
+    }
+    if (hash) {
+      if (typeof hash !== 'string' || !/^[\da-f]{64}$/.test(hash)) throw new IndexInputError('Некорректный SHA-256.')
+      condition.push('a.hash = ?')
+      args.push(hash)
+    }
+    const terms = query.split(/\s+/).filter(Boolean)
+    const indexed = terms.filter(term => [...term].length >= 3)
+    if (indexed.length) {
+      condition.push('a.rowid IN (SELECT rowid FROM asset_search WHERE asset_search MATCH ?)')
+      args.push(indexed.map(term => '"' + term.replaceAll('"', '""') + '"').join(' AND '))
+    }
+    for (const term of terms.filter(term => [...term].length < 3)) {
+      condition.push('instr(a.search_text, ?) > 0')
+      args.push(term)
+    }
+    const found = this.#db.prepare(`
+      SELECT ${readable} FROM assets a JOIN libraries l ON a.library_id = l.id
+      WHERE ${condition.join(' AND ')} ORDER BY a.name COLLATE NOCASE, a.id LIMIT ? OFFSET ?
+    `).all(...args, limit + 1, offset)
+    return { assets: found.slice(0, limit).map(shape), nextOffset: found.length > limit ? offset + limit : null }
+  }
+
+  asset(id) {
+    validateId(id)
+    return shape(this.#db.prepare(`
+      SELECT ${readable}, l.root, l.generation FROM assets a JOIN libraries l ON a.library_id = l.id
+      WHERE a.id = ? AND l.enabled = 1
+    `).get(id))
+  }
+
+  updateAsset(id, change) {
+    validateId(id)
+    if (!change || typeof change !== 'object' || Array.isArray(change)) throw new IndexInputError('Некорректные метаданные.')
+    const allowed = ['category', 'tags', 'note', 'review', 'license']
+    if (Object.keys(change).some(key => !allowed.includes(key))) throw new IndexInputError('Неизвестное поле метаданных.')
+    return transaction(this.#db, () => {
+      const before = this.asset(id)
+      if (!before) throw new IndexInputError('Ассет отсутствует.')
+      const record = { ...before, ...change }
+      if (!Array.isArray(record.tags) || record.tags.length > 32 || !reviews.has(record.review)) {
+        throw new IndexInputError('Некорректные теги или решение.')
+      }
+      record.category = stringField(record.category, 80)
+      record.tags = JSON.stringify([...new Set(record.tags.map(tag => stringField(tag, 60)).filter(Boolean))])
+      record.note = stringField(record.note, 1200)
+      record.license = stringField(record.license, 300)
+      this.#db.prepare('UPDATE assets SET category = ?, tags = ?, note = ?, review = ?, license = ?, search_text = ? WHERE id = ?')
+        .run(record.category, record.tags, record.note, record.review, record.license, content(record.path, record), id)
+      return this.asset(id)
+    })
+  }
+
+  versions(id) {
+    if (!this.asset(id)) return []
+    return this.#db.prepare(`
+      SELECT path, size, mtime, hash, recorded_at AS recordedAt FROM asset_versions
+      WHERE asset_id = ? ORDER BY version DESC LIMIT 100
+    `).all(id)
+  }
+
+  duplicates(limit = 50, offset = 0) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(offset) || offset < 0) {
+      throw new IndexInputError('Некорректная страница результатов.')
+    }
+    return this.#db.prepare(`
+      SELECT a.hash, COUNT(*) AS count, MAX(a.size) AS size FROM assets a JOIN libraries l ON a.library_id = l.id
+      WHERE l.enabled = 1 AND a.missing_since IS NULL AND a.hash IS NOT NULL
+      GROUP BY a.hash HAVING COUNT(*) > 1 ORDER BY count DESC, a.hash LIMIT ? OFFSET ?
+    `).all(limit, offset)
+  }
+
+  integrity() {
+    const rows = this.#db.prepare('PRAGMA quick_check').all()
+    const ok = rows.length === 1 && rows[0].quick_check === 'ok' && !this.#db.prepare('PRAGMA foreign_key_check').get()
+    return { ok, schemaVersion, checks: rows.map(row => row.quick_check) }
+  }
+
+  async backup(directory) {
+    await mkdir(directory, { recursive: true })
+    const destination = join(directory, 'index-' + randomUUID() + '.sqlite')
+    const partial = destination + '.partial'
+    try {
+      await backup(this.#db, partial)
+      await rename(partial, destination)
+      return destination
+    } finally {
+      await rm(partial, { force: true })
+    }
+  }
+}

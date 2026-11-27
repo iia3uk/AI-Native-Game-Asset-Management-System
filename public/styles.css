@@ -170,6 +170,24 @@ textarea { resize: vertical; min-height: 60px; padding: 7px 8px; font-size: 13px
 .primary-control { background: var(--accent); color: var(--ink); font-weight: 700; }
 .primary-control:hover:enabled { background: #e7f5c0; color: var(--ink); }
 
+.index-dialog { width: min(770px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); }
+.index-header, .index-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.index-header { justify-content: space-between; margin-bottom: 10px; }
+.index-header h2, .index-toolbar p { margin: 0; }
+.index-query, .index-fields { display: grid; gap: 8px 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.index-query-text { grid-column: 1 / -1; }
+.index-toolbar { margin-top: 8px; }
+.index-toolbar #index-count { margin-inline-start: auto; }
+.index-results { display: grid; gap: 4px; max-height: 260px; padding: 0; margin: 8px 0 0; overflow: auto; list-style: none; }
+.index-results button { width: 100%; text-align: left; overflow-wrap: anywhere; }
+.index-results button small { display: block; color: var(--muted); margin-top: 3px; }
+.index-metadata { border-top: 1px solid var(--line); margin-top: 15px; padding-top: 12px; }
+.index-metadata h3 { margin: 0; overflow-wrap: anywhere; }
+.index-metadata dl { font-size: 13px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; }
+.index-metadata dt { color: var(--muted); }
+.index-metadata dd { margin: 0; overflow-wrap: anywhere; }
+.index-metadata textarea { width: 100%; padding: 8px; background: #111713; color: var(--text); border: 1px solid #354237; border-radius: 7px; }
+
 @media (max-width: 1150px) {
   .workspace { grid-template-columns: 250px minmax(0, 1fr) 280px; }
   .inspection { padding-inline: 16px; }
@@ -189,7 +207,8 @@ textarea { resize: vertical; min-height: 60px; padding: 7px 8px; font-size: 13px
   .top-stats { display: none; }
 }
 @media (max-width: 540px) {
-  .topbar { height: 64px; justify-content: space-between; }
+  .topbar { height: auto; min-height: 64px; flex-wrap: wrap; padding-block: 9px; gap: 8px; }
+  .topnav { flex-wrap: wrap; }
   .brand-name { font-size: 15px; }
   .brand-caption { font-size: 11px; }
   .brand { gap: 7px; }
@@ -199,4 +218,6 @@ textarea { resize: vertical; min-height: 60px; padding: 7px 8px; font-size: 13px
   .library-tools h1 { margin-bottom: 8px; }
   .pack-list { max-height: 210px; }
   .inspection { min-height: 440px; padding-inline: 11px; }
+  .index-dialog { padding: 14px; }
+  .index-fields { grid-template-columns: minmax(0, 1fr); }
 }

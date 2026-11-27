@@ -28,8 +28,8 @@ export async function browseFolder(path) {
     .sort((a, b) => a.name.localeCompare(b.name, 'ru', { numeric: true })) }
 }
 
-export async function scanFolder(path) {
-  const root = await folderPath(path)
+export async function scanFolder(path, { canonical = false } = {}) {
+  const root = canonical ? path : await folderPath(path)
   const id = randomUUID()
   const key = hash(pathKey(root))
   const groups = new Map()

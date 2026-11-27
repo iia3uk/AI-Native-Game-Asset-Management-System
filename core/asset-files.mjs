@@ -5,6 +5,8 @@ import { imageFormats, modelFormats, supportFiles } from '../scripts/formats.mjs
 export const pathKey = path => process.platform === 'win32' ? path.toLowerCase() : path
 export const portablePath = path => path.split(sep).join('/')
 
+export class ScanChangeError extends Error {}
+
 export function inside(base, target) {
   const path = relative(base, target)
   return path !== '..' && !path.startsWith('..' + sep) && !isAbsolute(path)
@@ -77,7 +79,7 @@ export async function* discoverAssets(root, { strict = false, signal } = {}) {
     signal?.throwIfAborted()
     const folder = stack.pop()
     if (!await checkedPath(root, folder)) {
-      if (strict || folder === root) throw new Error('Папка изменилась во время сканирования.')
+      if (strict || folder === root) throw new ScanChangeError('Папка изменилась во время сканирования.')
       continue
     }
     let directory
@@ -96,7 +98,7 @@ export async function* discoverAssets(root, { strict = false, signal } = {}) {
       if (!format) continue
       const file = await fileInfo(root, absolute)
       if (file) yield { ...format, absolute: file.path, info: file.info, path: portablePath(relative(root, absolute)) }
-      else if (strict) throw new Error('Файл изменился или стал недоступен во время сканирования.')
+      else if (strict) throw new ScanChangeError('Файл изменился или стал недоступен во время сканирования.')
     }
   }
 }

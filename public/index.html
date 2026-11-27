@@ -18,6 +18,7 @@
     <nav class="topnav" aria-label="Источники ассетов">
       <button id="fab-mode" class="tab-button" aria-pressed="true">Fab</button>
       <button id="open-folder" class="tab-button" aria-pressed="false">Локальные папки</button>
+      <button id="index-mode" class="tab-button" aria-haspopup="dialog">Индекс</button>
       <button id="demo-mode" class="tab-button" aria-pressed="false">Демобиблиотека</button>
     </nav>
     <div id="library-stats" class="top-stats" aria-live="polite">Проверка каталога…</div>
@@ -156,6 +157,69 @@
       <div class="dialog-actions">
         <button id="folder-cancel" type="button" class="control">Закрыть</button>
         <button id="folder-submit" type="submit" class="control primary-control">Открыть</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="index-dialog" class="folder-dialog index-dialog" aria-labelledby="index-heading">
+    <header class="index-header">
+      <h2 id="index-heading">Индекс ассетов</h2>
+      <button id="index-close" type="button" class="control">Закрыть</button>
+    </header>
+    <form id="index-connect">
+      <label for="index-root">Полный путь к новой библиотеке</label>
+      <div class="folder-path-row">
+        <input id="index-root" required maxlength="4096" autocomplete="off" spellcheck="false">
+        <button class="control primary-control">Подключить и сканировать</button>
+      </div>
+    </form>
+    <form id="index-query" class="index-query">
+      <div>
+        <label for="index-library">Библиотека</label>
+        <select id="index-library"><option value="">Все библиотеки</option></select>
+      </div>
+      <div>
+        <label for="index-kind">Тип</label>
+        <select id="index-kind">
+          <option value="">Все типы</option><option value="model">Модели</option>
+          <option value="image">Текстуры</option><option value="other">Другие файлы</option>
+        </select>
+      </div>
+      <div class="index-query-text">
+        <label for="index-search">Имя, путь, формат или метаданные</label>
+        <div class="folder-path-row">
+          <input id="index-search" type="search" maxlength="200" autocomplete="off">
+          <button class="control">Найти</button>
+        </div>
+      </div>
+    </form>
+    <div class="index-toolbar">
+      <button id="index-rescan" type="button" class="control" disabled>Пересканировать</button>
+      <button id="index-disconnect" type="button" class="control" disabled>Отключить</button>
+      <p id="index-count" class="notice"></p>
+    </div>
+    <p id="index-status" class="notice" role="status"></p>
+    <ul id="index-results" class="index-results" aria-label="Результаты поиска"></ul>
+    <nav class="index-toolbar" aria-label="Страницы результатов">
+      <button id="index-prev" type="button" class="control" disabled>Назад</button>
+      <button id="index-next" type="button" class="control" disabled>Дальше</button>
+    </nav>
+    <form id="index-metadata" class="index-metadata" hidden>
+      <h3 id="index-name"></h3>
+      <dl id="index-file-info"></dl>
+      <div class="index-fields">
+        <label>Категория <input name="category" maxlength="80"></label>
+        <label>Теги через запятую <input name="tags" maxlength="1800"></label>
+        <label>Отбор <select name="review">
+          <option value="">Без отметки</option><option value="candidate">Подходит</option>
+          <option value="later">Позже</option><option value="excluded">Исключить</option>
+        </select></label>
+        <label>Лицензия <input name="license" maxlength="300"></label>
+      </div>
+      <label for="index-note">Заметка</label>
+      <textarea id="index-note" name="note" rows="2" maxlength="1200"></textarea>
+      <div class="dialog-actions">
+        <button id="index-preview" type="button" class="control">Открыть во вьювере</button>
+        <button class="control primary-control">Сохранить метаданные</button>
       </div>
     </form>
   </dialog>
