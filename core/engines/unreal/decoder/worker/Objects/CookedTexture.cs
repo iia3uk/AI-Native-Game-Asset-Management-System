@@ -1,103 +1,14 @@
-using System.Buffers.Binary;
-using CUE4Parse.UE4.Assets;
 using CUE4Parse.UE4.Assets.Exports.Texture;
 using CUE4Parse.UE4.Objects.Engine;
-using CUE4Parse.UE4.Readers;
-using CUE4Parse.UE4.Versions;
 
 namespace AssetViewer.UnrealDecode.Objects;
 
-internal sealed record CookedInput(string Path, long Size);
-
 internal static class CookedTexture
 {
-    private const int MaxHeader = 16 * 1024 * 1024;
-    private const int MaxFile = 64 * 1024 * 1024;
-
     public static (byte[] Data, TextureExport Export)? Read(CookedInput? input, CookedInput? exports, CookedInput? bulk,
         CookedInput? optional, long remaining)
-    {
-        if (input is not { Size: >= 64 and <= MaxFile } || !HasStockHeader(input)) return null;
-        try
-        {
-            var version = new VersionContainer(EGame.GAME_UE4_27);
-            using var header = Archive("Asset.uasset", input, version)!;
-            using var data = Archive("Asset.uexp", exports, version);
-            using var payload = Archive("Asset.ubulk", bulk, version);
-            using var optionalPayload = Archive("Asset.uptnl", optional, version);
-            var package = new Package(header, data, payload, optionalPayload);
-            var selected = -1;
-            for (var i = 0; i < package.ExportMap.Length; i++)
-            {
-                var export = package.ExportMap[i];
-                if (export.OuterIndex?.Index != 0 || export.ClassIndex is not { } classIndex || !IsTextureImport(package, classIndex.Index)) continue;
-                if (selected >= 0) throw new InputException("unreal-cooked-texture-ambiguous");
-                var minimum = package.Summary.TotalHeaderSize;
-                var maximum = data == null ? header.Length : minimum + data.Length;
-                if (export.SerialOffset < minimum || export.SerialSize <= 0 || export.SerialOffset > maximum - export.SerialSize)
-                    throw new InputException("unreal-cooked-texture-layout");
-                selected = i;
-            }
-            if (selected < 0) return null;
-            if (package.ExportsLazy[selected].Value is not UTexture2D texture)
-                throw new InputException("unreal-cooked-texture-layout");
-            return GetPixels(texture, remaining);
-        }
-        catch (Exception error) when (error is not InputException)
-        {
-            throw new InputException("unreal-cooked-texture-layout");
-        }
-    }
-
-    private static bool HasStockHeader(CookedInput input)
-    {
-        using var stream = File.OpenRead(input.Path);
-        Span<byte> prefix = stackalloc byte[24];
-        stream.ReadExactly(prefix);
-        if (U32(prefix) != 0x9E2A83C1 || I32(prefix[4..]) != -7 || I32(prefix[12..]) != 522 || I32(prefix[16..]) != 0) return false;
-        var customVersions = I32(prefix[20..]);
-        if (customVersions is < 0 or > 256 || stream.Length < 64 + 20 * customVersions) return false;
-        stream.Position = 24 + customVersions * 20;
-        stream.ReadExactly(prefix[..8]);
-        var header = I32(prefix);
-        var nameLength = I32(prefix[4..]);
-        var nameBytes = nameLength >= 0 ? nameLength : -2L * nameLength;
-        if (header > MaxHeader || header > stream.Length || nameBytes > 4096 || stream.Position + nameBytes + 40 > header) return false;
-        stream.Position += nameBytes;
-        Span<byte> tables = stackalloc byte[40];
-        stream.ReadExactly(tables);
-        var flags = U32(tables);
-        // FilterEditorOnly removes the localization ID and per-import editor package name.
-        if ((flags & 0x80000200) != 0x80000200 || (flags & 0x00002000) != 0) return false;
-        var nameCount = I32(tables[4..]);
-        var nameOffset = I32(tables[8..]);
-        var exportCount = I32(tables[20..]);
-        var exportOffset = I32(tables[24..]);
-        var importCount = I32(tables[28..]);
-        var importOffset = I32(tables[32..]);
-        return nameCount is > 0 and <= 32_768 && exportCount is > 0 and <= 4096 && importCount is > 0 and <= 8192 &&
-            nameOffset >= stream.Position && nameOffset <= importOffset && importOffset - nameOffset >= nameCount * 8 &&
-            exportOffset >= importOffset && exportOffset <= header &&
-            exportOffset - importOffset == importCount * 28 && header - exportOffset >= exportCount * 104;
-    }
-
-    private static uint U32(ReadOnlySpan<byte> value) => BinaryPrimitives.ReadUInt32LittleEndian(value);
-    private static int I32(ReadOnlySpan<byte> value) => BinaryPrimitives.ReadInt32LittleEndian(value);
-
-    private static FByteArchive? Archive(string name, CookedInput? input, VersionContainer version) =>
-        input is { Size: > 0 and <= MaxFile } ? new FByteArchive(name, File.ReadAllBytes(input.Path), version) : null;
-
-    private static bool IsTextureImport(Package package, int index)
-    {
-        var i = -1L - index;
-        if (index >= 0 || i >= package.ImportMap.Length) return false;
-        var type = package.ImportMap[i];
-        if (type.OuterIndex is not { } typeOwner) return false;
-        var outer = -1L - typeOwner.Index;
-        if (type.ClassName.Text != "Class" || type.ObjectName.Text != "Texture2D" || outer < 0 || outer >= package.ImportMap.Length) return false;
-        var owner = package.ImportMap[outer];
-        return owner.ClassName.Text == "Package" && owner.ObjectName.Text == "/Script/Engine" && owner.OuterIndex?.Index == 0;
-    }
+        => CookedPackage.Read<UTexture2D, (byte[], TextureExport)?>(input, exports, bulk, optional,
+            "Texture2D", "unreal-cooked-texture", (texture, _) => GetPixels(texture, remaining));
 
     private static bool ValidDimensions(FTexture2DMipMap level) =>
         level.SizeX is > 0 and <= TexturePixels.MaxSide && level.SizeY is > 0 and <= TexturePixels.MaxSide && level.SizeZ == 1;
@@ -118,7 +29,7 @@ internal static class CookedTexture
             var height = mip.SizeY;
             var length = 4 * width * height;
             var expected = TexturePixels.Size(format, width, height);
-            if (bulk.Header.ElementCount != expected || bulk.Header.SizeOnDisk is 0 or > MaxFile)
+            if (bulk.Header.ElementCount != expected || bulk.Header.SizeOnDisk is 0 or > CookedPackage.MaxFile)
                 throw new InputException("unreal-cooked-texture-mip");
             if (length > remaining) throw new InputException("unreal-cooked-texture-limit");
             if (bulk.Data is not { Length: > 0 } bytes) continue;

@@ -11,7 +11,7 @@ const float = value => {
 const fstring = value => Buffer.concat([int(Buffer.byteLength(value) + 1), Buffer.from(value + '\0')])
 const magic = Buffer.from('c1832a9e', 'hex')
 
-export function cookedMaterial({ name, parent, textures = [], scalars = [], vectors = [], split = true, malformed = false,
+export function cookedMaterial({ name, parent, textures = [], scalars = [], vectors = [], streaming = [], split = true, malformed = false,
   rootClass = '/Script/Engine' }) {
   const names = new Map()
   const fname = value => {
@@ -51,6 +51,16 @@ export function cookedMaterial({ name, parent, textures = [], scalars = [], vect
     })
     properties.push(tag(label, 'ArrayProperty', Buffer.concat([
       int(rows.length), structure(label, kind + 'ParameterValue', Buffer.concat(data)),
+    ]), fname('StructProperty')))
+  }
+  if (streaming.length) {
+    const label = 'TextureStreamingData'
+    const data = streaming.map(({ path, uv = 0 }) => Buffer.concat([
+      structure('TextureReference', 'SoftObjectPath', Buffer.concat([fname(path + '.' + path.split('/').at(-1)), int(0)])),
+      tag('UVChannelIndex', 'IntProperty', int(uv)), none,
+    ]))
+    properties.push(tag(label, 'ArrayProperty', Buffer.concat([
+      int(streaming.length), structure(label, 'MaterialTextureInfo', Buffer.concat(data)),
     ]), fname('StructProperty')))
   }
   const exportData = Buffer.concat([...properties, malformed ? Buffer.from([0, 0, 0]) : none, ...(malformed ? [] : [int(0)])])

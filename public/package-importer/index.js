@@ -169,7 +169,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
           unrealViewer?.issue && describeIssue(unrealViewer.issue),
           unreal?.issue && describeIssue(unreal.issue)].filter(Boolean).join(' · ')))
         if (unrealCooked) {
-          const { textures, materials } = unrealCooked
+          const { textures, materials, meshes } = unrealCooked
           details.append(element('p', ['Cooked UE4.27',
             textures.converted && 'Текстуры · ' + textures.converted + ' PNG',
             materials.converted && 'Описания материалов · ' + materials.converted,
@@ -177,6 +177,18 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
               'Пропущено ' + (textures.skipped + materials.skipped) + ', ошибок ' + (textures.failed + materials.failed) : '',
             textures.issue && describeIssue(textures.issue),
             materials.issue && describeIssue(materials.issue)].filter(Boolean).join(' · ')))
+          if (meshes) {
+            details.append(element('p', ['Статические модели cooked UE4.27',
+              meshes.meshes && 'Моделей · ' + meshes.meshes,
+              meshes.gltf && 'LOD · ' + meshes.gltf,
+              meshes.texturedGltf && 'С текстурами · ' + meshes.texturedGltf,
+              meshes.missingLods && 'Недоступных LOD · ' + meshes.missingLods,
+              meshes.derivatives?.fbx && meshes.derivatives.fbx + ' FBX',
+              meshes.derivatives?.glb && meshes.derivatives.glb + ' GLB',
+              meshes.skipped && 'Пропущено · ' + meshes.skipped,
+              meshes.failed && 'Ошибок · ' + meshes.failed,
+              meshes.issue && describeIssue(meshes.issue)].filter(Boolean).join(' · ')))
+          }
         }
       }
       if (record.result.report.packageFormat === 'unreal-pak') {

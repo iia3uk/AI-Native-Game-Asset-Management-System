@@ -1,12 +1,13 @@
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { basename, join, posix } from 'node:path'
 import { analyzeAsset } from '../../../analysis/asset-analysis.mjs'
 import { convertBatchModel } from '../../../engines/blender/batch.mjs'
 import { modelArtifact } from '../../artifacts.mjs'
-import { publishRawMeshPreview } from '../source-mesh/preview.mjs'
+import { publishDirectMeshPreview } from '../source-mesh/preview.mjs'
 import { animationBindingMethod } from './actorx/publish.mjs'
 
 const destination = { fbx: 'Models', glb: 'Previews' }
+const materialMethods = new Set(['ue-viewer-material-binding', 'unreal-source-mesh-material-binding', 'unreal-cooked-mesh-material-binding'])
 
 async function checkDerivative(workspace, path, format, original, signal) {
   const file = await modelArtifact(workspace, path, format, signal)
@@ -26,13 +27,14 @@ export async function createViewerDerivatives({ models, store, blender, output, 
     if (!requested.length) continue
     const animated = asset.exports.find(item => item.path && item.method === animationBindingMethod &&
       item.sourceModel === artifact.path && item.format === 'gltf')
-    let input = animated ?? asset.exports.find(item => item.path && ['ue-viewer-material-binding', 'unreal-source-mesh-material-binding'].includes(item.method) &&
+    let input = animated ?? asset.exports.find(item => item.path && materialMethods.has(item.method) &&
       item.from === artifact.path) ?? artifact
-    if (requested.includes('glb') && artifact.sourceFormat === 'FRawMesh' && Date.now() < deadline) {
+    const directPreview = artifact.sourceFormat === 'FRawMesh' || artifact.method === 'cue4parse-cooked-static-mesh'
+    if (requested.includes('glb') && directPreview && Date.now() < deadline) {
       const preview = { asset, artifact, output, workspace, store, signal }
-      let direct = await publishRawMeshPreview({ ...preview, input })
+      let direct = await publishDirectMeshPreview({ ...preview, input })
       if (!direct?.path && !blender && input !== artifact) {
-        direct = await publishRawMeshPreview({ ...preview, input: artifact, textureFallback: true })
+        direct = await publishDirectMeshPreview({ ...preview, input: artifact, textureFallback: true })
       }
       if (direct?.path) {
         asset.exports.push(direct)
@@ -75,9 +77,9 @@ export async function createViewerDerivatives({ models, store, blender, output, 
             'invalid-converter-output' : failure ?? 'invalid-converter-output' })
           continue
         }
-        const adapter = artifact.method === 'unreal-source-mesh' ? 'unreal-source' : 'ue-viewer'
+        const adapter = posix.basename(posix.dirname(artifact.path))
         const target = [destination[format], asset.id, adapter, basename(artifact.path, '.gltf') + '.' + format].join('/')
-        const issues = artifact.sourceFormat === 'FRawMesh' ? [...new Set([...artifact.issues, ...input.issues])] : input.issues
+        const issues = directPreview ? [...new Set([...artifact.issues, ...input.issues])] : input.issues
         const saved = await store.save(target, file, { ...description, status: 'converted', converterVersion: result.version,
           sourceScene: result.metrics, issues: [...issues, ...(result.issues ?? []),
             ...(converterOutput !== scratch ?

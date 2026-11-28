@@ -16,7 +16,7 @@ internal static class Program
         if (args is ["--probe"])
         {
             Write(new { protocol = 1, backend = Backend, backendVersion = BackendVersion,
-                modes = new[] { "pak", "iostore", "loose-textures" } });
+                modes = new[] { "pak", "iostore", "loose-textures", "loose-meshes" } });
             return 0;
         }
         if (args is not ["--decode"]) return 2;
@@ -27,10 +27,12 @@ internal static class Program
             using var stream = File.OpenRead("request.json");
             if (stream.Length > 4096) throw new InputException("unreal-worker-request");
             var request = JsonSerializer.Deserialize<Request>(stream, Json);
-            if (request is not { Protocol: 1, Format: "pak" or "iostore" or "loose-textures", MaxOutputBytes: >= 0 and <= 1L << 30 })
+            if (request is not { Protocol: 1, Format: "pak" or "iostore" or "loose-textures" or "loose-meshes",
+                MaxOutputBytes: >= 0 and <= 1L << 30 })
                 throw new InputException("unreal-worker-request");
             format = request.Format;
             if (format == "loose-textures") Write(LooseTextures.Read(request));
+            else if (format == "loose-meshes") Write(LooseMeshes.Read(request));
             else if (format == "iostore") Write(IoStoreDecoder.Read(request));
             else Write(PakDecoder.Read(request));
             return 0;
@@ -46,6 +48,7 @@ internal static class Program
                 issue = format switch
                 {
                     "loose-textures" => "unreal-loose-textures-decode-failed",
+                    "loose-meshes" => "unreal-loose-meshes-decode-failed",
                     "iostore" => "unreal-iostore-decode-failed",
                     _ => "unreal-pak-decode-failed"
                 } });

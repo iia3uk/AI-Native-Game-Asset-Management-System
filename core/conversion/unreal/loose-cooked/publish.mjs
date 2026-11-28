@@ -5,6 +5,7 @@ import { ExportArtifacts } from '../../artifacts.mjs'
 import { publishCookedMaterials } from '../cooked-material/publish.mjs'
 import { readCookedMaterials } from '../cooked-material/read.mjs'
 import { looseCookedInputs } from './inputs.mjs'
+import { publishLooseCookedMeshes } from './meshes.mjs'
 import { publishLooseCookedTextures } from './textures.mjs'
 
 export async function publishLooseCooked({ records, source, decoder, output, workspace, signal }) {
@@ -22,11 +23,13 @@ export async function publishLooseCooked({ records, source, decoder, output, wor
   const scratch = join(workspace, 'loose-materials')
   await mkdir(scratch)
   const { materials, dependencies } = await publishCookedMaterials([...assets.values()], staged, scratch, store, resolveAsset, signal)
+  for (const dependency of dependencies) records.dependencies.push(dependency)
+  const meshes = await publishLooseCookedMeshes(inputs, { records, decoder, output, workspace, resolve, store, signal })
   for (const { asset } of inputs) {
     if (asset.exports.some(item => item.status === 'converted')) asset.status = 'converted'
   }
-  for (const dependency of dependencies) records.dependencies.push(dependency)
   const textureRetry = textures.issue && !['unreal-loose-textures-unavailable', 'unreal-loose-textures-budget'].includes(textures.issue)
-  const partial = Boolean(textureRetry || textures.failed || materials.failed || materials.issue)
-  return { textures, materials, partial }
+  const meshRetry = meshes?.summary.issue && !['unreal-loose-meshes-unavailable', 'unreal-loose-meshes-budget'].includes(meshes.summary.issue)
+  const partial = Boolean(textureRetry || textures.failed || materials.failed || materials.issue || meshRetry || meshes?.summary.failed)
+  return { report: { textures, materials, partial, ...(meshes && { meshes: meshes.summary }) }, meshes }
 }

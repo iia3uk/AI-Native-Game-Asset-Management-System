@@ -15,6 +15,7 @@ import { createViewerDerivatives } from '../../../conversion/unreal/viewer/deriv
 import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
 import { unrealBridgeVersion } from '../../../engines/unreal/bridge/project.mjs'
 import { locateUnrealBridge } from '../../../engines/unreal/bridge/selection.mjs'
+import { looseMeshRevision } from '../../../engines/unreal/decoder/mesh-protocol.mjs'
 import { looseTextureRevision } from '../../../engines/unreal/decoder/protocol.mjs'
 import { cue4parseVersion, locateUnrealDecoder } from '../../../engines/unreal/decoder/run.mjs'
 import { sourceSoundCueRevision } from '../../../engines/unreal/source-audio/cues.mjs'
@@ -86,6 +87,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     ['unreal-sound-cue', sourceSoundCueRevision],
     ['unreal-cooked-material', cookedMaterialRevision],
     ['unreal-cooked-texture', looseTextureRevision, decoder ? cue4parseVersion : null],
+    ['unreal-cooked-mesh', looseMeshRevision, decoder ? cue4parseVersion : null],
     viewer && ['ue-viewer', unrealViewerRevision, ...viewer.identity]]
   const recipe = exportRecipe(exportFormats, blender, engineRecipe)
   const root = await packageWorkspaceRoot(directory, 'unreal-loose-v' + version, { sourceRoot: source.protectedRoot })
@@ -107,15 +109,17 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
       await decodeLooseWithViewer({ viewer, records, output, workspace, source, signal }) : null
     const sourceMeshes = records.written ? await publishSourceMeshes({ records, output, workspace, source, store: decoded?.store, signal }) : null
     const unrealSourceMeshes = sourceMeshes?.summary
-    const unrealViewer = decoded?.summary ?? (exportFormats.length > 0 && !selection?.editor && !unrealSourceMeshes?.gltf ?
-      { status: 'unavailable', issue: 'unreal-viewer-unavailable' } : undefined)
     if (decoded) onProgress?.(65)
     const conversion = selection && records.written ?
       await convertLoosePackages({ records, selection, workspace, output, blender, formats: exportFormats, signal,
         onProgress: progress => onProgress?.((decoded ? 65 : 60) + Math.floor((progress - 60) * 0.4)) }) : null
     const media = await recoverUnrealMedia(records, { output, workspace, signal,
       onProgress: progress => onProgress?.(79 + Math.floor(progress * 0.04)) })
-    const unrealCooked = await publishLooseCooked({ records, source, decoder, output, workspace, signal })
+    const cooked = await publishLooseCooked({ records, source, decoder, output, workspace, signal })
+    const unrealCooked = cooked?.report
+    const unrealViewer = decoded?.summary ??
+      (exportFormats.length && !selection?.editor && !unrealSourceMeshes?.gltf && !unrealCooked?.meshes?.gltf ?
+        { status: 'unavailable', issue: 'unreal-viewer-unavailable' } : undefined)
     const soundCues = await publishSourceSoundCues({ records, output, workspace, source, signal })
     const packedMapCache = new Map()
     const sourceMaterialInput = sourceMeshes && await prepareSourceMaterials({ records, output, workspace, signal,
@@ -135,13 +139,16 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     if (decoded?.animations?.length) {
       decoded.summary.animationBinding = await publishActorXAnimations({ ...decoded, output, workspace, records, signal })
     }
-    const derivativeStages = [decoded, sourceMeshes].filter(stage => stage?.models.length)
+    const derivativeStages = [decoded, sourceMeshes, cooked?.meshes].filter(stage => stage?.models.length)
     onProgress?.(85)
     if (exportFormats.length) {
       for (const [index, stage] of derivativeStages.entries()) {
         stage.summary.derivatives = await createViewerDerivatives({ ...stage, workspace, output, blender, formats: exportFormats, signal,
           onProgress: progress => onProgress?.(85 + Math.floor((index + progress / 100) * 9 / derivativeStages.length)) })
       }
+    }
+    if (cooked?.meshes?.models.some(({ asset }) => asset.exports.some(item => item.method === 'blender' && item.status === 'failed'))) {
+      unrealCooked.partial = true
     }
     const counts = Object.create(null)
     for (const asset of records.assets) counts[asset.status] = (counts[asset.status] ?? 0) + 1

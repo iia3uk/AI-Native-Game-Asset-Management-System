@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import { unrealGameAssetResolver } from '../../../engines/unreal/editor-package/game-path.mjs'
 import { staticMeshPackage, supportsSourceMeshVersion } from '../../../engines/unreal/source-mesh/package.mjs'
@@ -7,30 +7,16 @@ import { fileInfo } from '../../../files/asset-files.mjs'
 import { readVerifiedFile } from '../../../files/read-verified.mjs'
 import { ExportArtifacts } from '../../artifacts.mjs'
 import { publishSourceCollision } from '../collision/publish.mjs'
-import { viewerModel } from '../viewer/model.mjs'
+import { publishUnrealGeometry } from '../mesh-artifact.mjs'
 
 const method = 'unreal-source-mesh'
 
 async function publishModel({ asset, scratch, store, lod, document, buffer, stem, signal, rawMesh }) {
-  const bin = stem + '.bin'
-  const name = stem + '.gltf'
-  const target = 'Models/' + asset.id + '/unreal-source/'
-  const json = JSON.stringify(document)
   const identity = { status: 'converted', converterVersion: sourceMeshRevision, method, from: asset.output, lod,
     ...(rawMesh && { sourceFormat: 'FRawMesh' }) }
-  const issue = await store.preflight(Buffer.byteLength(json) + buffer.byteLength)
-  if (issue) return { issue }
-  await Promise.all([writeFile(join(scratch, name), json, { signal }), writeFile(join(scratch, bin), buffer, { signal })])
-  const model = await viewerModel(scratch, name, signal)
-  if (!model) return { issue: 'unreal-source-mesh-invalid-model' }
-  const savedBuffer = await store.save(target + bin, model.buffer, { ...identity, format: 'bin', role: 'model-buffer' })
-  if (!savedBuffer.path) return { issue: savedBuffer.issue }
   const issues = ['unreal-source-mesh-material-graphs-not-extracted']
   if (rawMesh) issues.push('unreal-source-mesh-editor-build-not-applied')
-  const artifact = await store.save(target + name, model.file, { ...identity, format: 'gltf', role: 'model',
-    metrics: model.metrics, issues })
-  asset.exports.push(savedBuffer, artifact)
-  return { artifact }
+  return publishUnrealGeometry({ asset, scratch, store, stem, document, buffer, folder: 'unreal-source', identity, issues, signal })
 }
 
 export async function publishSourceMeshes({ records, output, workspace, source, signal, store = new ExportArtifacts(output, signal) }) {

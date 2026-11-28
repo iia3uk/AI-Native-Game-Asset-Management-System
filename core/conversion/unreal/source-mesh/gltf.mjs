@@ -119,7 +119,7 @@ function geometry(data) {
   return { count, triangles, min, max, fields, missingTangents: tangent && validTangents ? count - validTangents : 0 }
 }
 
-export function encodeSourceMesh(data, { name, bin, materials: slots }) {
+export function encodeSourceMesh(data, { name, bin, materials: slots, generator = 'Asset Viewer Unreal source mesh' }) {
   const { count, triangles, min, max, fields, missingTangents } = geometry(data)
   const parts = []
   const bufferViews = []
@@ -152,12 +152,15 @@ export function encodeSourceMesh(data, { name, bin, materials: slots }) {
   }
   const labels = data.polygonGroupAttributes?.get('ImportedMaterialSlotName')?.values
   for (const [group, { indices, masks }] of triangles) {
-    const label = data.rawMesh ? slots[group]?.name : Array.isArray(labels) ? labels[group] : null
-    const path = data.rawMesh ? slots[group]?.path : slotMaterial(label, slots)?.path
+    const section = data.sections?.[group]
+    const slot = section ?? (data.rawMesh ? slots[group] : null)
+    const label = slot ? slot.name : Array.isArray(labels) ? labels[group] : null
+    const path = slot ? slot.path : slotMaterial(label, slots)?.path
     const material = materials.length
     if (path) materialPaths.add(path)
     const importIndex = data.importIndices?.[group]
-    const extras = { ...(path && { unrealMaterial: path }), ...(data.rawMesh && { unrealMaterialSlot: group }),
+    const extras = { ...(path && { unrealMaterial: path }), ...(section && { unrealMaterialSlot: section.slot }),
+      ...(data.rawMesh && { unrealMaterialSlot: group }),
       ...(importIndex !== undefined && { unrealImportMaterialIndex: importIndex }) }
     materials.push({ name: label && (!data.rawMesh || label !== 'None') ? label : 'Section ' + group,
       pbrMetallicRoughness: { metallicFactor: 0, roughnessFactor: 0.5 },
@@ -167,7 +170,8 @@ export function encodeSourceMesh(data, { name, bin, materials: slots }) {
       wide ? componentType.UNSIGNED_INT : componentType.UNSIGNED_SHORT, 34963)
     const smoothingMasks = masks && appendView(Uint32Array.from(masks))
     primitives.push({ attributes, indices: accessor, material,
-      ...(masks && { extras: { unrealFaceSmoothingMasks: { bufferView: smoothingMasks, componentType: 5125 } } }) })
+      ...(masks && { extras: { unrealFaceSmoothingMasks: { bufferView: smoothingMasks, componentType: 5125 } } }),
+      ...(section && { extras: { unrealSection: group, unrealCollisionEnabled: section.collision } }) })
   }
   const tangentAxes = {}
   for (const [axis, values] of Object.entries(data.rawTangentAxes ?? {})) {
@@ -176,7 +180,7 @@ export function encodeSourceMesh(data, { name, bin, materials: slots }) {
   const unrealRawMesh = data.rawMesh && { ...data.rawMesh,
     ...(Object.keys(tangentAxes).length && { tangentAxes: { ...tangentAxes, componentType: 5126 } }),
     ...(missingTangents > 0 && { generatedTangentCorners: missingTangents }) }
-  const document = { asset: { version: '2.0', generator: 'Asset Viewer Unreal source mesh' }, scene: 0,
+  const document = { asset: { version: '2.0', generator }, scene: 0,
     scenes: [{ nodes: [0] }], nodes: [{ mesh: 0, name }], meshes: [{ name, primitives,
       ...(unrealRawMesh && { extras: { unrealRawMesh } }) }],
     materials, accessors, bufferViews, buffers: [{ uri: bin, byteLength: size }] }

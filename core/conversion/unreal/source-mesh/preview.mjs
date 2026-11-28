@@ -16,7 +16,7 @@ async function readPart(root, file, signal, artifact) {
   return prefix
 }
 
-export async function publishRawMeshPreview({ asset, artifact, input, output, workspace, store, signal, textureFallback }) {
+export async function publishDirectMeshPreview({ asset, artifact, input, output, workspace, store, signal, textureFallback }) {
   const source = await fileInfo(output, input.path)
   const binPath = artifact.path.replace(/\.gltf$/, '.bin')
   const parallel = asset.exports.find(item => item.role === 'model-buffer' && item.path === binPath)
@@ -54,13 +54,14 @@ export async function publishRawMeshPreview({ asset, artifact, input, output, wo
     offset += bytes.length + padding
   }
   document.buffers = [{ byteLength: size }]
-  const temporary = 'raw-mesh-preview.glb'
+  const temporary = 'direct-mesh-preview.glb'
   await writeFile(join(workspace, temporary), encodeGlb(document, parts, size), { signal })
   const file = await modelArtifact(workspace, temporary, 'glb', signal)
   if (!file) return null
-  const target = ['Previews', asset.id, 'unreal-source', posix.basename(artifact.path, '.gltf') + '.glb'].join('/')
+  const folder = posix.basename(posix.dirname(artifact.path))
+  const target = ['Previews', asset.id, folder, posix.basename(artifact.path, '.gltf') + '.glb'].join('/')
   return store.save(target, file, { format: 'glb', role: artifact.role, lod: artifact.lod,
-    method: 'unreal-source-mesh', converterVersion: artifact.converterVersion, status: 'converted', from: input.path,
+    method: artifact.method, converterVersion: artifact.converterVersion, status: 'converted', from: input.path,
     metrics: { ...artifact.metrics, textures: document.textures?.length ?? 0 },
     issues: [...new Set([...artifact.issues, ...input.issues]),
       ...(textureFallback ? ['unreal-material-conversion-fallback'] : [])] })
