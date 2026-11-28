@@ -20,6 +20,7 @@ import { runPackageExport } from './cli/package-export.mjs'
 const string = { type: 'string' }
 const flag = { type: 'boolean' }
 const paging = { limit: string, offset: string }
+const jobActions = { cancel: 'cancel', retry: 'retry', pause: 'pauseImport', resume: 'resumeImport' }
 const commands = {
   libraries: { args: [], options: {} },
   connect: { args: ['absolute-path'], options: { 'dry-run': flag } },
@@ -29,7 +30,8 @@ const commands = {
   search: { args: ['query?'], options: { ...paging, library: string, kind: string, hash: string } },
   inspect: { args: ['asset-id'], options: { profile: string } },
   preview: { args: ['asset-id'], options: { 'dry-run': flag, queue: flag, status: flag } },
-  jobs: { args: ['job-id?'], options: { ...paging, library: string, type: string, cancel: flag, retry: flag } },
+  jobs: { args: ['job-id?'], options: { ...paging, library: string, type: string,
+    ...Object.fromEntries(Object.keys(jobActions).map(action => [action, flag])) } },
   'package-inspect': { args: ['absolute-path'], options: {} },
   'package-folder': { args: ['absolute-folder'], options: { import: flag, export: string,
     mode: string, 'unity-version': string } },
@@ -171,7 +173,8 @@ async function execute(index, paths, command, [input, setting], values) {
     case 'package-export': return runPackageExport(index, paths, input, setting, values)
     case 'jobs': {
       if (input) {
-        const job = values.cancel ? index.jobs.cancel(input) : values.retry ? index.jobs.retry(input) : index.jobs.get(input)
+        const action = Object.keys(jobActions).find(name => values[name])
+        const job = action ? index.jobs[jobActions[action]](input) : index.jobs.get(input)
         if (!job) throw new IndexInputError('Job unavailable.')
         return job
       }
@@ -280,8 +283,8 @@ async function main([command, ...args]) {
     return
   }
   const queuesPreview = command === 'preview' && !values.status
-  const changesJob = command === 'jobs' && (values.cancel || values.retry)
-  if (changesJob && (!input || (values.cancel && values.retry))) throw new IndexInputError('Specify a job ID and one action.')
+  const changesJob = command === 'jobs' && Object.keys(jobActions).filter(action => values[action]).length
+  if (changesJob && (!input || changesJob > 1)) throw new IndexInputError('Specify a job ID and one action.')
   const readOnly = (!['connect', 'scan', 'watch', 'watch-packages'].includes(command) && !modifiesProfile && !queuesPreview && !changesJob) ||
     Boolean(values['dry-run'])
   const index = readOnly ? new AssetIndex(paths.database, { readOnly }) : await AssetIndex.open(paths.database)

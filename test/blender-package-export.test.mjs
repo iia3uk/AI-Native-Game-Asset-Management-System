@@ -14,6 +14,7 @@ import { fixtureModel, ids, unityEntries, writeUnityFixture } from './fixtures/u
 import { startServer, testDirectory } from './server-fixture.mjs'
 
 const fixtureScript = fileURLToPath(new URL('./fixtures/blender-export.py', import.meta.url))
+const batchScript = fileURLToPath(new URL('../core/engines/blender/scripts/batch.py', import.meta.url))
 const cli = fileURLToPath(new URL('../scripts/asset-viewer.mjs', import.meta.url))
 const execute = promisify(execFile)
 const nativeOptions = { skip: process.env.ASSET_VIEWER_TEST_NATIVE_BLENDER !== '1', timeout: 60_000 }
@@ -103,6 +104,71 @@ sleep(30)
     assert.equal(state.result, null)
     assert.deepEqual(await readdir(join(directory, 'data', 'imports', 'unitypackage-v1-export-v1')), [])
     assert.deepEqual((await (await server.request('/api/index/libraries')).json()).libraries, [])
+    assert.deepEqual(await readFile(path), original)
+  } finally {
+    await server.close()
+  }
+})
+
+test('pausing Blender discards the incomplete stage and resumes the same package with its requested FBX', nativeOptions, async t => {
+  const directory = await testDirectory(t)
+  const blender = await locateBatchBlender()
+  assert.ok(blender)
+  const path = await writeUnityFixture(join(directory, 'pause-running.unitypackage'),
+    unityEntries(ids.model, 'Assets/model.obj', fixtureModel))
+  const original = await readFile(path)
+  const marker = join(directory, 'conversion-started')
+  const release = join(directory, 'may-convert')
+  const script = join(directory, 'pausable-test.py')
+  await writeFile(script, `import runpy
+from pathlib import Path
+from time import sleep
+if not Path(${JSON.stringify(release)}).is_file():
+    Path(${JSON.stringify(marker)}).touch()
+    sleep(30)
+runpy.run_path(${JSON.stringify(batchScript)}, run_name="__main__")
+`)
+  const server = await startServer(directory, { ASSET_VIEWER_BLENDER: blender.executable, ASSET_VIEWER_BLENDER_BATCH_SCRIPT: script })
+  try {
+    const enqueue = await server.post('/api/index/packages/import', {
+      path, formats: ['fbx'], hash: createHash('sha256').update(original).digest('hex'),
+    })
+    assert.equal(enqueue.status, 202)
+    const { job } = await enqueue.json()
+    const route = '/api/index/jobs/' + job.id
+    const deadline = Date.now() + 10_000
+    while (Date.now() < deadline && !await stat(marker).catch(() => null)) await delay(50)
+    assert.ok(await stat(marker), 'Blender did not reach the conversion script.')
+    const pause = await server.post(route + '/pause', {})
+    assert.equal(pause.status, 202)
+    assert.equal((await pause.json()).job.pauseRequested, true)
+    async function waitFor(status) {
+      const deadline = Date.now() + 10_000
+      let state
+      do {
+        state = (await (await server.request(route)).json()).job
+        if (!['pending', 'running'].includes(state.status)) break
+        await delay(100)
+      } while (Date.now() < deadline)
+      assert.equal(state.status, status, JSON.stringify(state))
+      return state
+    }
+    const paused = await waitFor('paused')
+    assert.equal(paused.result, null)
+    assert.equal(paused.attempts, 0)
+    assert.deepEqual(await readdir(join(directory, 'data', 'imports', 'unitypackage-v1-export-v1')), [])
+    assert.deepEqual((await (await server.request('/api/index/libraries')).json()).libraries, [])
+    await writeFile(release, '')
+    assert.equal((await server.post(route + '/resume', {})).status, 202)
+    const done = await waitFor('completed')
+    assert.equal(done.attempts, 1)
+    const root = done.result.directory
+    const { assets } = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8'))
+    const converted = assets.find(asset => asset.id === ids.model).exports.find(item => item.format === 'fbx')
+    assert.equal(converted?.status, 'converted')
+    const bytes = await readFile(join(root, converted.path))
+    const scene = new FBXLoader().parse(Uint8Array.from(bytes).buffer, '')
+    assert.equal(scene.children.find(child => child.isMesh).geometry.getAttribute('position').count, 3)
     assert.deepEqual(await readFile(path), original)
   } finally {
     await server.close()

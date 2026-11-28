@@ -187,7 +187,12 @@ const engineMode = `
     WHERE type = 'package-import' AND status IN ('pending','running');
 `
 
-export const schemaVersion = 12
+const packageImportPause = `
+  ALTER TABLE processing_jobs ADD COLUMN pause_requested INTEGER NOT NULL DEFAULT 0
+    CHECK (pause_requested IN (0, 1) AND (type = 'package-import' OR pause_requested = 0));
+`
+
+export const schemaVersion = 13
 
 export function transaction(db, write) {
   db.exec('BEGIN IMMEDIATE')
@@ -220,6 +225,7 @@ export function migrate(db) {
     if (lockedVersion < 10) db.exec(packageWatch)
     if (lockedVersion < 11) db.exec(packageWatchByFormat)
     if (lockedVersion < 12) db.exec(packageWatchSerialized)
+    if (lockedVersion < 13) db.exec(packageImportPause)
     db.exec('PRAGMA user_version = ' + schemaVersion)
   })
 }

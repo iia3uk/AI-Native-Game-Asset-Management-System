@@ -187,7 +187,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   await verifyStartupWithoutInterface()
   assert.deepEqual(externalRequests, [])
   assert.equal(window.isVisible(), false)
-  console.log('Desktop startup, demo, library watching, thumbnail cache, analysis, metadata, package import and export, PBR material preview and renderer isolation passed.')
+  console.log('Desktop startup, demo, library watching, thumbnail cache, analysis, metadata, package import, pause, export, PBR material preview and renderer isolation passed.')
   if (bundle) console.log('UnityFS folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
   if (sprites) console.log('UnityFS sprite inspection, queued import, dependency reporting and indexed PNG preview passed.')
   if (audio) console.log('UnityFS PCM inspection, queued import, local byte ranges and indexed WAV playback passed.')

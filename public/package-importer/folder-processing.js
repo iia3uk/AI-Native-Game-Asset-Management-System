@@ -3,10 +3,14 @@ import { requestPackageCleanup } from './cleanup.js'
 const jobs = '/api/index/jobs/'
 const packages = '/api/index/packages/'
 
-async function waitForJob(id, json) {
+async function waitForJob(id, json, onStatus) {
+  let previous
   for (;;) {
     const { job } = await json(jobs + id)
-    if (job.status !== 'pending' && job.status !== 'running') return job
+    if (!['pending', 'running', 'paused'].includes(job.status)) return job
+    const status = job.pauseRequested && job.status === 'running' ? 'pausing' : job.status
+    if (status !== previous) onStatus?.(status)
+    previous = status
     await new Promise(resolve => setTimeout(resolve, 1000))
   }
 }
@@ -34,7 +38,11 @@ async function runFolder({ path, destination, json, post, enqueue, refresh, setS
         const plan = direct ?? await inspect(target)
         const { job: queued } = await enqueue(target, plan)
         await refresh()
-        const job = await waitForJob(queued.id, json)
+        const job = await waitForJob(queued.id, json, status => {
+          const message = status === 'pausing' ? 'Приостановка обработки папки' :
+            status === 'paused' ? 'Обработка папки на паузе' : 'Обработка папки'
+          setStatus(message + counter)
+        })
         if (job.status === 'cancelled') return { completed: [], failures, cancelled: true }
         if (job.status !== 'completed') throw new Error(job.error || 'Импорт не завершён.')
         const scan = job.result?.scanJobId && await waitForJob(job.result.scanJobId, json)

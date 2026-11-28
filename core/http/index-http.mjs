@@ -131,6 +131,13 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
           const job = index.jobs.cancel(id)
           if (job) return json(response, 200, { job })
         }
+        if (method === 'POST' && id && (action === 'pause' || action === 'resume')) {
+          const pause = action === 'pause'
+          const job = pause ? index.jobs.pauseImport(id) : index.jobs.resumeImport(id)
+          if (!job) return json(response, 409, { error: pause ? 'Импорт недоступен для паузы.' : 'Импорт недоступен для продолжения.' })
+          if (!pause) importer?.wake()
+          return json(response, 202, { job })
+        }
         if (method === 'POST' && id && action === 'retry') {
           const job = index.jobs.retry(id)
           if (!job) return json(response, 409, { error: 'Задание недоступно для повторного запуска.' })

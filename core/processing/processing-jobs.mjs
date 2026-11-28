@@ -7,18 +7,33 @@ import { queueWatchedPackages } from './package-watch.mjs'
 const fields = 'id, library_id AS libraryId, type, status, priority, created_at AS createdAt, started_at AS startedAt,' +
   ' finished_at AS finishedAt, attempts, progress, result, error, trigger, cancel_requested AS cancelRequested,' +
   ' asset_id AS assetId, source_key AS sourceKey, package_path AS packagePath, export_formats AS exportFormats,' +
-  ' engine_mode AS engineMode, editor_version AS editorVersion'
+  ' engine_mode AS engineMode, editor_version AS editorVersion, pause_requested AS pauseRequested'
 const leaseMs = 15_000
 const importLimit = 16
 const now = () => new Date().toISOString()
+const parking = 'pause_requested = 1 AND cancel_requested = 0'
+const releasingLease = `
+  status = CASE WHEN ${parking} THEN 'pending' WHEN cancel_requested = 1 THEN 'cancelled' ELSE ? END,
+  progress = CASE WHEN ${parking} THEN 0 ELSE COALESCE(?, progress) END,
+  attempts = attempts - (${parking}),
+  result = CASE WHEN pause_requested = 1 OR cancel_requested = 1 THEN NULL ELSE ? END,
+  error = CASE WHEN pause_requested = 1 OR cancel_requested = 1 THEN NULL ELSE ? END,
+  started_at = CASE WHEN ${parking} THEN NULL ELSE started_at END,
+  finished_at = CASE WHEN ${parking} THEN NULL ELSE ? END,
+  worker = NULL, lease_until = NULL`
+
 function shape(job) {
   if (!job) return job
-  const { packagePath, exportFormats, engineMode, editorVersion, ...fields } = job
+  const { packagePath, exportFormats, engineMode, editorVersion, pauseRequested, ...fields } = job
   if (packagePath) {
     fields.packageName = basename(packagePath)
     if (exportFormats) fields.exportFormats = exportFormats.split(',')
     if (engineMode !== 'engineless') fields.engineMode = engineMode
     if (editorVersion) fields.editorVersion = editorVersion
+    if (pauseRequested) {
+      fields.pauseRequested = true
+      if (fields.status === 'pending') fields.status = 'paused'
+    }
   }
   return { ...fields, result: job.result && JSON.parse(job.result), cancelRequested: Boolean(job.cancelRequested) }
 }
@@ -47,7 +62,7 @@ export class ProcessingJobs {
     }
     const filter = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
     return this.#db.prepare(`SELECT ${fields} FROM processing_jobs ${filter}
-      ORDER BY (status IN ('pending','running')) DESC, created_at DESC, rowid DESC LIMIT ? OFFSET ?`)
+      ORDER BY (status IN ('pending','running')) DESC, pause_requested ASC, created_at DESC, rowid DESC LIMIT ? OFFSET ?`)
       .all(...args, limit, offset).map(shape)
   }
 
@@ -153,9 +168,23 @@ export class ProcessingJobs {
     return this.get(id)
   }
 
+  pauseImport(id) {
+    const job = this.#db.prepare(`UPDATE processing_jobs SET pause_requested = 1
+      WHERE id = ? AND type = 'package-import' AND status IN ('pending','running') AND cancel_requested = 0
+      RETURNING ${fields}`).get(id)
+    return shape(job)
+  }
+
+  resumeImport(id) {
+    const job = this.#db.prepare(`UPDATE processing_jobs SET pause_requested = 0
+      WHERE id = ? AND type = 'package-import' AND status = 'pending' AND ${parking}
+      RETURNING ${fields}`).get(id)
+    return shape(job)
+  }
+
   #cancelWhere(condition, ...args) {
     this.#db.prepare(`
-      UPDATE processing_jobs SET cancel_requested = 1,
+      UPDATE processing_jobs SET cancel_requested = 1, pause_requested = 0,
         status = CASE WHEN status = 'pending' THEN 'cancelled' ELSE status END,
         finished_at = CASE WHEN status = 'pending' THEN ? ELSE finished_at END
       WHERE (${condition}) AND status IN ('pending','running')
@@ -188,16 +217,15 @@ export class ProcessingJobs {
   claim(worker, type = 'scan', targetId = null) {
     const time = Date.now()
     const pending = this.#db.prepare(`SELECT 1 FROM processing_jobs
-      WHERE type = ? AND (status = 'pending' OR (status = 'running' AND lease_until <= ?)) LIMIT 1`)
+      WHERE type = ? AND ((status = 'pending' AND pause_requested = 0) OR
+        (status = 'running' AND lease_until <= ?)) LIMIT 1`)
     if (!pending.get(type, time)) return null
     return transaction(this.#db, () => {
-      this.#db.prepare(`UPDATE processing_jobs SET
-        status = CASE WHEN cancel_requested = 1 THEN 'cancelled' ELSE 'interrupted' END,
-        error = CASE WHEN cancel_requested = 1 THEN NULL ELSE 'Worker stopped unexpectedly.' END,
-        finished_at = ?, lease_until = NULL, worker = NULL
-        WHERE type = ? AND status = 'running' AND lease_until <= ?`).run(now(), type, time)
+      this.#db.prepare(`UPDATE processing_jobs SET ${releasingLease}
+        WHERE type = ? AND status = 'running' AND lease_until <= ?`)
+        .run('interrupted', null, null, 'Worker stopped unexpectedly.', now(), type, time)
       if (type !== 'scan' && this.#db.prepare("SELECT 1 FROM processing_jobs WHERE type = ? AND status = 'running'").get(type)) return null
-      const job = this.#db.prepare(`SELECT id FROM processing_jobs WHERE type = ? AND status = 'pending'
+      const job = this.#db.prepare(`SELECT id FROM processing_jobs WHERE type = ? AND status = 'pending' AND pause_requested = 0
         AND (? IS NULL OR id = ?) ORDER BY priority DESC, created_at, rowid LIMIT 1`).get(type, targetId, targetId)
       if (!job) return null
       this.#db.prepare(`UPDATE processing_jobs SET status = 'running', attempts = attempts + 1,
@@ -208,13 +236,14 @@ export class ProcessingJobs {
 
   heartbeat(id, worker, progress) {
     return this.#db.prepare(`UPDATE processing_jobs SET progress = ?, lease_until = ?
-      WHERE id = ? AND worker = ? AND status = 'running' RETURNING cancel_requested AS cancelled`)
+      WHERE id = ? AND worker = ? AND status = 'running'
+      RETURNING cancel_requested AS cancelled, pause_requested AS paused`)
       .get(progress, Date.now() + leaseMs, id, worker)
   }
 
   finish(id, worker, { status, progress, result = null, error = null }) {
-    this.#db.prepare(`UPDATE processing_jobs SET status = ?, progress = ?, result = ?, error = ?,
-      finished_at = ?, worker = NULL, lease_until = NULL WHERE id = ? AND worker = ? AND status = 'running'`)
+    this.#db.prepare(`UPDATE processing_jobs SET ${releasingLease}
+      WHERE id = ? AND worker = ? AND status = 'running'`)
       .run(status, progress, result && JSON.stringify(result), error, now(), id, worker)
     return this.get(id)
   }
@@ -241,7 +270,7 @@ export class ProcessingJobs {
   completeImport(id, worker, publish) {
     return transaction(this.#db, () => {
       const owner = this.#db.prepare(`SELECT 1 FROM processing_jobs WHERE id = ? AND worker = ? AND type = 'package-import'
-        AND status = 'running' AND cancel_requested = 0 AND lease_until > ?`).get(id, worker, Date.now())
+        AND status = 'running' AND cancel_requested = 0 AND pause_requested = 0 AND lease_until > ?`).get(id, worker, Date.now())
       if (!owner) throw new IndexInputError('Публикация пакета отменена.')
       const result = publish()
       let scanJobId = null

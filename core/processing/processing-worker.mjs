@@ -69,7 +69,7 @@ export class ProcessingWorker {
     const heartbeat = () => {
       try {
         const owner = this.index.jobs.heartbeat(job.id, this.#id, progress)
-        if (!owner || owner.cancelled) cancel.abort()
+        if (!owner || owner.cancelled || owner.paused) cancel.abort()
       } catch (error) {
         cancel.abort(error)
       }
@@ -91,8 +91,8 @@ export class ProcessingWorker {
         await this.#import(job, signal, value => { progress = value })
       }
     } catch (error) {
-      const cancelled = this.index.jobs.get(job.id)?.cancelRequested
-      if (cancelled) outcome = { status: 'cancelled', progress }
+      const current = this.index.jobs.get(job.id)
+      if (current?.cancelRequested || current?.pauseRequested) outcome = { status: 'cancelled', progress }
       else if (this.#stop.signal.aborted) outcome = { status: 'interrupted', progress, error: 'Worker stopped.' }
       else outcome = { status: 'failed', progress, error: processingError(job.type, error, timeout.aborted) }
     } finally {

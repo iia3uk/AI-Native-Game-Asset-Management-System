@@ -13,6 +13,8 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | GET | `/api/index/jobs` | Optional `library`, `type` (`scan`, `thumbnail`, or `package-import`), `limit` (1–200) and `offset`. Returns active jobs first |
 | GET | `/api/index/jobs/:id` | Persisted status, progress, attempts, trigger and result or error. Progress counts files for scans and reports a percentage for thumbnails and imports |
 | POST | `/api/index/jobs/:id/cancel` | Cancels a pending job or requests cancellation for a running job |
+| POST | `/api/index/jobs/:id/pause` | Pauses a queued package import or requests that its running worker stop. A stopped import has status `paused`. While the worker is stopping, the job remains `running` with `pauseRequested: true` |
+| POST | `/api/index/jobs/:id/resume` | Queues a paused package import with the same job ID and settings. Returns 202. Returns 409 while its worker is still stopping or if the job cannot be resumed |
 | POST | `/api/index/jobs/:id/retry` | Queues a failed, cancelled or interrupted job with fewer than three started attempts |
 | POST | `/api/index/libraries/:id/disconnect` | Empty object. Hides the library and retains its records |
 | GET | `/api/index/search` | `q`, `library`, `kind`, `limit` (1–100), `offset`. Returns `assets` and `nextOffset` |

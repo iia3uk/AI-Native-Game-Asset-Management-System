@@ -31,6 +31,8 @@ In the desktop app, open **Обработка папки UE / Unity** and select
 
 The native dialog shows the eligible files and their total size. **Больше не спрашивать** applies to later cleanup requests for that engine. **Включить подтверждения очистки** restores prompts for both engines. **Исходники в корзину…** in a completed job report invokes the same cleanup.
 
+Use **Приостановить** in an import job row to hold a queued package or stop the current conversion. **Продолжить** starts that package again with the same settings after it reaches **На паузе**. The pause survives restart. During the folder workflow, the current session waits for the paused package before exporting its result or offering cleanup. The CLI actions `jobs <job-id> --pause` and `jobs <job-id> --resume` update the same queue used by the running app.
+
 Cleanup moves eligible files to the operating system's recycle bin. Individual engine assets require a verified converted file and a managed source copy, which stays in application data. Archive and binary container cleanup verifies the published files. Auxiliary engine files, project descriptors and unsupported loose resources stay in their source folders. For an export that includes the managed engine sources, use **Экспортировать в папку** in the package report.
 
 Use **Показать в индексе** after the scan completes. Supported originals such as FBX, GLB and PNG retain their original bytes and `Assets/` or `Packages/` paths. The application copies them into its data directory and uses the existing viewer. The report shows unavailable and excluded entries.

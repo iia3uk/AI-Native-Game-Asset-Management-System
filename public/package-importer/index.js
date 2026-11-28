@@ -20,7 +20,7 @@ const assetStatus = {
   'missing-dependencies': 'Отсутствуют зависимости', converted: 'Сконвертировано', skipped: 'Пропущено',
 }
 const jobStatus = {
-  pending: 'В очереди', running: 'Обработка', completed: 'Обработан',
+  pending: 'В очереди', running: 'Обработка', paused: 'На паузе', completed: 'Обработан',
   cancelled: 'Отменён', interrupted: 'Прерван', failed: 'Ошибка',
 }
 
@@ -84,7 +84,9 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
       if (nodes.length !== jobs.children.length || nodes.some((node, index) => jobs.children[index] !== node)) jobs.replaceChildren(...nodes)
       if (rows.some(({ record, scan }) => active(record) || (scan && active(scan)))) {
         timer = setTimeout(() => void refresh(), 1000)
-      } else if (hasWatchedLibraries()) timer = setTimeout(() => void refresh(), 3000)
+      } else if (rows.some(({ record }) => record.status === 'paused') || hasWatchedLibraries()) {
+        timer = setTimeout(() => void refresh(), 3000)
+      }
     } catch (error) {
       if (!visible() || version !== refreshVersion) return
       showError(error)
@@ -97,6 +99,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     row.className = 'index-analysis'
     let label = jobStatus[record.status]
     if (active(record) && record.cancelRequested) label = 'Отмена запрошена'
+    else if (record.status === 'running' && record.pauseRequested) label = 'Приостановка'
     else if (record.status === 'running') label += ' · ' + record.progress + '%'
     else if (record.result?.report?.status === 'no-compatible-inputs') label = 'Нет совместимых файлов'
     if (scan) label += ' · ' + (active(scan) ? 'Индексация' : scan.status === 'completed' ? 'В индексе' : 'Индексация прервана')
@@ -104,7 +107,13 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     if (record.error || scan?.error) row.append(element('p', record.error ?? scan.error))
     const controls = element('div')
     controls.className = 'index-toolbar'
-    if (active(record) && !record.cancelRequested) controls.append(jobButton('Отменить', record, 'cancel'))
+    if (active(record) && !record.cancelRequested && !record.pauseRequested) {
+      controls.append(jobButton('Приостановить', record, 'pause'))
+    }
+    if (record.status === 'paused') controls.append(jobButton('Продолжить', record, 'resume'))
+    if ((active(record) || record.status === 'paused') && !record.cancelRequested) {
+      controls.append(jobButton('Отменить', record, 'cancel'))
+    }
     if (['failed', 'interrupted', 'cancelled'].includes(record.status) && record.attempts < 3) {
       controls.append(jobButton('Повторить', record, 'retry'))
     }

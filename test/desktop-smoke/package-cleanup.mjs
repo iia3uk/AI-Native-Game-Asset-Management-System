@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, sep } from 'node:path'
 import { dialog, shell } from 'electron'
+import { AssetIndex } from '../../core/index/asset-index.mjs'
+import { inspectPackage, packageOptions } from '../../core/packages/dispatch.mjs'
+import { importSource } from '../../core/packages/source.mjs'
 import { sourceWave, ue4SourceFixture } from '../fixtures/unreal-source-media.mjs'
 import { fixtureModel, ids, writeUnityFixture } from '../fixtures/unitypackage.mjs'
 
@@ -54,11 +57,12 @@ export async function verifyPackageCleanup(webContents, waitFor) {
       }`)
     }
 
-    async function launch(name, destination = '') {
+    async function launch(name, destination = '', beforeSubmit) {
       const folder = join(root, name)
       await mkdir(folder)
       const source = join(folder, 'Step.uasset')
       await writeFile(source, input)
+      await beforeSubmit?.(folder)
       await submit(folder, destination)
       return source
     }
@@ -102,7 +106,28 @@ export async function verifyPackageCleanup(webContents, waitFor) {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [exportRoot] })
     await webContents.executeJavaScript("document.querySelector('#package-process-destination-pick').click()")
     await waitFor("document.querySelector('#package-process-destination').value === " + JSON.stringify(exportRoot))
-    const third = await launch('Unreal Cleanup Three', exportRoot)
+    const third = await launch('Unreal Cleanup Three', exportRoot, async folder => {
+      const source = await importSource(folder)
+      const report = await inspectPackage(source)
+      const formats = await webContents.executeJavaScript(
+        "['fbx', 'glb'].filter(format => document.querySelector('#package-export-' + format).checked)")
+      const options = packageOptions(report.format, { formats, mode: 'engineless' })
+      const index = await AssetIndex.open(join(process.env.ASSET_VIEWER_DATA_DIR, 'index.sqlite'))
+      try {
+        const job = index.jobs.enqueueImport(source.path, report.hash, options.formats, options)
+        assert.equal(index.jobs.pauseImport(job.id).status, 'paused')
+      } finally {
+        await index.close()
+      }
+    })
+    await waitFor("document.querySelector('#package-cleanup-status').textContent.includes('Обработка папки на паузе')")
+    assert.deepEqual(await readdir(exportRoot), [])
+    assert.equal(prompts.length, 2)
+    assert.deepEqual(await readFile(third), input)
+    await webContents.executeJavaScript(`{
+      const row = Array.from(document.querySelectorAll('#package-jobs > li')).find(node => node.textContent.includes('Unreal Cleanup Three'))
+      Array.from(row.querySelectorAll('button')).find(button => button.textContent === 'Продолжить').click()
+    }`)
     await waitFor("document.querySelector('#package-cleanup-status').textContent === 'Исходники оставлены.'")
     assert.equal(prompts.length, 3)
     assert.deepEqual(await readFile(third), input)
