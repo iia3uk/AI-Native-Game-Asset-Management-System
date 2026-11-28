@@ -53,6 +53,9 @@ const packageIssues = {
   'unreal-source-mesh-invalid-model': 'Геометрия исходного меша UE4 не прошла проверку',
   'unreal-source-mesh-lods-need-build': 'В пакете отсутствует геометрия некоторых LOD',
   'unreal-source-mesh-material-graphs-not-extracted': 'Из исходного меша получены слоты и ссылки на материалы',
+  'unreal-source-collision-layout': 'Данные коллизии UE4 имеют неподдерживаемую структуру',
+  'unreal-source-collision-partial': 'Некоторые формы коллизии не удалось восстановить',
+  'unreal-source-collision-preview': 'GLB коллизии не прошёл проверку',
   'unreal-source-material-time-budget': 'Достигнут лимит времени чтения материалов UE4',
   'unreal-viewer-no-versioned-ue4-inputs': 'Нет пакетов с поддерживаемой версией UE4',
   'unreal-viewer-space-limit': 'Недостаточно места для декодирования UE4',
@@ -98,6 +101,7 @@ const artifactRoles = {
   model: 'Модель', 'skeletal-model': 'Модель со скелетом', skeleton: 'Скелет', 'material-source': 'Свойства материала',
   'preview-texture': 'Карта каналов для предпросмотра',
   'actorx-settings': 'Настройки PSA', 'animation-buffer': 'Ключи анимации',
+  'collision-shapes': 'Данные коллизии', 'collision-preview': 'Предпросмотр коллизии',
 }
 
 export const describeIssue = issue => packageIssues[issue] ?? issue

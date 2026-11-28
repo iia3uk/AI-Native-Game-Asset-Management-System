@@ -145,11 +145,14 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
         const packed = (unrealViewer?.materials?.packedMaterials ?? 0) + (unrealSourceMaterials?.packedMaterials ?? 0)
         const normals = unrealSourceMaterials?.normalMaterials
         const masks = unrealSourceMaterials?.opacityMaterials
+        const collision = unrealSourceMeshes?.collision
         const fbx = (unrealViewer?.derivatives?.fbx ?? 0) + (unrealSourceMeshes?.derivatives?.fbx ?? 0)
         const glb = (unrealViewer?.derivatives?.glb ?? 0) + (unrealSourceMeshes?.derivatives?.glb ?? 0)
         details.append(element('p', [formatLabel(packageFormat), engineVersion || unreal?.editorVersion,
           media?.png && media.png + ' PNG', media?.wav && media.wav + ' WAV',
           unrealSourceMeshes?.meshes && 'Статических моделей UE4 · ' + unrealSourceMeshes.meshes,
+          collision?.shapes && 'Форм коллизии · ' + collision.shapes,
+          collision?.incomplete && 'Пакетов с неполными коллизиями · ' + collision.incomplete,
           gltf && gltf + ' glTF', unrealViewer?.psa && unrealViewer.psa + ' PSA',
           materials && 'Описаний материалов · ' + materials,
           packed && 'С картой AO/roughness/metallic · ' + packed,

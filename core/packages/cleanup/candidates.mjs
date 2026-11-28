@@ -32,6 +32,14 @@ function unrealModelBackups(exports) {
   return backups
 }
 
+function unrealCollisionBackups(exports) {
+  const description = exports.find(item => item.method === 'unreal-source-collision' && item.role === 'collision-shapes')
+  const preview = exports.find(item => item.method === 'unreal-source-collision' && item.role === 'collision-preview')
+  if (preview) return description && preview.settingsPath === description.path ? [description, preview] : null
+  if (description) return description.shapes === 0 ? [description] : null
+  return []
+}
+
 export function cleanupEngine(format) {
   if (isUnrealLoose(format) || format === 'unreal-pak') return 'unreal'
   if (unityFolder(format) || ['unitypackage', 'unityfs', 'unity-serialized'].includes(format)) return 'unity'
@@ -54,15 +62,17 @@ export async function* cleanupCandidates(format, source, manifest, assets, selec
       const type = unrealFileType(path)
       if (unreal ? type !== 'uasset' : !unityDataFormats.has(type)) continue
       const exports = exportsOf(asset)
-      const rendered = exports.filter(item => derivatives.has(item.format))
+      const rendered = exports.filter(item => derivatives.has(item.format) && item.role !== 'collision-preview')
       if (unreal) rendered.push(...unrealModelBackups(exports))
       if (!rendered.length) continue
+      const collision = unreal ? unrealCollisionBackups(exports) : []
+      if (!collision || (unreal && asset.collisionIssue)) continue
       const mount = !unreal && layout.mounts.find(item => path.startsWith(item.logical + '/'))
       const root = unreal ? loose.root : mount?.path
       if (!root || (format === 'unreal-asset' && path !== basename(source))) continue
       const relative = unreal ? path : path.slice(mount.logical.length + 1)
       const nativeCopy = original(asset)
-      yield { root, path: relative, sha256: asset.hash, size: asset.size, backups: [nativeCopy, ...rendered], nativeCopy }
+      yield { root, path: relative, sha256: asset.hash, size: asset.size, backups: [nativeCopy, ...rendered, ...collision], nativeCopy }
     }
     return
   }

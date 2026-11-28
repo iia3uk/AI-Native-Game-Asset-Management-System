@@ -141,7 +141,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
       ...(unrealSourceMeshes && { unrealSourceMeshes }),
       ...(sourceMaterials && { unrealSourceMaterials: sourceMaterials.summary }),
       limitations: ['unsupported-cooked-unreal-objects-preserved-as-source', 'dependency-resolution-requires-asset-registry',
-        'material-graphs-not-converted', ...(decoded ? ['ue-viewer-material-graphs-and-collision-not-exported'] : [])] }
+        'material-graphs-not-converted', 'source-collision-limited-to-supported-simple-ue4-shapes'] }
     await Promise.all(Object.entries({ manifest, dependencies: { version, dependencies: records.dependencies },
       'conversion-report': report }).map(([key, value]) =>
       writeFile(join(output, key + '.json'), JSON.stringify(value, null, 2) + '\n', { flag: 'wx', signal })))

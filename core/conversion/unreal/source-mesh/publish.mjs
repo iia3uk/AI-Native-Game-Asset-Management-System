@@ -5,6 +5,7 @@ import { decodeSourceMesh, sourceMeshFileLimit, sourceMeshRevision } from '../..
 import { fileInfo } from '../../../files/asset-files.mjs'
 import { readVerifiedFile } from '../../../files/read-verified.mjs'
 import { ExportArtifacts } from '../../artifacts.mjs'
+import { publishSourceCollision } from '../collision/publish.mjs'
 import { viewerModel } from '../viewer/model.mjs'
 
 const method = 'unreal-source-mesh'
@@ -53,12 +54,12 @@ export async function publishSourceMeshes({ records, output, workspace, source, 
   const resolveMaterial = sourceMaterialResolver(records.assets, source.root)
   const models = []
   const summary = { converterVersion: sourceMeshRevision, meshes: 0, gltf: 0, failed: 0, missingLods: 0, texturedGltf: 0 }
+  const collision = summary.collision = { assets: 0, shapes: 0, glb: 0, incomplete: 0 }
   const deadline = Date.now() + 90_000
   for (const asset of records.assets) {
     signal?.throwIfAborted()
     if (!asset.output || asset.issue || asset.type !== 'uasset' || asset.storage !== 'editor' ||
-        asset.layout !== -7 || asset.ue4 !== 522 || asset.ue5 !== 0 || asset.size > sourceMeshFileLimit ||
-        asset.exports.some(item => item.path && item.role === 'model' && item.format === 'gltf' && item.lod === 0)) continue
+        asset.layout !== -7 || asset.ue4 !== 522 || asset.ue5 !== 0 || asset.size > sourceMeshFileLimit) continue
     if (Date.now() >= deadline) {
       summary.issue = 'unreal-source-mesh-time-budget'
       break
@@ -75,7 +76,9 @@ export async function publishSourceMeshes({ records, output, workspace, source, 
       throw error
     }
     const stem = posix.basename(asset.sourcePath).slice(0, -7).replace(/[#%]/g, '_')
-    const result = await decodeSourceMesh(prefix, stem, { signal, timeout: Math.min(12_000, Math.max(1, deadline - Date.now())) })
+    const render = !asset.exports.some(item => item.path && item.role === 'model' && item.format === 'gltf' && item.lod === 0)
+    const result = await decodeSourceMesh(prefix, stem, { signal, render,
+      timeout: Math.min(12_000, Math.max(1, deadline - Date.now())) })
     if (!result) continue
     if (result.issue) {
       summary.failed++
@@ -85,6 +88,22 @@ export async function publishSourceMeshes({ records, output, workspace, source, 
     if (result.missing?.length) {
       summary.missingLods += result.missing.length
       asset.issues.push('unreal-source-mesh-lods-need-build')
+    }
+    let collisionIssue = result.collisionIssue
+    if (result.collision) {
+      const saved = await publishSourceCollision({ asset, collision: result.collision, scratch, stem, store, signal })
+      if (saved.description) {
+        collision.assets++
+        collision.shapes += result.collision.shapes.length
+      }
+      if (saved.preview?.path) collision.glb++
+      collisionIssue ??= saved.issue ?? ((result.collision.omitted.length || result.collision.previewOmitted?.length)
+        ? 'unreal-source-collision-partial' : null)
+    }
+    if (collisionIssue) {
+      collision.incomplete++
+      asset.collisionIssue = collisionIssue
+      asset.issues.push(collisionIssue)
     }
     let published = false
     for (const mesh of result.meshes ?? []) {

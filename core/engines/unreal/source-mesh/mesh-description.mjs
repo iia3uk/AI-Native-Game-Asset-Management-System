@@ -2,17 +2,10 @@ import {
   parseBulkDataHeader, parseMeshDescriptionUe4, resolveBulkDataPayload,
 } from '@threenative/raw-unreal'
 import { inflateSync } from 'node:zlib'
-import { taggedProperties } from '../editor-package/properties.mjs'
 import { requireLayout, skipUnrealString } from '../editor-package/tables.mjs'
+import { staticMeshHeader } from './package.mjs'
 
 const MiB = 1024 ** 2
-function nativeSection(bytes, { start, end, nameAt }) {
-  const tags = taggedProperties(bytes, start, end, nameAt)
-  const models = tags.properties.get('SourceModels')
-  const count = models?.type === 'ArrayProperty' && models.size >= 4 ? bytes.readInt32LE(models.start) : 0
-  return { at: tags.end, count }
-}
-
 function boolean(bytes, offset, end) {
   requireLayout(offset + 4 <= end)
   const value = bytes.readInt32LE(offset)
@@ -20,12 +13,11 @@ function boolean(bytes, offset, end) {
   return value === 1
 }
 
-function lodPayloads(bytes, mesh) {
+function lodPayloads(bytes, mesh, { flags, properties }) {
   const { layout, end } = mesh
-  const { at, count } = nativeSection(bytes, mesh)
+  const models = properties.get('SourceModels')
+  const count = models?.type === 'ArrayProperty' && models.size >= 4 ? bytes.readInt32LE(models.start) : 0
   requireLayout(count > 0 && count <= 16)
-  const flags = at + (boolean(bytes, at, end) ? 20 : 4)
-  requireLayout(flags + 14 <= end && (bytes[flags] & 1) === 0 && !boolean(bytes, flags + 2, end))
   const sockets = skipUnrealString(bytes, flags + 14, end) + 20 // CRC and LightingGuid.
   requireLayout(sockets + 4 <= end)
   const socketCount = bytes.readInt32LE(sockets)
@@ -79,8 +71,8 @@ function materialSlots(bytes, mesh, cursor) {
   })
 }
 
-export function sourceMeshLods(bytes, mesh) {
-  const { payloads, missing, cursor } = lodPayloads(bytes, mesh)
+export function sourceMeshLods(bytes, mesh, header = staticMeshHeader(bytes, mesh)) {
+  const { payloads, missing, cursor } = lodPayloads(bytes, mesh, header)
   const materials = materialSlots(bytes, mesh, cursor)
   return {
     materials,

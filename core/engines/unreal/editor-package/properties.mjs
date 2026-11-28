@@ -38,16 +38,21 @@ export function taggedProperties(bytes, start, end, nameAt) {
   throw new RangeError('Too many Unreal property tags')
 }
 
-export function structArray(bytes, field, nameAt, type) {
-  requireLayout(field.type === 'ArrayProperty' && field.inner === 'StructProperty' && field.size >= 4)
+function structArrayDescriptor(bytes, field, nameAt, type, limit) {
+  requireLayout(field?.type === 'ArrayProperty' && field.inner === 'StructProperty' && field.size >= 4)
   const count = bytes.readInt32LE(field.start)
-  requireLayout(count >= 0 && count <= 256)
-  if (count === 0 && field.size === 4) return []
+  requireLayout(count >= 0 && count <= limit)
+  if (count === 0 && field.size === 4) return { count, start: field.end }
   const descriptor = tag(bytes, field.start + 4, field.end, nameAt)
   requireLayout(descriptor.type === 'StructProperty' && descriptor.name === field.name &&
     descriptor.inner === type && descriptor.end === field.end)
+  return { count, start: descriptor.start }
+}
+
+export function structArray(bytes, field, nameAt, type, limit = 256) {
+  const { count, start } = structArrayDescriptor(bytes, field, nameAt, type, limit)
   const rows = []
-  let at = descriptor.start
+  let at = start
   for (let index = 0; index < count; index++) {
     const row = taggedProperties(bytes, at, field.end, nameAt)
     rows.push(row.properties)
@@ -55,4 +60,10 @@ export function structArray(bytes, field, nameAt, type) {
   }
   requireLayout(at === field.end)
   return rows
+}
+
+export function nativeStructArray(bytes, field, nameAt, type, stride, limit) {
+  const { count, start } = structArrayDescriptor(bytes, field, nameAt, type, limit)
+  requireLayout(start + count * stride === field.end)
+  return { count, start }
 }
