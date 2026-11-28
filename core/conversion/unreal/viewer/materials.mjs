@@ -26,13 +26,12 @@ async function publishTexture(asset, decoded, store, version, signal) {
   return !!artifact.path
 }
 
-export async function publishViewerMaterials({ targets, parameters, store, records, version, signal }) {
+export async function publishViewerMaterials({ targets, parameters, store, records, version, signal, cache = new Map() }) {
   const decoded = parameters.output
   const byPath = new Map(targets.map(asset => [key(asset.sourcePath), asset]))
   const byName = Map.groupBy(targets, asset => key(posix.basename(asset.sourcePath).slice(0, -7)))
   const resolve = path => byPath.get(key(path))
   const descriptions = new Map()
-  const cache = new Map()
   const counts = { materialJson: 0, texturePng: 0, texturedGltf: 0, packedMaterials: 0, repackedMaps: 0 }
   for (const asset of targets) {
     signal?.throwIfAborted()

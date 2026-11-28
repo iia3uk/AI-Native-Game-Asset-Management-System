@@ -17,14 +17,15 @@ const signals = Object.freeze({
 })
 const key = name => name.toLowerCase().replace(/[ _-]/g, '')
 
-export function describeUnrealMaterial({ asset, properties, slots, resolve, version }) {
+export function describeUnrealMaterial({ asset, properties, slots = {}, resolve, version,
+  method = 'ue-viewer-properties', corroborate }) {
   const bindings = properties.textures.map(({ name, path }) => {
     const parameter = key(name)
     const layout = packedLayout(parameter)
     const [role = null, colorSpace = null, evidence] =
       layout ? ['packed', 'linear'] : Object.hasOwn(signals, parameter) ? signals[parameter] : []
     const nameInSlot = posix.basename(path, '.uasset')
-    const corroborated = layout ? Object.entries(slots).some(([slot, value]) =>
+    const corroborated = corroborate ? !!role && corroborate(path) : layout ? Object.entries(slots).some(([slot, value]) =>
       (slot === 'Mask' || /^Other\[\d+\]$/.test(slot)) && value === nameInSlot) :
       !!evidence && slots[evidence] === nameInSlot
     const texture = resolve(path)
@@ -35,7 +36,7 @@ export function describeUnrealMaterial({ asset, properties, slots, resolve, vers
   })
   return {
     schemaVersion: 1, source: { engine: 'unreal', path: asset.sourcePath, sha256: asset.hash },
-    method: 'ue-viewer-properties', converterVersion: version,
+    method, converterVersion: version,
     parent: properties.parent, scalars: properties.scalars, slots, bindings,
     limitations: ['shader-graph-not-reconstructed', 'texture-color-space-from-parameter-role',
       'normal-orientation-unverified', 'unreal-packed-shader-operations-unverified'],

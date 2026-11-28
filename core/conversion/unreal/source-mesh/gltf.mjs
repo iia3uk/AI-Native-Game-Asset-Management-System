@@ -1,4 +1,4 @@
-import { requireLayout } from '../../../engines/unreal/source-mesh/package.mjs'
+import { requireLayout } from '../../../engines/unreal/editor-package/tables.mjs'
 
 const componentType = { FLOAT: 5126, UNSIGNED_SHORT: 5123, UNSIGNED_INT: 5125 }
 const elementType = ['SCALAR', 'SCALAR', 'VEC2', 'VEC3', 'VEC4']

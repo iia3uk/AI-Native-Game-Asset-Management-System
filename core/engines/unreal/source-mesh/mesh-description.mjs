@@ -2,33 +2,15 @@ import {
   parseBulkDataHeader, parseMeshDescriptionUe4, resolveBulkDataPayload,
 } from '@threenative/raw-unreal'
 import { inflateSync } from 'node:zlib'
-import { requireLayout, skipUnrealString } from './package.mjs'
+import { taggedProperties } from '../editor-package/properties.mjs'
+import { requireLayout, skipUnrealString } from '../editor-package/tables.mjs'
 
 const MiB = 1024 ** 2
-const propertyMetadataBytes = new Map([
-  ['StructProperty', 24], ['ArrayProperty', 8], ['SetProperty', 8], ['ByteProperty', 8],
-  ['EnumProperty', 8], ['MapProperty', 16], ['BoolProperty', 1],
-])
-
 function nativeSection(bytes, { start, end, nameAt }) {
-  let count = 0
-  let at = start
-  while (at + 8 <= end) {
-    const name = nameAt(at)
-    if (name === 'None') return { at: at + 8, count }
-    requireLayout(at + 25 <= end)
-    const type = nameAt(at + 8)
-    const size = bytes.readInt32LE(at + 16)
-    at += 24 + (propertyMetadataBytes.get(type) ?? 0)
-    requireLayout(size >= 0 && at < end && bytes[at] <= 1)
-    at += bytes[at] ? 17 : 1
-    requireLayout(at + size <= end)
-    if (name === 'SourceModels' && type === 'ArrayProperty' && size >= 4) {
-      count = bytes.readInt32LE(at)
-    }
-    at += size
-  }
-  throw new RangeError('Unterminated Unreal property tags')
+  const tags = taggedProperties(bytes, start, end, nameAt)
+  const models = tags.properties.get('SourceModels')
+  const count = models?.type === 'ArrayProperty' && models.size >= 4 ? bytes.readInt32LE(models.start) : 0
+  return { at: tags.end, count }
 }
 
 function boolean(bytes, offset, end) {
