@@ -25,6 +25,12 @@ function relationships(assets, document, archive) {
         include(companion, first)
       }
     }
+    const byId = new Map(assets.map(row => [row.id, row]))
+    for (const info of Array.isArray(document.entries) ? document.entries : []) {
+      if (typeof info?.source !== 'string') continue
+      const target = info.status === 'resolved' ? byId.get(info.target) : null
+      add(byId.get(info.source), target, info)
+    }
   } else if (Array.isArray(document.dependencies)) {
     const byGuid = new Map(assets.map(row => [row.id, row]))
     for (const info of document.dependencies) {

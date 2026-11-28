@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { cookedMaterial } from '../fixtures/unreal-cooked-material.mjs'
 import { cookedTexture } from '../fixtures/unreal-cooked-texture.mjs'
 import { makePak, wavTone } from '../fixtures/unreal-pak.mjs'
 
@@ -9,6 +10,8 @@ export async function verifyUnrealPak(webContents, waitFor, fixtures) {
   await writeFile(path, makePak([
     { path: 'Models/Pak-Cabin.glb', content: model },
     { path: 'Audio/Pak-Encrypted.wav', content: wavTone(), encrypted: true },
+    ...cookedMaterial({ name: 'Pak-Paint', parent: ['/Engine/EngineMaterials/DefaultMaterial'],
+      textures: [{ parameter: 'BaseColor', value: '/Game/Pak-Tint' }] }),
     ...cookedTexture({ name: 'Pak-Tint', format: 'PF_G8', width: 2, height: 2, pixels: Buffer.from([5, 40, 80, 255]) }),
   ]))
   await webContents.executeJavaScript(`
@@ -31,10 +34,13 @@ export async function verifyUnrealPak(webContents, waitFor, fixtures) {
   await waitFor(`(${row})?.textContent.includes('GLB · Извлечён · Previews/') && (${row})?.textContent.includes('Запись зашифрована')`)
   await waitFor(`(${row})?.textContent.includes('Текстур из cooked-ресурсов · 1 PNG') &&
     (${row})?.textContent.includes('Pak-Tint.png · 2 × 2 · Мип 0')`)
+  await waitFor(`(${row})?.textContent.includes('Материалы из cooked-ресурсов · Готово 1') &&
+    (${row})?.textContent.includes('Pak-Paint.material.json')`)
   await webContents.executeJavaScript(`Array.from((${row}).querySelectorAll('button'))
     .find(button => button.textContent === 'Показать в индексе').click()`)
   await waitFor("document.querySelector('#index-results').textContent.includes('Pak-Cabin.glb') && " +
-    "document.querySelector('#index-results').textContent.includes('Pak-Tint.png')")
+    "document.querySelector('#index-results').textContent.includes('Pak-Tint.png') && " +
+    "document.querySelector('#index-results').textContent.includes('Pak-Paint.material.json')")
   await webContents.executeJavaScript(`Array.from(document.querySelectorAll('#index-results button'))
     .find(button => button.textContent.startsWith('Pak-Cabin.glb')).click()`)
   await waitFor("document.querySelector('#index-name').textContent === 'Pak-Cabin.glb' && !document.querySelector('#index-preview').disabled")

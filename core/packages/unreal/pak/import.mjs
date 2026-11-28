@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { renameSync } from 'node:fs'
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -20,28 +20,33 @@ async function saveOutputs(workspace, source, result, hash, signal) {
   await mkdir(output)
   await Promise.all(exportFolders.map(folder => mkdir(join(output, folder))))
   const store = new ExportArtifacts(output, signal)
-  const entries = await publishPakEntries(result.entries, join(workspace, 'output'), store, cue4parseVersion, signal)
+  const { entries, materials, dependencies } = await publishPakEntries(result.entries, join(workspace, 'output'), store, cue4parseVersion, signal)
   const extracted = entries.filter(entry => entry.status === 'extracted').length
   const skipped = entries.length - extracted
   const failed = entries.filter(entry => entry.status === 'failed').length
   const textures = { converted: 0, skipped: 0, failed: 0 }
-  for (const entry of entries) for (const exportFile of entry.exports ?? []) textures[exportFile.status]++
+  for (const entry of entries) for (const file of entry.exports ?? []) {
+    if (file.role === 'texture') textures[file.status]++
+  }
+  const dependencyStatus = Object.values(materials).some(Boolean) ? 'partial' : 'unavailable'
+  const dependencyText = JSON.stringify({ version: 1, status: dependencyStatus, entries: dependencies }, null, 2) + '\n'
   const summary = { status: extracted ? 'completed' : 'no-compatible-inputs', method: pakMethod,
     converterVersion: cue4parseVersion, containerVersion: result.version, extracted, skipped, total: entries.length,
     counts: { extracted, skipped: skipped - failed, ...(failed && { failed }) },
     ...(result.textureDecoder && { textureDecoder: result.textureDecoder, textures }),
-    limits: [result.textureDecoder ? 'unreal-pak-cooked-decoding-limited-to-stock-ue4-textures' :
-      'unreal-pak-loose-binary-extraction-only', 'unreal-pak-dependency-analysis-pending'] }
+    ...(dependencyStatus === 'partial' && { materials }),
+    limits: ['unreal-pak-cooked-decoding-limited-to-stock-ue4', 'unreal-pak-archive-dependencies-incomplete'] }
   const reports = {
     manifest: { version: 1, recipe: pakRecipe, source: { name: source.name, size: source.file.info.size, sha256: hash, license: null },
-      method: summary.method, converterVersion: summary.converterVersion, entries },
-    dependencies: { version: 1, status: 'unavailable', entries: [] },
+      method: summary.method, converterVersion: summary.converterVersion, entries,
+      dependenciesSha256: createHash('sha256').update(dependencyText).digest('hex') },
     'conversion-report': summary,
   }
-  await Promise.all(Object.entries(reports).map(([name, data]) =>
-    writeFile(join(output, name + '.json'), JSON.stringify(data, null, 2) + '\n', { signal, flag: 'wx' })))
-  const cacheable = !failed && !textures.failed && !entries.some(entry => entry.exports?.some(file =>
-    ['unreal-cooked-texture-limit', 'unreal-cooked-texture-io'].includes(file.issue))) &&
+  await Promise.all([writeFile(join(output, 'dependencies.json'), dependencyText, { signal, flag: 'wx' }),
+    ...Object.entries(reports).map(([name, data]) =>
+      writeFile(join(output, name + '.json'), JSON.stringify(data, null, 2) + '\n', { signal, flag: 'wx' }))])
+  const cacheable = !failed && !textures.failed && !materials.failed && !materials.issue && !entries.some(entry => entry.exports?.some(file =>
+    ['unreal-cooked-texture-limit', 'unreal-cooked-texture-io', 'unreal-cooked-material-read'].includes(file.issue))) &&
     (result.textureDecoder || !entries.some(entry => entry.status === 'extracted' && entry.format === 'uasset'))
   return { output, cacheable, report: { ...summary, ...(!extracted && { entries: entries.slice(0, 500) }) } }
 }

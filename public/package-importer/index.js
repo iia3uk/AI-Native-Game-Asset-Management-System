@@ -170,9 +170,14 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
           unreal?.issue && describeIssue(unreal.issue)].filter(Boolean).join(' · ')))
       }
       if (record.result.report.packageFormat === 'unreal-pak') {
-        const { containerVersion, extracted, textures, total } = record.result.report
+        const { containerVersion, extracted, textures, materials, total } = record.result.report
         details.append(element('p', 'Unreal Pak ' + containerVersion + ' · Извлечено ' + extracted + ' из ' + total))
         if (textures?.converted) details.append(element('p', 'Текстур из cooked-ресурсов · ' + textures.converted + ' PNG'))
+        if (materials) {
+          details.append(element('p', ['Материалы из cooked-ресурсов', materials.converted && 'Готово ' + materials.converted,
+            materials.skipped && 'Пропущено ' + materials.skipped, materials.failed && 'Ошибок ' + materials.failed,
+            materials.issue && describeIssue(materials.issue)].filter(Boolean).join(' · ')))
+        }
       }
       if (record.result.report.packageFormat === 'unreal-iostore') {
         const { containerVersion, extracted, extractedTypes, textures, audio, total } = record.result.report

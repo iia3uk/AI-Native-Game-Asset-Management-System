@@ -122,7 +122,7 @@ Open **Индекс**, connect the incoming folder, select it under **Библи
 - **.unitypackage** extracts the originals and requests FBX and GLB for supported models.
 - **UnityFS** watches `.bundle` and `.unity3d`, decodes supported textures, sprites, static meshes and audio, and requests FBX where Blender is available.
 - **Бинарные Unity** watches `.asset`, `.assets` and `.sharedAssets` with a supported binary header. Keep the primary file and its matching `.resS` and `.resource` files together. A new or changed companion queues a new import, even when the primary file stays the same. The switch applies to binary files and leaves Unity YAML assets out of the queue.
-- **Unreal Pak** watches `.pak`, extracts supported original files and decodes supported cooked UE4 textures using the independent CUE4Parse worker.
+- **Unreal Pak** watches `.pak`, extracts supported original files and reads supported cooked UE4.27 textures and material bindings without Unreal Editor.
 - **Unreal IoStore** watches `.utoc` and its matching `.ucas` partitions. Keep them in the same directory. The app waits until the files contain all stored blocks and queues a new import when the TOC or a partition changes. It indexes supported embedded files and versioned UE5 Zen textures, and preserves all source partitions.
 
 Turning off a format cancels its active automatic imports for that folder. The settings and SHA-256 history survive restarts. Use **Повторить** in a job row to retry a failed, interrupted or cancelled import. For a renamed archive, use manual inspection to detect the format by contents.
@@ -198,7 +198,11 @@ npm run cli -- package-import "/absolute/path/example.pak" --json
 npm run cli -- package-import "/absolute/path/example.pak" --queue --json
 ```
 
-The independent worker handles stored and Zlib-compressed entries from supported stock Pak layouts. Supported embedded FBX, GLB, PNG and WAV files retain their bytes. Valid Unreal packages and matching companions are saved to `Source/` with their archive-relative paths. Versioned cooked UE4.27 `Texture2D` exports with BGRA8, RGBA8, G8, DXT1 or DXT5 pixels can also produce a PNG from the first readable mip within the supported size. The report identifies the mip and original format. Repeated imports reuse verified artifacts. The dedicated `unreal-extract` command and Pak folder watching use the same decoder. Unversioned and virtual texture decoding and other cooked object types remain pending.
+The independent worker handles stored and Zlib-compressed entries from supported stock Pak layouts. Supported embedded FBX, GLB, PNG and WAV files retain their bytes. Valid Unreal packages and matching companions are saved to `Source/` with their archive-relative paths. Versioned cooked UE4.27 `Texture2D` exports with BGRA8, RGBA8, G8, DXT1 or DXT5 pixels can also produce a PNG from the first readable mip within the supported size. The report identifies the mip and original format. Repeated imports reuse verified artifacts. The dedicated `unreal-extract` command and Pak folder watching use the same decoder. Unversioned and virtual texture decoding and cooked mesh conversion remain pending.
+
+Stock versioned UE4.27 `Material` and `MaterialInstanceConstant` packages produce `.material.json` files in `Materials/`. They retain the parent reference, texture, scalar and vector parameters, and available surface settings. The importer follows qualified `/Game/` references within the same project `Content` tree and marks unavailable references in the report. Selective export includes the resolved parent chain, textures and their native companions. Where available, texture bindings show the decoded texture's color space alongside the parameter role. Compiled shader data and material graphs remain in the native files. Reimport a previously processed Pak to use this decoder. [UE4.27 material instances](https://dev.epicgames.com/documentation/unreal-engine/instanced-materials?application_version=4.27).
+
+Pak cleanup is offered when every archive member was recovered as a usable original FBX, GLB, PNG or WAV. Unresolved members or packages with native cooked data keep the archive in place.
 
 ### Unreal IoStore
 

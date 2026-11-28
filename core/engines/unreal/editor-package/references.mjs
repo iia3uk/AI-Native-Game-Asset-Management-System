@@ -1,8 +1,13 @@
 import { posix } from 'node:path'
 
-const packagePath = /^\/Game\/(?:[^.\s/\\:\u0000-\u001f]+\/)*[^.\s/\\:\u0000-\u001f]+$/u
+const packagePath = /^\/[^.\s/\\:\u0000-\u001f]+\/(?:[^.\s/\\:\u0000-\u001f]+\/)*[^.\s/\\:\u0000-\u001f]+$/u
 
 export function importedGameObject(imported, index, types) {
+  const path = importedPackageObject(imported, index, types)
+  return path?.startsWith('/Game/') ? path : null
+}
+
+export function importedPackageObject(imported, index, types) {
   const object = imported(index)
   if (!object || !types.has(object.type)) return null
   const owner = imported(object.outer)
@@ -11,6 +16,11 @@ export function importedGameObject(imported, index, types) {
 }
 
 export function softGameObject(reference) {
+  const path = softPackageObject(reference)
+  return path?.startsWith('/Game/') ? path : null
+}
+
+export function softPackageObject(reference) {
   const dot = reference.lastIndexOf('.')
   const path = reference.slice(0, dot)
   return dot > 0 && packagePath.test(path) && posix.basename(path) === reference.slice(dot + 1) ? path : null

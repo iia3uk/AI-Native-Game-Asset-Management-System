@@ -1,4 +1,5 @@
 import { basename, dirname } from 'node:path'
+import { containerFileFolders } from '../../conversion/unreal/container-files.mjs'
 import { unityDataFormats } from '../../files/formats.mjs'
 import { unrealFileType } from '../unreal/source.mjs'
 import { isUnrealLoose, unrealLooseSource } from '../unreal/loose/source.mjs'
@@ -80,6 +81,8 @@ export async function* cleanupCandidates(format, source, manifest, assets, selec
 
   const name = basename(source)
   if (!watchedPackageRecipe(format)?.extensions.includes(unrealFileType(name))) return
+  if (format === 'unreal-pak' && !assets.every(asset => asset.status === 'extracted' &&
+    Object.hasOwn(containerFileFolders, asset.format) && published(asset.artifact) && !asset.artifact.path.startsWith('Source/'))) return
   if (['unityfs', 'unity-serialized'].includes(format) && !unityBinaryReadyForCleanup(assets)) return
   const backups = assets.flatMap(asset => [original(asset), ...exportsOf(asset)].filter(Boolean))
   if (backups.length) yield { root: dirname(source), path: name, size: manifest.source.size,

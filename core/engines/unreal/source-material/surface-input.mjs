@@ -68,7 +68,7 @@ function colorSample(bytes, table, material, input) {
   return samples.size === 1 ? samples.values().next().value : null
 }
 
-export function readMaterialSurface(bytes, table, material, properties) {
+export function readMaterialSurface(bytes, table, material, properties, graph) {
   const { nameAt } = table
   if (material.type === 'MaterialInstanceConstant') {
     const field = properties.get('BasePropertyOverrides')
@@ -79,7 +79,7 @@ export function readMaterialSurface(bytes, table, material, properties) {
   }
   const settings = surfaceSettings(bytes, nameAt, properties, false)
   const field = properties.get('OpacityMask')
-  if (!usesMeshUv0(properties) || field?.type !== 'StructProperty' || field.inner !== 'ScalarMaterialInput' ||
+  if (!graph || !usesMeshUv0(properties) || field?.type !== 'StructProperty' || field.inner !== 'ScalarMaterialInput' ||
       field.size !== 44 || bytes.readInt32LE(field.start + 36) !== 0) return { settings }
   const channel = sampleChannel(bytes, field)
   const sample = channel && readTextureSample(bytes, table, material, table.exported(bytes.readInt32LE(field.start)))

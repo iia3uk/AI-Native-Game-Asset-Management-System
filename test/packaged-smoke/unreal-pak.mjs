@@ -6,6 +6,7 @@ import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { inflateSync } from 'node:zlib'
+import { cookedMaterial } from '../fixtures/unreal-cooked-material.mjs'
 import { cookedTexture } from '../fixtures/unreal-cooked-texture.mjs'
 import { makePak, wavTone } from '../fixtures/unreal-pak.mjs'
 import { startServer, testDirectory } from '../server-fixture.mjs'
@@ -37,7 +38,9 @@ test('The packaged server automatically imports a stock Pak with its bundled wor
     const audio = wavTone()
     const dxt = cookedTexture({ name: 'Packaged-Tint', format: 'PF_DXT1', width: 4, height: 4,
       pixels: Buffer.from('00f8e00700000000', 'hex'), external: true })
-    const pak = makePak([{ path: 'Audio/Packaged-Tone.wav', content: audio }, ...dxt])
+    const material = cookedMaterial({ name: 'Packaged-Paint', parent: ['/Engine/EngineMaterials/DefaultMaterial'],
+      textures: [{ parameter: 'BaseColor', value: '/Game/Packaged-Tint' }] })
+    const pak = makePak([{ path: 'Audio/Packaged-Tone.wav', content: audio }, ...dxt, ...material])
     const source = join(incoming, 'Incoming.pak')
     await writeFile(source, pak)
     const inspection = await cli('package-inspect', source)
@@ -57,11 +60,18 @@ test('The packaged server automatically imports a stock Pak with its bundled wor
         const sound = assets.find(asset => asset.name === 'Packaged-Tone.wav')
         assert.deepEqual(await readFile(join(result.root, sound.path)), audio)
         assert.deepEqual(job.result.report.textures, { converted: 1, skipped: 0, failed: 0 })
+        assert.deepEqual(job.result.report.materials, { converted: 1, skipped: 0, failed: 0 })
         const texture = assets.find(asset => asset.name === 'Packaged-Tint.png')
         const png = await readFile(join(result.root, texture.path))
         assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [4, 4])
         const pixels = inflateSync(png.subarray(41, 41 + png.readUInt32BE(33)))
         assert.deepEqual([...pixels.subarray(0, 5)], [0, 255, 0, 0, 255])
+        const materialFile = assets.find(asset => asset.name === 'Packaged-Paint.material.json')
+        const description = JSON.parse(await readFile(join(result.root, materialFile.path)))
+        assert.equal(description.parent, '/Engine/EngineMaterials/DefaultMaterial')
+        assert.equal(description.parentStatus, 'missing')
+        assert.deepEqual(description.bindings.map(binding => [binding.role, binding.status, binding.path]),
+          [['baseColor', 'resolved', texture.path]])
         assert.deepEqual(await readFile(source), pak)
         return
       }

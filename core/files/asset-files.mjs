@@ -73,7 +73,9 @@ export async function readBoundedText(root, subpath, limit) {
 
 export function identifyAsset(path) {
   const ext = extname(path).slice(1).toLowerCase()
-  const kind = modelFormats.has(ext) ? 'model' : imageFormats.has(ext) ? 'image' : supportFiles.has(ext) ? 'other' : null
+  const materialDescription = ext === 'json' && /\.material\.json$/i.test(path)
+  const kind = modelFormats.has(ext) ? 'model' : imageFormats.has(ext) ? 'image' :
+    supportFiles.has(ext) || materialDescription ? 'other' : null
   return kind && { ext, kind }
 }
 
