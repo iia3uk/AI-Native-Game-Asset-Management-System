@@ -1,7 +1,7 @@
 import { isCollisionFile } from '../shared/model-names.js'
 import { canPreviewAudio } from '../preview/loaders/audio-preview.js'
 import { counts, label, normalize } from './format.js'
-import { markKey } from './viewer-storage.js'
+import { fileReviewKey } from './viewer-storage.js'
 
 export function renderFileList({ ui, state, eligibleFile, classification, pageSize }, revealSelection) {
   const { categoryLabel, modelCategory } = classification
@@ -11,8 +11,9 @@ export function renderFileList({ ui, state, eligibleFile, classification, pageSi
     pack?.files.some(file => file.kind === 'model' && !isCollisionFile(file) && eligibleFile(pack, file))
   const matchesKind = file => state.kind === 'all' || state.kind === file.kind ||
     (state.kind === 'audio' && canPreviewAudio(file))
-  const files = !pack ? [] : pack.files.filter(file => matchesKind(file) &&
-    eligibleFile(pack, file) && (!hideColliders || !isCollisionFile(file)) &&
+  const files = !pack ? [] : pack.files.filter(file =>
+    (state.related ? state.related.has(file.id) : matchesKind(file) && eligibleFile(pack, file)) &&
+    (!hideColliders || !isCollisionFile(file)) &&
     (!query || normalize(file.displayPath).includes(query)))
   if (revealSelection && state.file) {
     const index = files.findIndex(file => file.id === state.file.id)
@@ -33,7 +34,7 @@ export function renderFileList({ ui, state, eligibleFile, classification, pageSi
     if (state.file?.id === file.id) selected = button
     button.append(label('span', 'file-name', file.name),
       label('span', 'file-type', isCollisionFile(file) ? 'Коллизия' : file.ext.toUpperCase()))
-    const status = state.marks[markKey(pack.id, file.id)]?.status
+    const status = state.marks[fileReviewKey(pack, file.id)]?.status
     if (status) button.append(label('span', 'file-mark', { candidate: '✓', later: '◷', excluded: '×' }[status]))
     fragment.append(button)
   }

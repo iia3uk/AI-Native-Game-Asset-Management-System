@@ -5,6 +5,7 @@ import { basename, dirname, join } from 'node:path'
 import { blenderModels, browserAudio, browserImages, browserModels, formatOrder, previewCandidates } from '../files/formats.mjs'
 import { connectUnityMaterials } from '../materials/unity/folder-bindings.mjs'
 import { discoverAssets, folderPath, pathKey } from '../files/asset-files.mjs'
+import { groupLocalPackages } from './unreal-packages/catalog.mjs'
 
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 24)
 const sortByPath = (a, b) => a.path.localeCompare(b.path, 'ru', { numeric: true })
@@ -23,7 +24,6 @@ export async function scanFolder(path, { canonical = false } = {}) {
   const root = canonical ? path : await folderPath(path)
   const id = randomUUID()
   const key = hash(pathKey(root))
-  const groups = new Map()
   const files = new Map()
   const fileIds = new Map()
   for await (const { path, ext, kind, info: { size } } of discoverAssets(root)) {
@@ -36,23 +36,24 @@ export async function scanFolder(path, { canonical = false } = {}) {
     if (blenderModels.has(ext)) file.convertible = true
     files.set(path, file)
     fileIds.set(file.id, file)
-    const folder = path.includes('/') ? path.split('/')[0] : ''
-    if (!groups.has(folder)) groups.set(folder, [])
-    groups.get(folder).push(file)
   }
 
+  const groups = await groupLocalPackages(root, files)
   const unityMaterials = await connectUnityMaterials(root, [...files.values()])
   const packs = new Map()
-  for (const [folder, contents] of groups) {
+  for (const [folder, { files: contents, title }] of groups) {
     const models = contents.filter(file => file.kind === 'model').sort((a, b) =>
       Number(Boolean(b.preview || b.convertible)) - Number(Boolean(a.preview || a.convertible)) ||
       formatOrder.indexOf(a.ext) - formatOrder.indexOf(b.ext) || sortByPath(a, b))
     const images = contents.filter(file => file.kind === 'image').sort(sortByPath)
     const others = contents.filter(file => file.kind === 'other').sort(sortByPath)
     const packId = hash(folder)
+    const originalGroup = folder.split('/')[0]
+    const originalFiles = originalGroup !== folder && contents.filter(file => file.path.startsWith(folder + '/')).map(file => file.id)
     const summary = {
-      id: packId, title: folder || basename(root) || root, author: '', category: 'Local', formats: [...new Set(models.map(file => file.ext))],
+      id: packId, title: title ?? (folder || basename(root) || root), author: '', category: 'Local', formats: [...new Set(models.map(file => file.ext))],
       localPath: folder || '.', models: models.length, textures: images.length,
+      ...(originalFiles && { originalGroup: hash(originalGroup), originalFiles }),
       directModels: models.filter(file => file.preview).length,
       modelIds: models.map(file => file.id),
       previewFiles: previewCandidates(models),

@@ -10,19 +10,21 @@ export function renderPackList({ ui, state, localFolders, classification, catego
   const focused = ui['pack-list'].contains(document.activeElement) ? document.activeElement.dataset.pack : null
   const roots = [...localFolders.values()].map(folder => folder.id).join(',')
   const packsById = new Map(state.packs.map(pack => [pack.id, pack]))
+  const moved = new Map()
+  for (const pack of state.packs) for (const id of pack.originalFiles ?? []) moved.set(pack.originalGroup + ':' + id, pack)
   const candidateFiles = new Map()
   for (const [key, candidate] of Object.entries(state.marks)) {
     if (candidate.status !== 'candidate') continue
     const id = candidate.packId ?? candidate.fabId
-    const pack = packsById.get(id)
+    const pack = moved.get(key) ?? packsById.get(id)
     if (!pack) continue
     const fileId = key.slice(id.length + 1)
-    const file = state.active?.id === id && state.active.files.find(file => file.id === fileId)
+    const file = state.active?.id === pack.id && state.active.files.find(file => file.id === fileId)
     if (selectedCategory && (file ? !categoryMatches(pack, file) :
       (pack.modelIds && !pack.modelIds.includes(fileId)) ||
       (classification.modelOverride(key) ?? folderCategory(pack)) !== selectedCategory)) continue
-    if (!candidateFiles.has(id)) candidateFiles.set(id, [])
-    candidateFiles.get(id).push(fileId)
+    if (!candidateFiles.has(pack.id)) candidateFiles.set(pack.id, [])
+    candidateFiles.get(pack.id).push(fileId)
   }
   const visible = state.packs.filter(pack => (!state.candidates || candidateFiles.has(pack.id)) &&
     (!selectedCategory || modelsInCategory(pack) > 0) &&

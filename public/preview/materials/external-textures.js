@@ -60,7 +60,7 @@ export async function applyExternalTextures(model, file, files, unityMaterials, 
       layers.every(isSingleChannelSignal)
   }
   await Promise.all([...materialMeshes.keys()].map(async material => {
-    const key = material.name.trim().toLowerCase()
+    const key = material.name.trim().normalize('NFC').toLowerCase()
     const explicit = Object.hasOwn(bindings, key) ? bindings[key] : null
     const uses = materialMeshes.get(material)
     const prefabBinding = prefabTextures.get(material)

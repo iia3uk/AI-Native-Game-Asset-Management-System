@@ -14,6 +14,7 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
   const resources = join(appOutDir, 'resources')
   const archive = join(resources, 'app.asar')
   for (const path of [
+    'assets/icon.ico',
     'desktop/window/startup.mjs',
     'desktop/window/failure.mjs',
     'desktop/package-cleanup/ipc.mjs',
@@ -37,6 +38,12 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'public/catalog/pack-list.js',
     'public/catalog/file-list.js',
     'core/library/local-folders.mjs',
+    'core/library/unreal-packages/catalog.mjs',
+    'core/library/unreal-packages/documents.mjs',
+    'core/library/unreal-packages/export-materials.mjs',
+    'core/library/unreal-packages/texture-products.mjs',
+    'core/library/unreal-packages/viewer-materials.mjs',
+    'core/materials/unreal/streaming-color.mjs',
     'core/index/schema/package-watch.mjs',
     'core/processing/package-watch.mjs',
     'core/packages/watch-formats.mjs',

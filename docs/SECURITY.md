@@ -50,6 +50,8 @@ ActorX binding verifies published PSA and settings checksums and validates key c
 
 UE Viewer material dumps are bounded text. The importer resolves texture references against known packages from the same import and validates PNG dimensions and chunk checksums. Textured glTF variants derive image URIs from published artifact paths. The raw property text remains data in the export.
 
+The local-folder catalog reads bounded Unreal manifests, dependency reports and UE Viewer dumps inside the selected root. Generated material links check declared document hashes and resolve only to image files already discoverable within that root. A sibling export can provide a missing image when the original package SHA-256 and package basename agree and one candidate image matches its recorded size. These manifest checks support catalog matching. Browser image decoding and the scoped local-file route still apply.
+
 The UE4 source-mesh reader takes SHA-256-verified staged package bytes. It confirms the Engine StaticMesh class and checks export ranges before decoding. It accepts packages up to 48 MiB, caps each expanded payload at 48 MiB and caps the combined payloads at 64 MiB per package. Decompression and geometry encoding run in a cancellable worker with per-package and import time limits. Material references resolve against known files in the import. Cleanup verifies both files of a glTF/BIN pair and the original source bytes.
 
 The UE4 514 FRawMesh reader verifies array bounds, wedge indices, triangle counts and finite vector values before encoding geometry. Direct GLB publication verifies the intermediate hashes and accepts embedded PNGs only from the staged texture directory, with a 160 MiB combined binary limit.

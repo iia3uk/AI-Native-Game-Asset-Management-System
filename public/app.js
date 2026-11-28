@@ -4,7 +4,7 @@ import { convertedImages, decodedImages, decodedImageUrl } from './preview/loade
 import { isDataMap } from './preview/materials/textures.js'
 import { isCollisionFile, visualModelFor } from './shared/model-names.js'
 import { ModelThumbnails } from './preview/thumbnails.js'
-import { markKey, readLocal, storageKey } from './catalog/viewer-storage.js'
+import { fileReviewKey, fileReviewPack, markKey, readLocal, storageKey } from './catalog/viewer-storage.js'
 import { createClassification, newCategory } from './catalog/classification.js'
 import { createFolderCatalog, localTextures } from './catalog/folders.js'
 import { counted, counts, label, normalize, sizeLabel } from './catalog/format.js'
@@ -17,10 +17,10 @@ import { mountIndex } from './library/index.js'
 const $ = id => document.getElementById(id)
 const ui = Object.fromEntries([
   'all-packs', 'candidate-packs', 'candidate-count', 'library-stats', 'search', 'category', 'result-count', 'pack-list',
-  'pack-category', 'pack-title', 'pack-author', 'stage-canvas', 'stage-image', 'stage-audio', 'stage-empty', 'stage-label',
+  'pack-category', 'pack-title', 'pack-author', 'stage-canvas', 'stage-image', 'audio-preview', 'stage-audio', 'audio-loop', 'stage-empty', 'stage-label',
   'fit', 'zoom-in', 'zoom-out', 'rotate', 'wireframe', 'texture-tools', 'texture-variant', 'animation-tools', 'animation', 'animation-in-place', 'play', 'model-stats',
   'view-options', 'lighting', 'part-tools', 'preview-part', 'color-source',
-  'selected-name', 'decision', 'note', 'save-note', 'notice', 'file-tabs', 'file-search', 'file-list',
+  'selected-name', 'decision', 'note', 'save-note', 'notice', 'file-tabs', 'model-textures', 'file-search', 'file-list',
   'license', 'fab-link', 'source-link',
   'fab-mode', 'open-folder', 'demo-mode', 'folder-tools', 'folder-root', 'rescan-folder', 'folder-dialog', 'folder-form',
   'folder-path', 'folder-pick', 'folder-status', 'folder-cancel', 'folder-submit', 'library-title', 'category-wrap',
@@ -64,13 +64,13 @@ function manualTextureScope() {
 }
 
 const thumbnails = new ModelThumbnails(ui['pack-list'])
-const audioPreview = createAudioPreview(ui['stage-audio'], () => {
+const audioPreview = createAudioPreview({ container: ui['audio-preview'], audio: ui['stage-audio'], repeat: ui['audio-loop'] }, () => {
   state.previewFailed = true
   status('Не удалось воспроизвести звук. Исходник доступен справа.')
 })
 const categoryMatches = (pack, file) => !ui.category.value || (file.kind === 'model' && modelCategory(pack, file) === ui.category.value)
 const eligibleFile = (pack, file) => categoryMatches(pack, file) &&
-  (!state.candidates || state.marks[markKey(pack.id, file.id)]?.status === 'candidate')
+  (!state.candidates || state.marks[fileReviewKey(pack, file.id)]?.status === 'candidate')
 
 function persistCategories() {
   classification.persistCategories()
@@ -85,10 +85,10 @@ function modelCategoryControls() {
   ui['model-category-status'].textContent = ''
   if (!show) return
   fillCategories(ui['model-category'], 'По умолчанию · ' + categoryLabel(folderCategory(state.active)), true)
-  ui['model-category'].value = classification.modelOverride(markKey(state.active.id, state.file.id)) ?? ''
+  ui['model-category'].value = classification.modelOverride(fileReviewKey(state.active, state.file.id)) ?? ''
 }
 
-const currentMark = () => state.active && state.file ? state.marks[markKey(state.active.id, state.file.id)] : null
+const currentMark = () => state.active && state.file ? state.marks[fileReviewKey(state.active, state.file.id)] : null
 const chosen = () => Object.values(state.marks).filter(mark => mark.status === 'candidate')
 async function thumbnailInput(pack, category, candidateIds) {
   const data = await fetchPack(pack)
@@ -115,9 +115,14 @@ function updateTabs() {
   ui['all-packs'].setAttribute('aria-pressed', String(!state.candidates))
   ui['candidate-packs'].setAttribute('aria-pressed', String(state.candidates))
   ui['candidate-count'].textContent = counts(chosen().length)
+  const relatedCount = state.related?.size ?? state.file?.relatedTextures?.length ?? 0
+  const relatedButton = ui['model-textures']
+  relatedButton.hidden = !relatedCount
+  relatedButton.textContent = 'Текстуры модели · ' + counts(relatedCount)
+  pressed(relatedButton, Boolean(state.related))
   for (const button of ui['file-tabs'].querySelectorAll('button')) {
     if (button.dataset.kind === 'audio') button.hidden = !state.active?.files.some(canPreviewAudio)
-    button.setAttribute('aria-pressed', String(button.dataset.kind === state.kind))
+    button.setAttribute('aria-pressed', String(!state.related && button.dataset.kind === state.kind))
     button.disabled = Boolean(ui.category.value) && button.dataset.kind !== 'model'
   }
 }
@@ -427,6 +432,7 @@ async function selectPack(id, fileId) {
       ui['folder-root'].title = folder.root
     }
     state.active = pack
+    state.related = null
     state.limit = filePageSize
     ui['file-list'].scrollTop = 0
     ui['file-search'].value = ''
@@ -455,7 +461,7 @@ async function selectPack(id, fileId) {
 
 async function saveReview(statusValue) {
   if (!state.file || !state.active || pendingSave) return
-  const key = markKey(state.active.id, state.file.id)
+  const key = fileReviewKey(state.active, state.file.id)
   const folder = state.folder
   const pack = state.active
   const file = state.file
@@ -465,7 +471,7 @@ async function saveReview(statusValue) {
     if (folder) {
       const entries = { ...folder.marks }
       const note = ui.note.value.trim()
-      if (note || statusValue) entries[key] = { packId: pack.id, file: file.path, status: statusValue, note }
+      if (note || statusValue) entries[key] = { packId: fileReviewPack(pack, file.id), file: file.path, status: statusValue, note }
       else delete entries[key]
       localStorage.setItem(storageKey(folder, 'review'), JSON.stringify(entries))
       folder.marks = entries
@@ -476,7 +482,7 @@ async function saveReview(statusValue) {
       if (state.folder) return
       state.marks = fab.marks
     }
-    if (state.file && key === markKey(state.active.id, state.file.id)) ui.notice.textContent = 'Сохранено локально'
+    if (state.file && key === fileReviewKey(state.active, state.file.id)) ui.notice.textContent = 'Сохранено локально'
     if (state.candidates) refreshCategoryResults()
     else {
       renderPacks()
@@ -494,10 +500,12 @@ async function activateCatalog(folder, selection = {}) {
   state.folder = folder
   state.packs = folder ? activeFolders().flatMap(root => root.packs.map(pack => ({
     ...pack, id: localGroupId(root, pack.id), groupId: pack.id, folderKey: root.key,
+    ...(pack.originalFiles && { originalGroup: localGroupId(root, pack.originalGroup), originalFiles: new Set(pack.originalFiles) }),
   }))) : fab.packs
   state.marks = folder ? localMarks() : fab.marks
   state.candidates = false
   state.active = null
+  state.related = null
   void selectFile(null)
   ui.search.value = ''
   ui.search.placeholder = folder ? 'Название папки или формат' : 'Название или автор'
@@ -513,7 +521,8 @@ async function activateCatalog(folder, selection = {}) {
     ? counted(total, 'модель', 'модели', 'моделей') + ' · ' + counted(activeFolders().length, 'ветка', 'ветки', 'веток')
     : counts(state.packs.length) + ' наборов · ' + counts(total) + ' 3D-файлов'
   renderPacks()
-  const first = state.packs.find(pack => pack.id === selection.pack) ??
+  const first = state.packs.find(pack => pack.originalGroup === selection.pack && pack.originalFiles?.has(selection.file)) ??
+    state.packs.find(pack => pack.id === selection.pack) ??
     (folder ? state.packs.find(pack => pack.folderKey === folder.key) : undefined) ?? state.packs[0]
   if (first?.id) await selectPack(first.id, selection.file)
   else {
@@ -660,7 +669,7 @@ ui['save-model-category'].addEventListener('click', () => {
   if (!pack || file?.kind !== 'model') return
   try {
     const selected = categoryValue(ui['model-category'], ui['new-model-category'])
-    const key = markKey(pack.id, file.id)
+    const key = fileReviewKey(pack, file.id)
     classification.setModelCategory(key, selected)
     persistCategories()
     modelCategoryControls()
@@ -702,6 +711,7 @@ ui['manual-apply'].addEventListener('click', async () => {
 ui.search.addEventListener('input', renderPacks)
 function refreshCategoryResults() {
   state.packLoad++
+  state.related = null
   if (ui.category.value) state.kind = 'model'
   const packs = renderPacks()
   renderFiles()
@@ -740,8 +750,16 @@ ui['candidate-packs'].addEventListener('click', () => {
 ui['file-tabs'].addEventListener('click', event => {
   const kind = event.target.closest('[data-kind]')?.dataset.kind
   if (!kind) return
+  state.related = null
   state.kind = kind
   state.limit = filePageSize
+  renderFiles()
+})
+ui['model-textures'].addEventListener('click', () => {
+  state.related = state.related ? null : new Set(state.file.relatedTextures)
+  state.limit = filePageSize
+  ui['file-list'].scrollTop = 0
+  ui['file-search'].value = ''
   renderFiles()
 })
 ui['file-search'].addEventListener('input', () => { state.limit = filePageSize; renderFiles() })

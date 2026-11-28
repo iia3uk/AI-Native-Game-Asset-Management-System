@@ -48,5 +48,5 @@ export async function verifyUnityAudio(webContents, waitFor, fixture, { companio
       .then(response => response.status === 206 && response.headers.get('content-type') === 'audio/wav')
   `), true)
   await webContents.executeJavaScript("document.querySelector('#demo-mode').click()")
-  await waitFor("document.querySelector('#stage-audio').hidden && !document.querySelector('#stage-audio').hasAttribute('src')")
+  await waitFor("document.querySelector('#audio-preview').hidden && !document.querySelector('#stage-audio').hasAttribute('src')")
 }

@@ -1,5 +1,5 @@
 import { normalize } from './format.js'
-import { markKey, storageNamespace, storedValue } from './viewer-storage.js'
+import { fileReviewKey, storageNamespace, storedValue } from './viewer-storage.js'
 
 const categories = {
   Animals: 'Животные', Animations: 'Анимации', Architecture: 'Архитектура', Bushes: 'Кустарники', Characters: 'Персонажи',
@@ -24,11 +24,11 @@ export function createClassification(storage) {
   let revision = 0
 
   const folderCategory = pack => pack.folderKey ? classification.roots[pack.folderKey] ?? noCategory : pack.category ?? noCategory
-  const modelCategory = (pack, file) => classification.models[markKey(pack.id, file.id)] ?? folderCategory(pack)
+  const modelCategory = (pack, file) => classification.models[fileReviewKey(pack, file.id)] ?? folderCategory(pack)
   function modelsInCategory(pack, selected) {
     if (!selected) return pack.models
     if (pack.modelIds) {
-      return pack.modelIds.reduce((sum, id) => sum + Number((classification.models[markKey(pack.id, id)] ?? folderCategory(pack)) === selected), 0)
+      return pack.modelIds.reduce((sum, id) => sum + Number((classification.models[fileReviewKey(pack, id)] ?? folderCategory(pack)) === selected), 0)
     }
     let count = folderCategory(pack) === selected ? pack.models : 0
     for (const [key, category] of Object.entries(classification.models)) if (key.startsWith(pack.id + ':')) {

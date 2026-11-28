@@ -7,6 +7,7 @@ import { app } from 'electron'
 import { startDesktop } from '../../desktop/bootstrap.mjs'
 import { generateFixtures } from '../../scripts/generate-fixtures.mjs'
 import { verifyLocalAudio } from './local-audio.mjs'
+import { verifyUnrealLocalMaterials } from './unreal-local-materials.mjs'
 import { verifyPackageExport } from './package-export.mjs'
 import { verifyPackageCleanup } from './package-cleanup.mjs'
 import { verifyPackageFolder } from './package-folder.mjs'
@@ -71,6 +72,9 @@ void launchSmoke().then(async ({ window, origin }) => {
   }
   await verifyLocalAudio(webContents, waitFor, join(process.env.ASSET_VIEWER_DATA_DIR, 'local-audio-fixture'),
     process.env.ASSET_VIEWER_SMOKE_LOCAL_AUDIO)
+  if (process.env.ASSET_VIEWER_SMOKE_UNREAL_MATERIALS) {
+    await verifyUnrealLocalMaterials(webContents, waitFor, process.env.ASSET_VIEWER_SMOKE_UNREAL_MATERIALS)
+  }
   await verifyUnityPreview(webContents, join(process.env.ASSET_VIEWER_DATA_DIR, 'unity-preview-fixture'))
   const fixtures = join(process.env.ASSET_VIEWER_DATA_DIR, 'smoke-fixtures')
   await generateFixtures(fixtures, { includeErrors: true })

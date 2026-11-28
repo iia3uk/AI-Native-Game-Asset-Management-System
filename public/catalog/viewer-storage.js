@@ -23,3 +23,6 @@ export function readLocal(storage, folder, kind) {
 }
 
 export const markKey = (pack, file) => pack + ':' + file
+
+export const fileReviewPack = (pack, id) => pack.originalFiles?.has(id) ? pack.originalGroup : pack.id
+export const fileReviewKey = (pack, id) => markKey(fileReviewPack(pack, id), id)
