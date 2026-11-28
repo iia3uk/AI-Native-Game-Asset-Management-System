@@ -8,6 +8,7 @@ import { unrealSourceMedia } from './payload.mjs'
 
 const maxCandidateSize = 128 * 1024 ** 2
 const folders = { audio: 'Audio', texture: 'Textures' }
+export const sourceTextureRevision = 1
 
 async function readPackage(root, path, signal) {
   const file = await fileInfo(root, path)
@@ -45,10 +46,11 @@ export async function recoverUnrealMedia(records, { output, workspace, signal, o
     const { bytes, ...metadata } = media
     const sampling = media.role === 'texture' ? sourceTextureSettings(input, asset.ue4) : null
     const normalSettings = sourceNormalSettings(sampling)
-    if (sampling && createHash('sha256').update(input).digest('hex') !== asset.hash) {
+    if ((sampling || media.sourceFormat) && createHash('sha256').update(input).digest('hex') !== asset.hash) {
       throw new Error('Staged Unreal texture package changed during extraction')
     }
     const details = { ...metadata, status: 'converted', method: 'unreal-editor-source-media', from: asset.output,
+      ...(media.sourceFormat && { converterVersion: sourceTextureRevision }),
       ...(sampling && { sampling }), ...(normalSettings && { normalSettings }) }
     const error = await store.preflight(bytes.length)
     if (error) {

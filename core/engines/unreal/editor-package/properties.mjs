@@ -5,29 +5,31 @@ const extras = new Map([
   ['EnumProperty', 8], ['MapProperty', 16], ['BoolProperty', 1],
 ])
 
-function tag(bytes, at, end, nameAt) {
+function tag(bytes, at, end, nameAt, version = 522) {
   requireLayout(at + 8 <= end)
   const name = nameAt(at)
   if (name === 'None') return { name, end: at + 8 }
-  requireLayout(at + 25 <= end)
+  requireLayout(at + 24 <= end)
   const type = nameAt(at + 8)
   const size = bytes.readInt32LE(at + 16)
   const arrayIndex = bytes.readInt32LE(at + 20)
   const metadata = at + 24
-  const extra = extras.get(type) ?? 0
+  const extra = type === 'StructProperty' && version < 441 ? 8 : extras.get(type) ?? 0
   const guid = metadata + extra
-  requireLayout(size >= 0 && arrayIndex >= 0 && guid < end && bytes[guid] <= 1)
-  const start = guid + (bytes[guid] ? 17 : 1)
+  requireLayout(size >= 0 && arrayIndex >= 0 && guid <= end)
+  const hasPropertyGuid = version >= 503
+  requireLayout(!hasPropertyGuid || (guid < end && bytes[guid] <= 1))
+  const start = guid + (hasPropertyGuid ? (bytes[guid] ? 17 : 1) : 0)
   requireLayout(start + size <= end)
   const inner = extra >= 8 ? nameAt(metadata) : null
   return { name, type, inner, size, start, end: start + size, arrayIndex,
     ...(type === 'BoolProperty' && { value: bytes[metadata] }) }
 }
 
-export function taggedProperties(bytes, start, end, nameAt) {
+export function taggedProperties(bytes, start, end, nameAt, version = 522) {
   const properties = new Map()
   for (let count = 0; count <= 2048; count++) {
-    const field = tag(bytes, start, end, nameAt)
+    const field = tag(bytes, start, end, nameAt, version)
     if (field.name === 'None') return { end: field.end, properties }
     if (field.arrayIndex === 0) {
       requireLayout(!properties.has(field.name))

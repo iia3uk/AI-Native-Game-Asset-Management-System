@@ -8,7 +8,7 @@ import { cookedMaterialRevision } from '../../../conversion/unreal/cooked-materi
 import { publishLooseCooked } from '../../../conversion/unreal/loose-cooked/publish.mjs'
 import { publishSourceSoundCues } from '../../../conversion/unreal/source-audio/publish.mjs'
 import { prepareSourceMaterials, publishSourceMaterials } from '../../../conversion/unreal/source-material/publish.mjs'
-import { recoverUnrealMedia } from '../../../conversion/unreal/source-media/extract.mjs'
+import { recoverUnrealMedia, sourceTextureRevision } from '../../../conversion/unreal/source-media/extract.mjs'
 import { publishSourceMeshes } from '../../../conversion/unreal/source-mesh/publish.mjs'
 import { publishTexturedViewerModels } from '../../../conversion/unreal/viewer/bind-materials.mjs'
 import { publishActorXAnimations } from '../../../conversion/unreal/viewer/actorx/publish.mjs'
@@ -89,6 +89,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
   const blender = exportFormats.length ? await locateBatchBlender() : null
   const editor = await editorRecipe(selection, engineMode, editorVersion)
   const engineRecipe = [editor, ['unreal-source-mesh', sourceMeshRevision], ['unreal-source-material', sourceMaterialRevision],
+    ['unreal-source-texture', sourceTextureRevision],
     ['unreal-sound-cue', sourceSoundCueRevision],
     ['unreal-cooked-material', cookedMaterialRevision],
     ['unreal-cooked-texture', looseTextureRevision, decoder ? cue4parseVersion : null],

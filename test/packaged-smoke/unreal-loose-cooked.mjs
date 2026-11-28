@@ -8,6 +8,8 @@ import { cookedMaterial } from '../fixtures/unreal-cooked-material.mjs'
 import { cookedSoundWave } from '../fixtures/unreal-cooked-soundwave.mjs'
 import { cookedStaticMesh } from '../fixtures/unreal-cooked-static-mesh.mjs'
 import { cookedTexture } from '../fixtures/unreal-cooked-texture.mjs'
+import { readPngRgb } from '../../core/files/png-rgb.mjs'
+import { rgbaSourceRows, sourceArtPackage, sourceArtPng } from '../fixtures/unreal-source-texture.mjs'
 import { zenOgg } from '../fixtures/unreal-zen-audio.mjs'
 import { testDirectory } from '../server-fixture.mjs'
 
@@ -19,6 +21,7 @@ test('The packaged CLI converts an Unreal Content folder with the bundled decode
   const content = join(root, 'Content')
   await mkdir(content)
   const source = [
+    { path: 'EditorColor.uasset', content: sourceArtPackage(sourceArtPng(), { earlyTexture: true, compressed: true }) },
     ...cookedTexture({ name: 'CookedColor', format: 'PF_G8', width: 1, height: 1, pixels: Buffer.from([86]), external: true }),
     ...cookedMaterial({ name: 'CookedPaint', textures: [{ parameter: 'BaseColor', value: '/Game/CookedColor' }] }),
     ...cookedStaticMesh({ name: 'CookedModel', external: true }),
@@ -39,6 +42,9 @@ test('The packaged CLI converts an Unreal Content folder with the bundled decode
   assert.deepEqual(job.result.report.unrealCooked.meshes.derivatives, { fbx: 0, glb: 2 })
   const output = job.result.directory
   const manifest = JSON.parse(await readFile(join(output, 'manifest.json')))
+  const [sourceArt] = manifest.assets.find(row => row.sourcePath === 'EditorColor.uasset').exports
+  assert.equal(sourceArt.channelOrder, 'bgra-to-rgba')
+  assert.deepEqual(readPngRgb(await readFile(join(output, sourceArt.path))).rows, rgbaSourceRows)
   const [texture] = manifest.assets.find(row => row.sourcePath === 'CookedColor.uasset').exports
   const [material] = manifest.assets.find(row => row.sourcePath === 'CookedPaint.uasset').exports
   const model = manifest.assets.find(row => row.sourcePath === 'CookedModel.uasset').exports

@@ -1,6 +1,6 @@
 import { sourceMeshHeaders } from './unreal-source-mesh.mjs'
 
-export function editorFixture(build, { legacy = false } = {}) {
+export function editorFixture(build, { legacy = false, earlyTexture = false } = {}) {
   const names = new Map([['None', 0]])
   const i32 = value => {
     const bytes = Buffer.alloc(4)
@@ -12,10 +12,12 @@ export function editorFixture(build, { legacy = false } = {}) {
     return Buffer.concat([i32(names.get(value)), i32(0)])
   }
   function tag(label, type, data, metadata = Buffer.alloc(0)) {
-    return Buffer.concat([name(label), name(type), i32(data.length), i32(0), metadata, Buffer.alloc(1), data])
+    return Buffer.concat([name(label), name(type), i32(data.length), i32(0), metadata,
+      ...(earlyTexture ? [] : [Buffer.alloc(1)]), data])
   }
   const none = name('None')
-  const struct = (label, type, data) => tag(label, 'StructProperty', data, Buffer.concat([name(type), Buffer.alloc(16)]))
+  const struct = (label, type, data) => tag(label, 'StructProperty', data,
+    earlyTexture ? name(type) : Buffer.concat([name(type), Buffer.alloc(16)]))
   const array = (label, type, count, data) => tag(label, 'ArrayProperty',
     Buffer.concat([i32(count), struct(label, type, data)]), name('StructProperty'))
   const object = (label, index) => tag(label, 'ObjectProperty', i32(index))
@@ -30,42 +32,54 @@ export function editorFixture(build, { legacy = false } = {}) {
   }
   const { imports: importRows, objects, bulk = Buffer.alloc(0) } = build({ i32, name, tag, struct, array, none, object, enumValue, bool, streaming })
   const imports = Buffer.concat(importRows.map(([type, label, owner = 0]) =>
-    Buffer.concat([none, name(type), i32(owner), name(label), ...(legacy ? [] : [none])])))
-  const exports = Buffer.alloc(104 * objects.length)
+    Buffer.concat([none, name(type), i32(owner), name(label), ...(legacy || earlyTexture ? [] : [none])])))
+  const stride = earlyTexture ? 68 : 104
+  const outer = earlyTexture ? 8 : 12
+  const exports = Buffer.alloc(stride * objects.length)
   for (const [index, [type, label, owner]] of objects.entries()) {
-    const at = index * 104
+    const at = index * stride
     exports.writeInt32LE(type, at)
-    exports.writeInt32LE(owner, at + 12)
-    name(label).copy(exports, at + 16)
+    exports.writeInt32LE(owner, at + outer)
+    name(label).copy(exports, at + outer + 4)
   }
   const table = Buffer.concat([...names.keys()].map(value => Buffer.concat([
-    i32(Buffer.byteLength(value) + 1), Buffer.from(value), Buffer.alloc(5),
+    i32(Buffer.byteLength(value) + 1), Buffer.from(value), Buffer.alloc(earlyTexture ? 1 : 5),
   ])))
   const modernSummary = sourceMeshHeaders().bytes.subarray(0, 220)
   // This UE4 layout predates the localization ID and persistent package GUID.
-  const summary = legacy ? Buffer.concat([modernSummary.subarray(0, 68), modernSummary.subarray(72, 128),
-    modernSummary.subarray(144)]) : modernSummary
+  const summary = earlyTexture ? Buffer.alloc(150) : legacy ? Buffer.concat([modernSummary.subarray(0, 68),
+    modernSummary.subarray(72, 128), modernSummary.subarray(144)]) : modernSummary
+  if (earlyTexture) {
+    modernSummary.subarray(0, 20).copy(summary)
+    summary.writeInt32LE(-3, 4)
+    summary.writeInt32LE(397, 12)
+  }
   const importAt = summary.length + table.length
   const exportAt = importAt + imports.length
   const start = exportAt + exports.length
   let end = start
   const payloads = objects.map((row, index) => {
     const data = row[3]
-    exports.writeBigInt64LE(BigInt(data.length), index * 104 + 28)
-    exports.writeBigInt64LE(BigInt(end), index * 104 + 36)
+    if (earlyTexture) {
+      exports.writeInt32LE(data.length, index * stride + 24)
+      exports.writeInt32LE(end, index * stride + 28)
+    } else {
+      exports.writeBigInt64LE(BigInt(data.length), index * stride + 28)
+      exports.writeBigInt64LE(BigInt(end), index * stride + 36)
+    }
     end += data.length
     return data
   })
-  summary.writeInt32LE(start, 44)
-  summary.writeInt32LE(names.size, 56)
-  summary.writeInt32LE(summary.length, 60)
-  const exportsAt = legacy ? 72 : 76
+  summary.writeInt32LE(start, earlyTexture ? 24 : 44)
+  summary.writeInt32LE(names.size, earlyTexture ? 36 : 56)
+  summary.writeInt32LE(summary.length, earlyTexture ? 40 : 60)
+  const exportsAt = earlyTexture ? 44 : legacy ? 72 : 76
   summary.writeInt32LE(objects.length, exportsAt)
   summary.writeInt32LE(exportAt, exportsAt + 4)
   summary.writeInt32LE(importRows.length, exportsAt + 8)
   summary.writeInt32LE(importAt, exportsAt + 12)
   summary.writeInt32LE(start, exportsAt + 16)
-  summary.writeBigInt64LE(BigInt(end), legacy ? 176 : 196)
+  summary.writeBigInt64LE(BigInt(end), earlyTexture ? 134 : legacy ? 176 : 196)
   if (legacy) {
     summary.writeInt32LE(514, 12)
     summary.writeInt32LE(20, 40)

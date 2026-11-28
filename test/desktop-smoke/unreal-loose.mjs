@@ -7,6 +7,7 @@ import { cookedTexture } from '../fixtures/unreal-cooked-texture.mjs'
 import { writeUnrealLooseFixture } from '../fixtures/unreal-loose.mjs'
 import { soundCueFixture } from '../fixtures/unreal-source-audio.mjs'
 import { sourceWave, ue4SourceFixture } from '../fixtures/unreal-source-media.mjs'
+import { sourceArtPackage, sourceArtPng } from '../fixtures/unreal-source-texture.mjs'
 import { zenOgg } from '../fixtures/unreal-zen-audio.mjs'
 import { playIndexedAudio } from './unreal-iostore.mjs'
 
@@ -14,6 +15,7 @@ export async function verifyUnrealLoose(webContents, waitFor, root) {
   const { project, content } = await writeUnrealLooseFixture(root)
   await writeFile(join(content, 'Props/SmokeWave.uasset'), ue4SourceFixture('SoundWave', sourceWave()))
   await writeFile(join(content, 'Props/SmokeCue.uasset'), soundCueFixture({ wave: '/Game/Props/SmokeWave' }))
+  await writeFile(join(content, 'Props/SourceArt.uasset'), sourceArtPackage(sourceArtPng(), { compressed: true }))
   const cooked = process.env.ASSET_VIEWER_SMOKE_PAK === '1'
   if (cooked) {
     const fixtures = [
@@ -45,6 +47,7 @@ export async function verifyUnrealLoose(webContents, waitFor, root) {
   if (cooked && !glbWasChecked) await webContents.executeJavaScript("document.querySelector('#package-export-glb').click()")
   await waitFor("document.querySelector('#package-jobs').textContent.includes('Запрошенная версия Unreal недоступна')")
   await waitFor("document.querySelector('#package-jobs').textContent.includes('1 WAV')")
+  await waitFor("document.querySelector('#package-jobs').textContent.includes('1 PNG')")
   await waitFor("document.querySelector('#package-jobs').textContent.includes('Графов SoundCue · 1')")
   if (cooked) {
     await waitFor(`Array.from(document.querySelectorAll('#package-jobs li p')).some(row =>
