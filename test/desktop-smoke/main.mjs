@@ -61,6 +61,10 @@ void launchSmoke().then(async ({ window, origin }) => {
     throw new Error('Renderer did not reach expected state: ' + expression + '. Status: ' + JSON.stringify(status))
   }
   await waitFor("document.querySelector('#library-stats').textContent.includes('3D-файлов')")
+  await waitFor("document.querySelector('.brand-mark').naturalWidth > 0")
+  assert.equal(await webContents.executeJavaScript(`
+    document.querySelector('.brand-mark').src === document.querySelector('link[rel=icon]').href
+  `), true)
   assert.equal(await webContents.executeJavaScript("typeof window.assetViewerDesktop.chooseFolder"), 'function')
   await webContents.executeJavaScript("document.querySelector('#demo-mode').click()")
   await waitFor("document.querySelector('#animation-tools').hidden === false")

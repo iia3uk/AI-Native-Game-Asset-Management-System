@@ -97,7 +97,7 @@ export async function startDesktop(applicationRoot = app.getAppPath(), { showWin
   const window = new BrowserWindow({
     title: 'Asset Viewer', width: 1360, height: 860, minWidth: 450, minHeight: 550,
     backgroundColor: '#101512', autoHideMenuBar: true, show: false,
-    icon: join(root, 'assets', 'icon.ico'),
+    icon: join(root, 'public', 'brand', 'asset-viewer.ico'),
     webPreferences: { session: desktopSession, preload: join(root, 'desktop', 'preload.cjs'),
       nodeIntegration: false, contextIsolation: true, sandbox: true },
   })

@@ -14,7 +14,7 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
   const resources = join(appOutDir, 'resources')
   const archive = join(resources, 'app.asar')
   for (const path of [
-    'assets/icon.ico',
+    'public/brand/asset-viewer.ico',
     'desktop/window/startup.mjs',
     'desktop/window/failure.mjs',
     'desktop/package-cleanup/ipc.mjs',

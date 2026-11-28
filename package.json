@@ -52,7 +52,6 @@
       "!core/engines/unity/bundle/worker/**",
       "desktop/**",
       "public/**",
-      "assets/icon.ico",
       "scripts/export-blend.py",
       "scripts/*.mjs",
       "scripts/cli/*.mjs",
@@ -69,7 +68,7 @@
       "core/engines/blender/scripts/*.py"
     ],
     "win": {
-      "icon": "assets/icon.ico",
+      "icon": "public/brand/asset-viewer.ico",
       "extraResources": [
         {
           "from": "release/unity-bundle/win-x64",
