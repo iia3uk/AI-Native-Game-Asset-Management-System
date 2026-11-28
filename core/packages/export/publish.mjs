@@ -12,6 +12,7 @@ import { packageHashPattern } from '../source.mjs'
 import { isUnrealLoose } from '../unreal/loose/source.mjs'
 import { preparePackageExport, verifyExportDestination, verifyExportSpace } from './plan.mjs'
 import { verifyPublishedPackage } from './recover.mjs'
+import { findReusableExport } from './reuse.mjs'
 
 async function copyVerified(source, file, target, signal) {
   const changed = () => new IndexConflictError('Не удалось подтвердить SHA-256 файла ' + file.path + '.')
@@ -81,19 +82,31 @@ export async function exportPackageResult(importDirectory, protectedRoots, job, 
   }
 }
 
-async function publish({ destination, plan, source, files, reports }, signal, journal) {
+async function publish(prepared, signal, journal) {
+  const { destination, plan, source, files, reports, processedManifest } = prepared
   await verifyExportDestination(destination)
   let reservation = journal?.reservation
   if (reservation) {
     if (dirname(reservation.path) !== destination.path) throw new IndexConflictError('Папка экспорта не соответствует заданию.')
     await verifyExportDestination(reservation)
-    const directory = await verifyPublishedPackage(reservation, files, reports, signal)
+    const expected = journal.exportJobId && processedManifest
+      ? { ...reports, manifest: processedManifest(journal.exportJobId) } : reports
+    const directory = await verifyPublishedPackage(reservation, files, expected, signal)
     if (directory) return { ...plan, directory }
   }
   if (journal?.verifyOnly) throw new IndexConflictError('Экспортированные файлы недоступны.')
   if (journal?.stage) {
     if (dirname(journal.stage.path) !== destination.path) throw new IndexConflictError('Временная папка экспорта изменилась.')
     await removeDirectory(destination, journal.stage)
+  }
+  if (journal?.adopt && processedManifest && !reservation) {
+    const reusable = await findReusableExport(prepared, signal)
+    if (reusable) {
+      await verifyExportDestination(destination)
+      await verifyExportDestination(reusable.reservation)
+      journal.adopt(reusable.reservation, reusable.jobId)
+      return { ...plan, directory: reusable.directory }
+    }
   }
   if (journal) await verifyExportSpace(destination.path, plan.bytes)
   const stage = await createDirectory(join(destination.path, '.asset-viewer-export-'))

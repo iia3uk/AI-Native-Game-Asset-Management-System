@@ -53,7 +53,8 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
     output.textContent = next.exported > 1 ? 'Экспортировано пакетов · ' + next.exported + ' · ' + next.destination :
       next.firstExport ? 'Экспорт · ' + next.firstExport : ''
     const message = busy ? 'Проверка исходников и результатов импорта…' : statusMessage(next)
-    setStatus(message + (next.failureCount && next.phase !== 'failed'
+    const reused = next.reused ? ' · Использовано готовых экспортов: ' + next.reused : ''
+    setStatus(message + reused + (next.failureCount && next.phase !== 'failed'
       ? ' · Ошибок обработки ' + next.failureCount + ' · ' + next.firstFailure.path + ' · ' + next.firstFailure.error
       : ''))
     const update = [next.id, next.phase, next.position, next.step, next.status].join('/')

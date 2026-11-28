@@ -98,7 +98,8 @@ export function bindPackageCleanup({ window, origin, paths, preferencesDirectory
     try {
       const result = await exportPackageResult(paths.imports, [...protectedRoots, run.source.path], job,
         { destination: run.destination.path, processedOnly: true }, {
-          signal, jobSource: source, journal: { destination: run.destination, reservation: item.reservation, verifyOnly: true },
+          signal, jobSource: source, journal: { destination: run.destination, reservation: item.reservation,
+            exportJobId: item.exportJobId, verifyOnly: true },
         })
       return result?.directory === item.directory
     } catch (error) {

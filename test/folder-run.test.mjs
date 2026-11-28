@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, readdir, realpath, symlink, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
@@ -124,6 +124,83 @@ async function archive(input, name) {
     unityEntries(ids.model, 'Assets/' + name + '.obj', fixtureModel)))
 }
 
+function checkpointBeforeExportCompletion(database) {
+  const db = new DatabaseSync(database)
+  try {
+    const { state } = db.prepare('SELECT state FROM folder_run').get()
+    const previous = JSON.parse(state)
+    const [item] = previous.items
+    assert.ok(item.reservation)
+    previous.position = 0
+    previous.step = 'export'
+    delete previous.cleanup
+    delete item.complete
+    delete item.directory
+    db.prepare("UPDATE folder_run SET phase = 'running', state = ?").run(JSON.stringify(previous))
+  } finally { db.close() }
+}
+
+test('repeated folder runs verify and reuse existing exports, preserving edited copies and original provenance',
+  { timeout: 24000 }, async t => {
+    const { root, input, output, database } = await folders(t)
+    await archive(input, 'Repeated')
+
+    async function runFolder(startRun = true) {
+      const server = await desktop(root)
+      try {
+        if (startRun) {
+          const start = await server.post(route, { path: input, destination: output })
+          assert.equal(start.status, 202, await start.text())
+        }
+        const run = await server.until(run => run?.phase !== 'running')
+        assert.equal(run.phase, 'cleanup', JSON.stringify(run))
+        assert.equal(run.exported, 1)
+        const index = await AssetIndex.open(database)
+        try {
+          const [item] = index.folderRuns.claimCleanup(run.id, false).items
+          assert.equal(index.folderRuns.dismissCleanup(run.id), true)
+          return { run, item, job: index.jobs.get(item.jobId) }
+        } finally { await index.close() }
+      } finally { await server.close() }
+    }
+
+    const initial = await runFolder()
+    assert.equal(initial.run.reused, 0)
+    const originalDirectory = initial.run.firstExport
+    const earlierManifest = await readFile(join(originalDirectory, 'manifest.json'))
+    const listing = await readdir(output)
+    const repeated = await runFolder()
+    assert.notEqual(repeated.item.jobId, initial.item.jobId)
+    assert.equal(repeated.job.result.reused, true)
+    assert.equal(repeated.item.exportJobId, initial.item.jobId)
+    assert.equal(repeated.run.reused, 1)
+    assert.equal(repeated.run.firstExport, originalDirectory)
+    assert.deepEqual(await readdir(output), listing)
+    assert.deepEqual(await readFile(join(originalDirectory, 'manifest.json')), earlierManifest)
+
+    checkpointBeforeExportCompletion(database)
+    const resumed = await runFolder(false)
+    assert.equal(resumed.run.id, repeated.run.id)
+    assert.equal(resumed.run.reused, 1)
+    assert.equal(resumed.run.firstExport, originalDirectory)
+    assert.deepEqual(await readdir(output), listing)
+
+    const model = 'Source/Assets/Repeated.obj'
+    const edited = fixtureModel.replace('v 1 0 0', 'v 2 0 0')
+    assert.equal(Buffer.byteLength(edited), Buffer.byteLength(fixtureModel))
+    // A valid lookalike outside the destination must not be adopted through a link.
+    const external = join(root, 'external-copy')
+    await cp(initial.item.reservation.path, external, { recursive: true, errorOnExist: true })
+    const alias = join(output, 'AssetViewer-Repeated-000000')
+    await symlink(external, alias, process.platform === 'win32' ? 'junction' : 'dir')
+    await writeFile(join(originalDirectory, model), edited)
+    const replacement = await runFolder()
+    assert.equal(replacement.run.reused, 0)
+    assert.notEqual(replacement.run.firstExport, originalDirectory)
+    assert.equal(await readFile(join(originalDirectory, model), 'utf8'), edited)
+    assert.equal(await readFile(join(replacement.run.firstExport, model), 'utf8'), fixtureModel)
+  })
+
 test('a folder run resumes the original paused job and exports each archive to the saved destination after server restart',
   { timeout: 24000 }, async t => {
     const { root, input, output, database } = await folders(t)
@@ -188,22 +265,8 @@ test('an export committed before a crash is recovered in place and a modified ex
       exported = done.firstExport
     } finally { await initial.close() }
 
-    function checkpointBeforeCompletion() {
-      const db = new DatabaseSync(database)
-      try {
-        const { state } = db.prepare('SELECT state FROM folder_run').get()
-        const previous = JSON.parse(state)
-        const { reservation } = previous.items[0]
-        assert.ok(reservation)
-        previous.position = 0
-        previous.step = 'export'
-        delete previous.items[0].complete
-        delete previous.items[0].directory
-        db.prepare("UPDATE folder_run SET phase = 'running', state = ?").run(JSON.stringify(previous))
-      } finally { db.close() }
-    }
     const intended = await readdir(output)
-    checkpointBeforeCompletion()
+    checkpointBeforeExportCompletion(database)
     const restart = await desktop(root)
     try {
       const recovered = await restart.until(run => run.phase !== 'running')
@@ -213,7 +276,7 @@ test('an export committed before a crash is recovered in place and a modified ex
     } finally { await restart.close() }
 
     await writeFile(join(exported, 'Source', 'Assets', 'Single.obj'), fixtureModel.replace('v 1 0 0', 'v 2 0 0'))
-    checkpointBeforeCompletion()
+    checkpointBeforeExportCompletion(database)
     const changed = await desktop(root)
     try {
       const failed = await changed.until(run => run.phase !== 'running')

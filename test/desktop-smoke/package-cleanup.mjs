@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join, sep } from 'node:path'
+import { basename, dirname, join, sep } from 'node:path'
 import { dialog, shell } from 'electron'
 import { AssetIndex } from '../../core/index/asset-index.mjs'
 import { inspectPackage, packageOptions } from '../../core/packages/dispatch.mjs'
@@ -143,14 +143,21 @@ export async function verifyPackageCleanup(webContents, waitFor) {
     assert.equal(prompts.length, 3)
     assert.deepEqual(await readFile(third), input)
 
+    const priorExports = await readdir(exportRoot)
+    await submit(dirname(third), exportRoot)
+    await waitFor("document.querySelector('#package-cleanup-status').textContent === 'Исходники оставлены. · Использовано готовых экспортов: 1'")
+    assert.equal(prompts.length, 4)
+    assert.deepEqual(await readdir(exportRoot), priorExports)
+    assert.deepEqual(await readFile(third), input)
+
     const unityFolder = join(root, 'Unity Cleanup')
     await mkdir(unityFolder)
     const unitySource = await writeUnityFixture(join(unityFolder, 'Sample.unitypackage'))
     confirm = true
     await submit(unityFolder, exportRoot)
     await waitFor("document.querySelector('#package-cleanup-status').textContent.startsWith('В корзине · 1')")
-    assert.equal(prompts.length, 4)
-    assert.match(prompts[3].checkboxLabel, /Unity/)
+    assert.equal(prompts.length, 5)
+    assert.match(prompts[4].checkboxLabel, /Unity/)
     assert.deepEqual(moved, [first, second, unitySource])
     await assert.rejects(readFile(unitySource), { code: 'ENOENT' })
 
@@ -163,8 +170,8 @@ export async function verifyPackageCleanup(webContents, waitFor) {
     exportRoot = undefined
     await submit(mixed, '')
     await waitFor("document.querySelector('#package-cleanup-status').textContent.startsWith('В корзине · 1')")
-    assert.equal(prompts.length, 5)
-    assert.match(prompts[4].checkboxLabel, /Unreal/)
+    assert.equal(prompts.length, 6)
+    assert.match(prompts[5].checkboxLabel, /Unreal/)
     assert.deepEqual(moved, [first, second, unitySource, mixedUnity])
     assert.deepEqual(await readFile(mixedUnreal), input)
   } finally {

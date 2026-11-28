@@ -77,8 +77,13 @@ export class FolderRunWorker {
         { destination: run.destination.path, processedOnly: true }, {
           signal: this.signal, jobSource: jobs.importSource(item.jobId), journal: {
             destination: run.destination, reservation: item.reservation, stage: item.stage,
+            exportJobId: item.exportJobId,
             save: (kind, directory) => {
               item[kind] = directory
+              folderRuns.save(run)
+            },
+            adopt: (reservation, exportJobId) => {
+              Object.assign(item, { reservation, exportJobId })
               folderRuns.save(run)
             },
           },

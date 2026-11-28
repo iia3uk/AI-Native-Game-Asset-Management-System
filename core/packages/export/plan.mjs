@@ -114,9 +114,12 @@ export async function preparePackageExport(importDirectory, protectedRoots, job,
   const assets = selection?.assets ?? (processedOnly ? processedAssets(managed.assets) : managed.assets)
   const { files, bytes: assetBytes } = await collectFiles(managed.directory, assets, byteLimit, signal)
   if (processedOnly && !files.length) throw new IndexConflictError('Нет готовых файлов для экспорта.')
+  const processedManifest = processedOnly ? jobId => json({
+    ...managed.manifest.data, [managed.pak ? 'entries' : 'assets']: assets,
+    export: { processedOnly, jobId },
+  }) : null
   const reports = selection ? selectDocuments(managed, selection, dependencies, conversion, files) :
-    { manifest: processedOnly ? json({ ...managed.manifest.data, [managed.pak ? 'entries' : 'assets']: assets,
-      export: { processedOnly, jobId: job.id } }) : managed.manifest.text,
+    { manifest: processedManifest?.(job.id) ?? managed.manifest.text,
     dependencies: dependencies.text, 'conversion-report': conversion.text }
   const bytes = assetBytes + Object.values(reports).reduce((total, report) => total + Buffer.byteLength(report), 0)
   if (bytes > byteLimit) throw new IndexInputError('Превышен лимит размера экспорта.')
@@ -132,5 +135,5 @@ export async function preparePackageExport(importDirectory, protectedRoots, job,
     ...(processedOnly && { processedOnly }), assets: assets.length, files: files.length + documents.length, bytes,
     unresolved: selection?.unresolved ?? null, dependencyStatus: dependencies.data.status,
     paths: [...documents.map(name => name + '.json'), ...files.slice(0, 100 - documents.length).map(file => file.path)] }
-  return { plan, destination, source: managed.directory, reports, files }
+  return { plan, destination, source: managed.directory, reports, files, processedManifest }
 }

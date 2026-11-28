@@ -42,7 +42,7 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 
 Structured search uses `.` for a package at the selected folder itself. A returned `root` and `path` can be used together for inspection and import. The structured list can include both Unreal sources and Unity archives from the same folder.
 
-For a desktop folder run, the summary includes the run ID, phase, current step, progress, destination, export count and any processing failures. The service restores the run on startup. Pause, resume and cancel use the existing job routes. Source cleanup runs through Electron IPC after processing.
+For a desktop folder run, the summary includes the run ID, phase, current step, progress, destination, export count and any processing failures. The `reused` count shows how many of the exports matched verified outputs already present in the destination. The service restores the run on startup. Pause, resume and cancel use the existing job routes. Source cleanup runs through Electron IPC after processing.
 
 For Unity folders, inspection returns `format` as `unity-project` or `unity-upm`, the declared project `engineVersion` when available and a `packages` list with local UPM names and versions. Send the same absolute path and inspection hash to queue the job. The manifest retains normalized resource paths, GUIDs and the engine version. Jobs using an Editor default to the declared project version when present.
 
