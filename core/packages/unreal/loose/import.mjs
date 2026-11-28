@@ -6,7 +6,9 @@ import { exportRecipe, verifyExports } from '../../../conversion/cache.mjs'
 import { animationTotalsMatch } from '../../../conversion/unreal/animation/cache.mjs'
 import { createEditorAnimationPublisher } from '../../../conversion/unreal/animation/publish.mjs'
 import { collisionTotalsMatch } from '../../../conversion/unreal/collision/cache.mjs'
-import { cookedMaterialRevision } from '../../../conversion/unreal/cooked-material/publish.mjs'
+import { cookedMaterialPreviewsMatch } from '../../../conversion/unreal/cooked-material/cache.mjs'
+import { cookedMaterialMethod, cookedMaterialRevision } from '../../../conversion/unreal/cooked-material/publish.mjs'
+import { cookedMaterialPreviewRevision } from '../../../conversion/unreal/cooked-material/texture-previews.mjs'
 import { cookedSkeletalTotalsMatch } from '../../../conversion/unreal/cooked-mesh/cache.mjs'
 import { publishLooseCooked } from '../../../conversion/unreal/loose-cooked/publish.mjs'
 import { skeletonTotalsMatch } from '../../../conversion/unreal/skeleton/cache.mjs'
@@ -72,6 +74,7 @@ async function cachedResult(root, name, hash, source, recipe, signal) {
           report.unrealCooked?.meshes?.collision) ||
         !editorSkeletalTotalsMatch(data.assets, report.unrealSourceMeshes) ||
         !cookedSkeletalTotalsMatch(data.assets, report.unrealCooked?.meshes) ||
+        !cookedMaterialPreviewsMatch(data.assets, report.unrealCooked?.materials, cookedMaterialMethod) ||
         !skeletonTotalsMatch(data.assets, report.unrealSkeletons, dependencyRecords) ||
         !animationTotalsMatch(data.assets, report.unrealEditorAnimations, dependencyRecords) ||
         !await verifyExports(directory, await availablePackageAssets(directory, data.assets, signal), signal)) {
@@ -106,7 +109,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     ['unreal-sound-cue', sourceSoundCueRevision],
     ['unreal-ue4-reference-skeleton', ue4SkeletonRevision],
     ['unreal-editor-animation', editorAnimationRevision],
-    ['unreal-cooked-material', cookedMaterialRevision],
+    ['unreal-cooked-material', cookedMaterialRevision, cookedMaterialPreviewRevision],
     ['unreal-cooked-texture', looseTextureRevision, decoder ? cue4parseVersion : null],
     ['unreal-cooked-audio', cookedAudioRevision, decoder ? cue4parseVersion : null],
     ['unreal-cooked-mesh', looseMeshRevision, decoder ? cue4parseVersion : null],

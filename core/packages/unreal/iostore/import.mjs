@@ -66,7 +66,7 @@ async function saveOutputs(workspace, source, files, result, hash, { recipe, ble
   const reports = { manifest: json(manifest), dependencies: dependencyText, 'conversion-report': reportText }
   await Promise.all(Object.entries(reports).map(([name, data]) =>
     writeFile(join(output, name + '.json'), data, { signal, flag: 'wx' })))
-  const cacheable = !failed && !meshes?.issue && !collision?.failed &&
+  const cacheable = !failed && !materials?.issue && !meshes?.issue && !collision?.failed &&
     !entries.some(entry => entry.issue === 'unreal-iostore-space-limit' ||
       entry.exports?.some(product => product.status === 'failed' || /-(io|limit)$/.test(product.issue ?? '')))
   return { output, cacheable, report: { ...summary, ...(!extracted && { entries: entries.slice(0, 500) }) } }

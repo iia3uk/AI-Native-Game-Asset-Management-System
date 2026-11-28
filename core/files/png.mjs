@@ -9,11 +9,17 @@ export function pngChunk(type, data) {
   return result
 }
 
-export function encodePngScanlines(width, height, pixels, { alpha = false } = {}) {
+export function encodePngScanlines(width, height, pixels, { alpha = false, linear = false } = {}) {
   const header = Buffer.alloc(13)
   header.writeUInt32BE(width)
   header.writeUInt32BE(height, 4)
   header.set([8, alpha ? 6 : 2], 8)
-  return Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), pngChunk('IHDR', header),
+  const gamma = []
+  if (linear) {
+    const value = Buffer.alloc(4)
+    value.writeUInt32BE(100_000)
+    gamma.push(pngChunk('gAMA', value))
+  }
+  return Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), pngChunk('IHDR', header), ...gamma,
     pngChunk('IDAT', deflateSync(pixels)), pngChunk('IEND', Buffer.alloc(0))])
 }

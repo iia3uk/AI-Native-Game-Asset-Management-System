@@ -108,6 +108,12 @@ const packageIssues = {
   'unreal-cooked-material-read': 'Не удалось прочитать блок свойств материала',
   'unreal-cooked-material-budget': 'Достигнут лимит чтения cooked-материалов',
   'unreal-cooked-material-shader-data': 'Сохранены доступные параметры. Шейдерные данные требуют Unreal.',
+  'unreal-cooked-packed-color-space': 'Карта каналов не помечена как линейная',
+  'unreal-cooked-packed-format': 'Формат карты не содержит трёх подтверждённых каналов',
+  'unreal-cooked-normal-ambiguous': 'Материал ссылается на несколько карт нормалей',
+  'unreal-cooked-normal-unconfirmed': 'Карта нормалей не подтверждена ссылкой с UV0',
+  'unreal-cooked-normal-missing': 'Не найдена извлечённая карта нормалей',
+  'unreal-cooked-normal-format': 'Для карты нормалей не подтверждён формат BC5',
   'unreal-cooked-texture-layout': 'Не удалось прочитать структуру cooked Texture2D',
   'unreal-cooked-texture-ambiguous': 'В пакете несколько верхнеуровневых Texture2D',
   'unreal-cooked-texture-format': 'Формат cooked-текстуры не поддерживается',
@@ -267,6 +273,11 @@ export function cookedMeshSummary(meshes, version = 'UE4.27') {
     meshes.skipped && 'Пропущено · ' + meshes.skipped,
     meshes.failed && 'Ошибок · ' + meshes.failed,
     meshes.issue && describeIssue(meshes.issue)].filter(Boolean).join(' · ')
+}
+
+export function cookedMaterialMapLabels(materials) {
+  return [materials.normalMaterials && 'С картой нормалей · ' + materials.normalMaterials,
+    materials.packedMaterials && 'С картой AO/roughness/metallic · ' + materials.packedMaterials]
 }
 
 export function skeletonSummary(rigs) {

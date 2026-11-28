@@ -109,10 +109,13 @@ test('packed Unreal material selection preserves ORM, remaps MRA, and rejects co
   const root = await testDirectory(t)
   const path = 'Texture.png'
   const data = encodePngScanlines(1, 1, Buffer.from([0, 12, 34, 56]))
-  await writeFile(join(root, path), data)
-  const texture = { exports: [] }
+  const scratch = join(root, 'staged.png')
+  await writeFile(scratch, data)
+  const store = new ExportArtifacts(root)
+  const original = await store.save(path, { path: scratch, info: { size: data.length } }, { role: 'texture', format: 'png' })
+  const texture = { exports: [original] }
   const counts = { repackedMaps: 0 }
-  const context = { cache: new Map(), resolve: () => texture, store: new ExportArtifacts(root), workspace: root, counts }
+  const context = { cache: new Map(), resolve: () => texture, store, workspace: root, counts }
   const binding = layout => ({ layout, sourcePath: 'Mask.uasset', textureId: 'mask', path, corroborated: true })
   const select = (...bindings) => publishPackedMap({ bindings }, context)
   assert.equal((await select(binding('ORM'))).path, path)
@@ -125,4 +128,6 @@ test('packed Unreal material selection preserves ORM, remaps MRA, and rejects co
   assert.equal((await select({ ...binding('ORM'), path: null })).issue, 'unreal-packed-material-missing')
   assert.equal(await select({ path: 'File_RMA.png' }), null)
   assert.deepEqual(await readFile(join(root, path)), data)
+  await writeFile(join(root, path), Buffer.alloc(original.size))
+  await assert.rejects(select(binding('RMA')), /Staged Unreal packed image changed/)
 })

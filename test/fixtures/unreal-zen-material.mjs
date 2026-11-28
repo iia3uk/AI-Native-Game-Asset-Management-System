@@ -1,12 +1,16 @@
 import { long, words, zenName, zenPackage } from './unreal-zen-package.mjs'
 import { zenStaticMeshPackage } from './unreal-zen-static-mesh.mjs'
 import { zenTexturePackage } from './unreal-zen-texture.mjs'
+import { cookedPbrMask, cookedPbrNormalBlock } from './unreal-cooked-pbr.mjs'
 
 const root = '/Game/Verification/'
 const paint = root + 'MI_Paint'
 const base = root + 'M_Base'
 const color = root + 'T_Color'
-const hashes = { paint: 0x3c9bf12b64a51991n, base: 0x9f8ad2b389cca851n, color: 0xff1799b118bf3a68n }
+const mask = root + 'T_Data'
+const normal = root + 'T_Bump'
+const hashes = { paint: 0x3c9bf12b64a51991n, base: 0x9f8ad2b389cca851n, color: 0xff1799b118bf3a68n,
+  mask: 0xa6622190055ae824n, normal: 0x39ab72ab15fa4a1en }
 const digests = {
   ue53: ['65b2a71a67c28247857c2bcb37de64cdead909dc', 'd377b0731d0c0b031e14e0f0e6c8f42acbb2e400',
     '08c14ec7889dfffcd687230111a6912527299b8f'],
@@ -20,7 +24,7 @@ const floats = (...values) => {
   return bytes
 }
 
-function materialPackage(ue54, { instance, wrongHash = false }) {
+function materialPackage(ue54, { instance, wrongHash = false, pbr = false }) {
   const label = instance ? 'MI_Paint' : 'M_Base'
   const names = [root + label, label, 'None']
   const name = value => {
@@ -54,38 +58,52 @@ function materialPackage(ue54, { instance, wrongHash = false }) {
     return Buffer.concat([tag('ParameterInfo', 'StructProperty', info, 'MaterialParameterInfo'),
       tag('ParameterValue', kind, value, kind === 'StructProperty' ? 'LinearColor' : undefined), none])
   }
+  const maps = [['BaseColor', color, hashes.color]]
+  if (pbr) maps.push(['MRA', mask, hashes.mask], ['Normal', normal, hashes.normal])
   const properties = instance ? [
     tag('Parent', 'ObjectProperty', words(0xfffffffe)),
-    array('TextureParameterValues', 'TextureParameterValue', parameter('BaseColor', 'ObjectProperty', words(0xfffffffd))),
+    array('TextureParameterValues', 'TextureParameterValue',
+      ...maps.map(([label], index) => parameter(label, 'ObjectProperty', words(0xfffffffd - index)))),
     array('ScalarParameterValues', 'ScalarParameterValue', parameter('Roughness', 'FloatProperty', floats(.375))),
     array('VectorParameterValues', 'VectorParameterValue', parameter('Tint', 'StructProperty', floats(.25, .5, .75, 1))),
-    array('TextureStreamingData', 'MaterialTextureInfo', Buffer.concat([
-      tag('TextureReference', 'SoftObjectProperty', Buffer.concat([name(color), name('T_Color'), words(0)])),
+    array('TextureStreamingData', 'MaterialTextureInfo', ...maps.map(([, path]) => Buffer.concat([
+      tag('TextureReference', 'SoftObjectProperty', Buffer.concat([name(path), name(path.slice(root.length)), words(0)])),
       tag('UVChannelIndex', 'IntProperty', words(0)),
       tag('SamplingScale', 'FloatProperty', floats(1)),
       none,
-    ])),
+    ]))),
   ] : []
   const object = Buffer.concat([...(ue54 ? [Buffer.alloc(1)] : []), ...properties, none, words(0)])
   return zenPackage({ ue54, names, classId: instance ? 0x7f7253ab5570e48fn : 0x7d87c25136227324n,
     bulkMap: Buffer.alloc(0), object, label, publicHash: instance ? hashes.paint : hashes.base,
-    ...(instance && { importedNames: [base, color], importedHashes: [hashes.base, wrongHash ? hashes.color + 1n : hashes.color],
-      importedObjects: [packageImport(0, 0), packageImport(1, 1)] }) })
+    ...(instance && { importedNames: [base, ...maps.map(([, path]) => path)],
+      importedHashes: [hashes.base, ...maps.map(([, , hash], index) => wrongHash && index === 0 ? hash + 1n : hash)],
+      importedObjects: Array.from({ length: maps.length + 1 }, (_, index) => packageImport(index, index)) }) })
 }
 
 export function zenMaterialFixture(mode) {
   const ue54 = mode !== 'ue53'
+  const pbr = mode === 'pbr'
   const mesh = zenStaticMeshPackage(ue54 ? 'ue54' : 'ue53', { publicHash: 0x9d6134c281fc1612n,
     material: paint, materialHash: hashes.paint })
   const { asset: texture } = zenTexturePackage({ mode: 'inline', packageName: color, label: 'T_Color', publicHash: hashes.color })
+  const packed = pbr && zenTexturePackage({ mode: 'inline', packageName: mask, label: 'T_Data', publicHash: hashes.mask,
+    format: 'PF_R8G8B8A8', width: 1, height: 1, pixels: cookedPbrMask, srgb: false })
+  const bump = pbr && zenTexturePackage({ mode: 'inline', packageName: normal, label: 'T_Bump', publicHash: hashes.normal,
+    format: 'PF_BC5', width: 2, height: 1, pixels: cookedPbrNormalBlock, normalMap: true })
   const [meshHash, paintHash, baseHash] = digests[ue54 ? 'ue54' : 'ue53']
   return {
     primary: { ...mesh, digests: [meshHash, 'eddf47f7559b099b3035392037c831beacb709fb'] },
     packages: [
-      { name: 'MI_Paint.uasset', content: materialPackage(ue54, { instance: true, wrongHash: mode === 'wrongHash' }),
-        id: 0xc083b2f142fbe2fcn, digest: mode === 'wrongHash' ? 'dd7e00fa33f8097eefdf83e07da60c218eeda50c' : paintHash },
+      { name: 'MI_Paint.uasset', content: materialPackage(ue54, { instance: true, wrongHash: mode === 'wrongHash', pbr }),
+        id: 0xc083b2f142fbe2fcn, digest: pbr ? '9d3a32212e7f52d0b02808ccbc409a42a6055b56' :
+          mode === 'wrongHash' ? 'dd7e00fa33f8097eefdf83e07da60c218eeda50c' : paintHash },
       { name: 'M_Base.uasset', content: materialPackage(ue54, { instance: false }), id: 0xb7bc04da19b4d049n, digest: baseHash },
       { name: 'T_Color.uasset', content: texture, id: 0x6d951ffb52ce0566n, digest: 'bd567feeab5ea5086a0d05db85ede261fd60f06d' },
+      ...(pbr ? [
+        { name: 'T_Data.uasset', content: packed.asset, id: 0x8d70fb3f99e08af6n, digest: 'e180500d0929befe275c9d4faca292e91fdf6df6' },
+        { name: 'T_Bump.uasset', content: bump.asset, id: 0x435890b155738f8dn, digest: '7773b10b2bc73967f27cab5456ea1ecf0dbf1116' },
+      ] : []),
     ],
   }
 }

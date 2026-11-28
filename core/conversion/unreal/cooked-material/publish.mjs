@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import { describeUnrealMaterial } from '../../../materials/unreal/describe.mjs'
 import { sourceMaterialParameters } from '../../../materials/unreal/source-parameters.mjs'
+import { createMaterialPreviews } from './texture-previews.mjs'
 
 export const cookedMaterialRevision = 1
 export const cookedMaterialMethod = 'unreal-cooked-material-properties'
@@ -29,6 +30,7 @@ function materialLinks(asset, description, resolve) {
 export async function publishCookedMaterials(assets, { results, incomplete, method = cookedMaterialMethod,
   version = cookedMaterialRevision }, workspace, store, resolveAsset, signal) {
   const dependencies = []
+  const previews = createMaterialPreviews({ workspace, store, signal })
   const materials = { converted: 0, skipped: 0, failed: 0,
     ...(incomplete && { issue: 'unreal-cooked-material-budget' }) }
   const sidecars = new Map(assets.filter(asset => asset.format === 'uexp' && asset.artifact?.path)
@@ -46,15 +48,19 @@ export async function publishCookedMaterials(assets, { results, incomplete, meth
     const companion = result.split ? sidecars.get(asset.path.normalize('NFC').toLowerCase().slice(0, -7) + '.uexp') : null
     const issue = result.issue ?? (result.split && !companion ? 'unreal-cooked-material-export-missing' : null)
     const exported = issue ? { ...details, status: 'skipped', issue } :
-      await publishDescription(asset, companion, parsed, resolveAsset, dependencies, workspace, store, details, signal)
+      await publishDescription(asset, companion, parsed, resolveAsset, dependencies, workspace, store, details, previews, signal)
     asset.exports ??= []
     asset.exports.push(exported)
     materials[exported.status]++
+    if (exported.path && exported.normalMap) materials.normalMaterials = (materials.normalMaterials ?? 0) + 1
+    if (exported.path && exported.packedMap) materials.packedMaterials = (materials.packedMaterials ?? 0) + 1
   }
+  for (const [key, value] of Object.entries(previews.counts)) if (value) materials[key] = value
+  if (previews.failure) materials.issue ??= previews.failure
   return { materials, dependencies }
 }
 
-async function publishDescription(asset, companion, parsed, resolveAsset, dependencies, workspace, store, details, signal) {
+async function publishDescription(asset, companion, parsed, resolveAsset, dependencies, workspace, store, details, previews, signal) {
   const source = parsed.get(asset.id)
   const resolve = reference => resolveAsset(asset.path, reference)
   const resolveMaterial = reference => {
@@ -81,6 +87,7 @@ async function publishDescription(asset, companion, parsed, resolveAsset, depend
   Object.assign(description, { materialClass: source.type, parentStatus, parameters: { textures, scalars, vectors },
     effectiveParameters, textureStreaming: source.streaming, ...(surface && { surface }) })
   description.limitations.push('unreal-cooked-material-shader-data')
+  const maps = await previews.prepare(description, resolve)
   const content = JSON.stringify(description, null, 2) + '\n'
   const size = Buffer.byteLength(content)
   const error = await store.preflight(size)
@@ -89,7 +96,7 @@ async function publishDescription(asset, companion, parsed, resolveAsset, depend
   await writeFile(path, content, { signal, flag: 'wx' })
   const name = posix.basename(asset.path).slice(0, -7) + '.material.json'
   const artifact = await store.save('Materials/' + asset.id + '/' + name, { path, info: { size } },
-    { ...details, status: 'converted', issues: description.limitations })
+    { ...details, ...maps, status: 'converted', issues: description.limitations })
   if (artifact.path) dependencies.push(...materialLinks(asset, description, resolve))
   return artifact
 }

@@ -22,7 +22,7 @@ export function assertZenPng(png, srgb) {
 }
 
 export function zenTexturePackage({ mode, packageName = zenFixtureName, label = 'Sample', publicHash,
-  format = 'PF_B8G8R8A8', width = 2, height = 2, pixels = bgraPixels(), normalMap = false }) {
+  format = 'PF_B8G8R8A8', width = 2, height = 2, pixels = bgraPixels(), normalMap = false, srgb }) {
   const external = mode !== 'inline'
   const normalNames = ['CompressionSettings', 'ByteProperty', 'TextureCompressionSettings', 'TC_Normalmap']
   const names = [packageName, label, 'None', format, 'SRGB', 'BoolProperty', ...(normalMap ? normalNames : [])]
@@ -35,6 +35,9 @@ export function zenTexturePackage({ mode, packageName = zenFixtureName, label = 
   const platform = Buffer.concat([Buffer.alloc(16), words(width, height, 1, formatString.length), formatString, words(0, 1),
     mip, words(width, height, 1, 0)])
   const properties = external ? [Buffer.from([0]), name('SRGB'), name('BoolProperty'), words(0, 0), Buffer.from([0])] : []
+  if (!external && typeof srgb === 'boolean') {
+    properties.push(name('SRGB'), name('BoolProperty'), words(0, 0), Buffer.from([Number(srgb), 0]))
+  }
   if (normalMap) {
     const type = external ? [name(normalNames[1]), words(1), name(normalNames[2]), words(0, 8)] :
       [name(normalNames[1]), words(8, 0), name(normalNames[2])]

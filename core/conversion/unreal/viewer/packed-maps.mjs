@@ -1,9 +1,10 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileInfo } from '../../../files/asset-files.mjs'
 import { encodePngScanlines } from '../../../files/png.mjs'
 import { readPngRgb } from '../../../files/png-rgb.mjs'
 import { embeddedPng } from '../../../files/png-structure.mjs'
+import { readVerifiedFile } from '../../../files/read-verified.mjs'
 import { choosePackedMap, ormChannels, ormSources } from '../../../materials/unreal/packed-layout.mjs'
 
 const maxInput = 64 * 1024 ** 2
@@ -24,28 +25,33 @@ function ormPng(image, order, signal) {
       to += 3
     }
   }
-  return encodePngScanlines(width, height, scanlines)
+  return encodePngScanlines(width, height, scanlines, { linear: true })
 }
 
-export async function publishPackedMap(description, { cache, resolve, store, workspace, version, signal, counts }) {
+export async function publishPackedMap(description, { cache, resolve, store, workspace, version, signal, counts, sourceIssue,
+  method = 'unreal-packed-texture' }) {
   const selected = choosePackedMap(description.bindings)
   if (!selected) return null
   if (!selected.binding) return { status: 'unresolved', issue: selected.issue }
   const { layout, sourcePath, path, textureId } = selected.binding
   const source = { sourcePath, sourceLayout: layout, sourceImage: path }
-  const key = textureId + ':' + layout
-  if (cache.has(key)) return cache.get(key)
-
+  const texture = resolve(sourcePath)
+  const original = texture?.exports?.find(item => item.path === path && item.role === 'texture' && item.format === 'png')
   const failed = issue => ({ ...source, status: 'unresolved', issue })
+  if (!original) return failed('unreal-packed-material-missing')
+  const issue = sourceIssue?.(original)
+  if (issue) return failed(issue)
   const ready = path => ({ ...source, status: 'resolved', path, layout: 'ORM', channels: ormChannels, colorSpace: 'linear' })
-  const result = await prepare()
-  cache.set(key, result)
-  return result
+  const key = textureId + ':' + layout
+  if (!cache.has(key)) cache.set(key, await prepare())
+  return { ...cache.get(key), sourcePath }
 
   async function prepare() {
     const file = await fileInfo(store.root, path)
     if (!file || file.info.size > maxInput) return failed('unreal-packed-material-image-unsupported')
-    const bytes = await readFile(file.path, { signal })
+    const changed = () => new Error('Staged Unreal packed image changed during conversion')
+    const { prefix: bytes, hash } = await readVerifiedFile(store.root, file, { capture: file.info.size, changed, signal })
+    if (file.info.size !== original.size || hash !== original.sha256) throw changed()
     if (layout === 'ORM') {
       if (![2, 6].includes(bytes[25]) || embeddedPng(bytes, 0)?.end !== bytes.length) {
         return failed('unreal-packed-material-image-unsupported')
@@ -61,13 +67,12 @@ export async function publishPackedMap(description, { cache, resolve, store, wor
     await writeFile(scratch, data, { flag: 'wx', signal })
     const target = 'Textures/' + textureId + '/orm-from-' + layout.toLowerCase() + '.png'
     const artifact = await store.save(target, { path: scratch, info: { size: data.length } }, {
-      status: 'converted', method: 'unreal-packed-texture', converterVersion: version, format: 'png',
+      status: 'converted', method, converterVersion: version, format: 'png',
       role: 'preview-texture', width: image.width, height: image.height, from: path, sourceLayout: layout,
       layout: 'ORM', colorSpace: 'linear', channels: ormChannels,
     })
-    const texture = resolve(sourcePath)
-    texture.exports.push(artifact)
     if (!artifact.path) return failed(artifact.issue)
+    texture.exports.push(artifact)
     counts.repackedMaps++
     return ready(artifact.path)
   }

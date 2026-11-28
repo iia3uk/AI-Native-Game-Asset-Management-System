@@ -100,6 +100,8 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'core/engines/unreal/decoder/mesh-protocol.mjs',
     'core/engines/unreal/decoder/iostore-collision-protocol.mjs',
     'core/conversion/unreal/cooked-material/read.mjs',
+    'core/conversion/unreal/cooked-material/texture-previews.mjs',
+    'core/conversion/unreal/cooked-material/normal-map.mjs',
     'core/packages/unreal/loose/source.mjs',
     'core/packages/unreal/loose/inspect.mjs',
     'core/packages/unreal/loose/import.mjs',

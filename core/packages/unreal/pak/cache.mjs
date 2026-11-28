@@ -3,7 +3,9 @@ import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { collisionTotalsMatch } from '../../../conversion/unreal/collision/cache.mjs'
 import { cookedAudioMethod } from '../../../conversion/unreal/container-audio.mjs'
-import { cookedMaterialRevision } from '../../../conversion/unreal/cooked-material/publish.mjs'
+import { cookedMaterialPreviewsMatch, isCookedPreviewMethod } from '../../../conversion/unreal/cooked-material/cache.mjs'
+import { cookedMaterialMethod, cookedMaterialRevision } from '../../../conversion/unreal/cooked-material/publish.mjs'
+import { cookedMaterialPreviewRevision } from '../../../conversion/unreal/cooked-material/texture-previews.mjs'
 import { meshTotalsMatch, validModelStatus } from '../../../conversion/unreal/cooked-mesh/cache.mjs'
 import { skeletonRoles, skeletonTotalsMatch } from '../../../conversion/unreal/skeleton/cache.mjs'
 import { exportRecipe, verifyExports } from '../../../conversion/cache.mjs'
@@ -18,10 +20,10 @@ import { IndexInputError } from '../../../index/index-errors.mjs'
 
 export const pakRecipe = (formats, blender) => exportRecipe(formats, blender,
   [2, cue4parseVersion, pakTextureRevision, cookedMaterialRevision, looseMeshRevision, cookedAudioRevision,
-    cookedCollisionRevision, ue4SkeletonRevision])
+    cookedCollisionRevision, ue4SkeletonRevision, cookedMaterialPreviewRevision])
 export const pakMethod = 'cue4parse-pak'
 const roles = new Set(['texture', 'material', 'model', 'skeletal-model', 'model-buffer', 'audio', 'collision-shapes',
-  'collision-preview', ...skeletonRoles])
+  'collision-preview', 'preview-texture', ...skeletonRoles])
 
 export async function readPakCache(root, hash, recipe, sourceName, signal) {
   const output = join(root, hash + '-' + recipe)
@@ -56,11 +58,13 @@ export async function readPakCache(root, hash, recipe, sourceName, signal) {
         (extracted.some(entry => entry.format === 'uasset') &&
           (report.textureDecoder !== pakTextureRevision || report.audioDecoder !== cookedAudioRevision)) ||
         !totalsMatch('texture', report.textures) || !totalsMatch('material', report.materials) || !totalsMatch('audio', report.audio) ||
+        !cookedMaterialPreviewsMatch(extracted, report.materials, cookedMaterialMethod) ||
         !meshTotalsMatch(extracted, derivatives, report.meshes) ||
         !collisionTotalsMatch(extracted, report.meshes?.collision) ||
         !skeletonTotalsMatch(extracted, report.unrealSkeletons, JSON.parse(dependencies).entries) ||
         derivatives.some(file => !roles.has(file.role) ||
           !validModelStatus(file) ||
+          (file.role === 'preview-texture' && !isCookedPreviewMethod(file.method)) ||
           (file.role === 'audio' && (file.method !== cookedAudioMethod ||
             file.status === 'converted' && !['wav', 'ogg'].includes(file.format))) ||
           (file.status === 'converted' && !file.path)) ||

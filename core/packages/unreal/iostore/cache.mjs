@@ -4,7 +4,9 @@ import { exportRecipe, verifyExports } from '../../../conversion/cache.mjs'
 import { collisionTotalsMatch } from '../../../conversion/unreal/collision/cache.mjs'
 import { zenCollisionMethod } from '../../../conversion/unreal/collision/iostore.mjs'
 import { zenAudioMethod } from '../../../conversion/unreal/container-audio.mjs'
+import { cookedMaterialPreviewsMatch, isCookedPreviewMethod } from '../../../conversion/unreal/cooked-material/cache.mjs'
 import { zenMaterialMethod } from '../../../conversion/unreal/cooked-material/iostore.mjs'
+import { cookedMaterialPreviewRevision } from '../../../conversion/unreal/cooked-material/texture-previews.mjs'
 import { meshTotalsMatch, validModelStatus } from '../../../conversion/unreal/cooked-mesh/cache.mjs'
 import { ioStoreMethod, zenTextureMethod } from '../../../conversion/unreal/iostore.mjs'
 import { ioStoreCollisionRevision } from '../../../engines/unreal/decoder/iostore-collision-protocol.mjs'
@@ -19,7 +21,7 @@ import { ioStoreFingerprint } from './source.mjs'
 
 export const ioStoreRecipe = (formats, blender) => exportRecipe(formats, blender,
   [ioStoreMethod, cue4parseVersion, ioStoreTextureRevision, ioStoreAudioRevision, ioStoreMeshRevision,
-    ioStoreMaterialRevision, ioStoreCollisionRevision])
+    ioStoreMaterialRevision, ioStoreCollisionRevision, cookedMaterialPreviewRevision])
 export const ioStoreFormat = 'unreal-iostore'
 
 export async function readIoStoreCache(root, hash, recipe, sourceName, signal) {
@@ -49,12 +51,14 @@ export async function readIoStoreCache(root, hash, recipe, sourceName, signal) {
         entries.some(entry => !['extracted', 'skipped'].includes(entry.status)) ||
         extracted.some(entry => !entry.artifact?.path || entry.artifact.status !== 'extracted') ||
         derivatives.some(product => !['texture', 'audio', 'model', 'model-buffer', 'material',
-          'collision-shapes', 'collision-preview'].includes(product.role) ||
+          'collision-shapes', 'collision-preview', 'preview-texture'].includes(product.role) ||
+          (product.role === 'preview-texture' && !isCookedPreviewMethod(product.method)) ||
           !validModelStatus(product) || (product.status === 'converted' && !product.path)) ||
         !validDerivatives(derivatives, 'texture', ['png'], zenTextureMethod, report.textures) ||
         !validDerivatives(derivatives, 'audio', ['wav', 'ogg'], zenAudioMethod, report.audio) ||
         !validDerivatives(derivatives, 'material', ['json'], zenMaterialMethod,
           report.materials ?? { converted: 0, skipped: 0, failed: 0 }) ||
+        !cookedMaterialPreviewsMatch(extracted, report.materials, zenMaterialMethod) ||
         !meshTotalsMatch(extracted, derivatives, report.meshes) ||
         !collisionTotalsMatch(extracted, report.meshes?.collision, { method: zenCollisionMethod, revision: ioStoreCollisionRevision }) ||
         !validMissingLods(extracted, report.meshes) ||

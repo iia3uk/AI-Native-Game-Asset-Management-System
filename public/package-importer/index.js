@@ -1,7 +1,8 @@
 import { mountEngineStatus } from './engine-status.js'
 import { mountPackageFolder } from './folder.js'
 import { formatLabel, isUnityBinary, isUnityFolder, isUnrealArchive, isUnrealLoose } from './formats.js'
-import { appendManifest, assetLabel, cookedMeshSummary, describeIssue, skeletonSummary, soundWaveSummary } from './report.js'
+import { appendManifest, assetLabel, cookedMaterialMapLabels, cookedMeshSummary, describeIssue, skeletonSummary,
+  soundWaveSummary } from './report.js'
 import { mountImportOptions } from './import-options.js'
 import { mountPackageExport } from './export.js'
 import { requestPackageCleanup } from './cleanup.js'
@@ -180,6 +181,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
           details.append(element('p', ['Cooked UE4.27',
             textures.converted && 'Текстуры · ' + textures.converted + ' PNG',
             materials.converted && 'Описания материалов · ' + materials.converted,
+            ...cookedMaterialMapLabels(materials),
             (textures.skipped + materials.skipped) || (textures.failed + materials.failed) ?
               'Пропущено ' + (textures.skipped + materials.skipped) + ', ошибок ' + (textures.failed + materials.failed) : '',
             textures.issue && describeIssue(textures.issue),
@@ -194,6 +196,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
         if (textures?.converted) details.append(element('p', 'Текстур из cooked-ресурсов · ' + textures.converted + ' PNG'))
         if (materials) {
           details.append(element('p', ['Материалы из cooked-ресурсов', materials.converted && 'Готово ' + materials.converted,
+            ...cookedMaterialMapLabels(materials),
             materials.skipped && 'Пропущено ' + materials.skipped, materials.failed && 'Ошибок ' + materials.failed,
             materials.issue && describeIssue(materials.issue)].filter(Boolean).join(' · ')))
         }
@@ -213,7 +216,9 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
         }
         if (materials) {
           details.append(element('p', ['Материалы из Zen-пакетов', materials.converted && 'Готово ' + materials.converted,
-            materials.skipped && 'Пропущено ' + materials.skipped, materials.failed && 'Ошибок ' + materials.failed].filter(Boolean).join(' · ')))
+            ...cookedMaterialMapLabels(materials),
+            materials.skipped && 'Пропущено ' + materials.skipped, materials.failed && 'Ошибок ' + materials.failed,
+            materials.issue && describeIssue(materials.issue)].filter(Boolean).join(' · ')))
         }
         if (meshes) details.append(element('p', cookedMeshSummary(meshes, 'UE 5.3–5.4')))
       }

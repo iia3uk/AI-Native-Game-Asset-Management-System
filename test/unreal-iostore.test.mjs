@@ -10,6 +10,7 @@ import { scanPackageFolder } from '../core/packages/folder.mjs'
 import { ioStoreResult } from '../core/engines/unreal/decoder/protocol.mjs'
 import { locateUnrealDecoder, runUnrealDecoder } from '../core/engines/unreal/decoder/run.mjs'
 import { processIoStore } from '../core/packages/unreal/iostore/import.mjs'
+import { readPngRgb } from '../core/files/png-rgb.mjs'
 import { readFbxGeometry } from './fixtures/blender-model.mjs'
 import { makeIoStore, writeIoStoreFixture } from './fixtures/unreal-iostore.mjs'
 import { zenCollisionFixture } from './fixtures/unreal-zen-collision.mjs'
@@ -386,9 +387,9 @@ test('IoStore Zen material parameters and verified dependencies reach GLBs and s
   await mkdir(destination)
   const server = await startServer(root)
   try {
-    for (const mode of ['ue53', 'ue54', 'wrongHash']) {
+    for (const mode of ['ue53', 'ue54', 'wrongHash', 'pbr']) {
       const fixture = await writeIoStoreFixture(root, mode, zenMaterialFixture(mode))
-      const withFbx = mode === 'ue54' && process.env.ASSET_VIEWER_TEST_NATIVE_BLENDER === '1'
+      const withFbx = ['ue54', 'pbr'].includes(mode) && process.env.ASSET_VIEWER_TEST_NATIVE_BLENDER === '1'
       const { package: { hash } } = await (await server.post('/api/index/packages/inspect', { path: fixture.path })).json()
       const queue = async () => {
         const response = await server.post('/api/index/packages/import', {
@@ -402,7 +403,8 @@ test('IoStore Zen material parameters and verified dependencies reach GLBs and s
       assert.equal(job.status, 'completed', job.error)
       const { directory, report } = job.result
       const readJson = async path => JSON.parse(await readFile(join(directory, path), 'utf8'))
-      assert.deepEqual(report.materials, { converted: 2, skipped: 0, failed: 0 })
+      const pbrCounts = mode === 'pbr' ? { normalMaterials: 1, packedMaterials: 1, normalDerivatives: 1, repackedMaps: 1 } : {}
+      assert.deepEqual(report.materials, { converted: 2, skipped: 0, failed: 0, ...pbrCounts })
       const { entries } = await readJson('manifest.json')
       const mesh = entries.find(row => row.path.endsWith('/Sample.uasset'))
       const bulk = entries.find(row => row.path.endsWith('/Sample.ubulk'))
@@ -423,7 +425,8 @@ test('IoStore Zen material parameters and verified dependencies reach GLBs and s
       const packedModel = mesh.exports.find(product => product.format === 'glb' && product.lod === 0)
       const packedBytes = await readFile(join(directory, packedModel.path))
       const model = JSON.parse(packedBytes.toString('utf8', 20, 20 + packedBytes.readUInt32LE(12)))
-      const paint = model.materials.find(row => row.name === 'Paint').pbrMetallicRoughness
+      const painted = model.materials.find(row => row.name === 'Paint')
+      const paint = painted.pbrMetallicRoughness
       if (mode === 'wrongHash') {
         assert.equal(description.parameters.textures[0].status, 'missing')
         assert.equal(paint.baseColorTexture, undefined)
@@ -435,16 +438,34 @@ test('IoStore Zen material parameters and verified dependencies reach GLBs and s
       assert.equal(description.bindings[0].path, derivative(texture).path)
       assert.equal(description.bindings[0].corroborated, true)
       assert.equal(paint.baseColorTexture.index, 0)
-      assert.equal(paint.roughnessFactor, .375)
+      assert.equal(paint.roughnessFactor, mode === 'pbr' ? 1 : .375)
       assert.equal(model.images[0].mimeType, 'image/png')
       assert.equal(model.materials.find(row => row.name === 'Trim').pbrMetallicRoughness.baseColorTexture, undefined)
+      const maps = []
+      if (mode === 'pbr') {
+        assert.deepEqual(painted.occlusionTexture, paint.metallicRoughnessTexture)
+        const image = texture => {
+          const index = model.images[model.textures[texture.index].source].bufferView
+          const { byteOffset, byteLength } = model.bufferViews[index]
+          const offset = 28 + packedBytes.readUInt32LE(12) + byteOffset
+          return packedBytes.subarray(offset, offset + byteLength)
+        }
+        const bound = [[description.normalMap, painted.normalTexture], [description.packedMap, painted.occlusionTexture]]
+        for (const [map, texture] of bound) {
+          assert.deepEqual(image(texture), await readFile(join(directory, map.path)))
+          const source = entries.find(entry => entry.exports?.some(item => item.path === map.path))
+          maps.push(source.artifact, ...source.exports)
+        }
+        assert.deepEqual([...readPngRgb(image(painted.normalTexture)).rows.subarray(1, 3)], [100, 75])
+        assert.deepEqual([...readPngRgb(image(painted.occlusionTexture)).rows], [0, 150, 72, 10])
+      }
       if (withFbx) {
         const fbx = mesh.exports.filter(row => row.format === 'fbx' && row.path)
         assert.ok(fbx.every(row => row.from.endsWith('-materials.gltf')))
         assert.deepEqual(await readFbxGeometry(fbx.map(row => join(directory, row.path))), [[2, 2, 1, 2], [1, 2, 1, 1]])
       }
       assert.equal((await queue()).result.reused, true)
-      if (mode !== 'ue54') continue
+      if (!['ue54', 'pbr'].includes(mode)) continue
       const route = '/api/index/jobs/' + job.id
       const asset = entries.indexOf(mesh)
       const plan = await (await server.post(route + '/export-plan', { destination, asset })).json()
@@ -452,7 +473,7 @@ test('IoStore Zen material parameters and verified dependencies reach GLBs and s
       const body = await publication.json()
       assert.equal(publication.status, 201, JSON.stringify(body))
       for (const product of [packedModel, derivative(material), derivative(parent), derivative(texture),
-        material.artifact, parent.artifact, texture.artifact, bulk.artifact]) {
+        material.artifact, parent.artifact, texture.artifact, bulk.artifact, ...maps]) {
         assert.deepEqual(await readFile(join(body.directory, product.path)), await readFile(join(directory, product.path)))
       }
       await writeFile(join(directory, 'dependencies.json'), JSON.stringify({ ...graph, entries: [] }))

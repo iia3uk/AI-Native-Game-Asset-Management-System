@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { fileInfo } from '../../../files/asset-files.mjs'
 import { readVerifiedFile } from '../../../files/read-verified.mjs'
 import { readPngRgb } from '../../../files/png-rgb.mjs'
-import { encodePngScanlines } from '../../../files/png.mjs'
+import { invertNormalGreen } from '../viewer/normal-pixels.mjs'
 
 const maxInput = 64 * 1024 ** 2
 
@@ -28,15 +28,10 @@ export async function publishSourceNormal(normal, { store, resolve, workspace, c
     if (hash !== original.sha256) throw changed()
     const image = readPngRgb(prefix, signal)
     if (!image) return null
-    const { width, height, channels, rows, rowBytes } = image
+    const { width, height } = image
     if (normalSettings.flipGreenOnImport) return { path: original.path, greenInverted: false }
     // The import flag and the Unreal-to-glTF convention change each invert green once.
-    for (let y = 0; y < height; y++) {
-      signal?.throwIfAborted()
-      const start = y * rowBytes
-      for (let pixel = start + 2; pixel < start + rowBytes; pixel += channels) rows[pixel] = 255 - rows[pixel]
-    }
-    const png = encodePngScanlines(width, height, rows, { alpha: channels === 4 })
+    const png = invertNormalGreen(image, signal)
     const issue = await store.preflight(png.length)
     if (issue) return null
     const temporary = join(workspace, texture.id + '-normal.png')

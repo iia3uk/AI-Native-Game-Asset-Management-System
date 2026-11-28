@@ -5,6 +5,7 @@ const signals = Object.freeze({
   basecolor: ['baseColor', 'sRGB', 'Diffuse'],
   albedo: ['baseColor', 'sRGB', 'Diffuse'],
   normal: ['normal', 'linear', 'Normal'],
+  normalmap: ['normal', 'linear', 'Normal'],
   roughness: ['roughness', 'linear'],
   metallic: ['metallic', 'linear'],
   metalness: ['metallic', 'linear'],
