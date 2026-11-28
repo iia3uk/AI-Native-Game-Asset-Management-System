@@ -265,7 +265,7 @@ test('Schema 11 migration keeps every previous format and its automatic job hist
     assert.deepEqual(jobs.map(job => index.jobs.get(job.id)), jobs)
     assert.deepEqual(jobs.map(job => index.jobs.watchedImportSource(job.id)), sources)
     assert.equal(index.jobs.refillWatchedImports([]), 0)
-    assert.equal(index.integrity().schemaVersion, 13)
+    assert.equal(index.integrity().schemaVersion, 14)
   } finally {
     await index.close()
   }

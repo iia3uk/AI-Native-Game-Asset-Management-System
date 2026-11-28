@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { once } from 'node:events'
 import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, sep } from 'node:path'
@@ -124,6 +125,16 @@ export async function verifyPackageCleanup(webContents, waitFor) {
     assert.deepEqual(await readdir(exportRoot), [])
     assert.equal(prompts.length, 2)
     assert.deepEqual(await readFile(third), input)
+    const reloaded = once(webContents, 'did-finish-load')
+    webContents.reload()
+    await reloaded
+    await webContents.executeJavaScript(`{
+      document.querySelector('#index-mode').click()
+      document.querySelector('#package-importer').open = true
+    }`)
+    await waitFor("document.querySelector('#package-cleanup-status').textContent.includes('Обработка папки на паузе')")
+    assert.equal(await webContents.executeJavaScript("document.querySelector('#package-process-destination').value"), exportRoot)
+    await waitFor("Array.from(document.querySelectorAll('#package-jobs button')).some(button => button.textContent === 'Продолжить')")
     await webContents.executeJavaScript(`{
       const row = Array.from(document.querySelectorAll('#package-jobs > li')).find(node => node.textContent.includes('Unreal Cleanup Three'))
       Array.from(row.querySelectorAll('button')).find(button => button.textContent === 'Продолжить').click()

@@ -326,7 +326,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
       } catch (error) { showError(error) }
     })
   }
-  mountFolderProcessing({ get: $, bridge, json, post, enqueue: queuePlan, refresh,
+  mountFolderProcessing({ get: $, bridge, json, post, importOptions, refresh,
     async runLocked(action) {
       if (busy) return
       busy = true

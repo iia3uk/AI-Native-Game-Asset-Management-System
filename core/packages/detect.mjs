@@ -8,12 +8,13 @@ import { unrealLooseSource } from './unreal/loose/source.mjs'
 
 export const unityFsMagic = Buffer.from('UnityFS\0')
 
-export async function detectPackage(source, { signal } = {}) {
+export async function detectPackage(source, { signal, allowUnknownDirectory = false } = {}) {
   signal?.throwIfAborted()
   const format = source.directory ? await unityFolderFormat(source.root) : await probePackageFormat(source, { signal })
   if (format) return format
   const loose = await unrealLooseSource(source, signal)
   if (loose) return loose.format
+  if (source.directory && allowUnknownDirectory) return null
   if (source.directory) throw new IndexInputError('Выберите проект Unity, папку UPM, проект Unreal или папку Unreal Content.')
   throw new IndexInputError('Ожидается Unity Package, UnityFS, бинарный файл Unity или Unreal Pak, .uasset, .umap либо .uproject.')
 }

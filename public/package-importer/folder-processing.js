@@ -1,74 +1,22 @@
-import { requestPackageCleanup } from './cleanup.js'
+import { cleanupMessage } from './cleanup.js'
 
-const jobs = '/api/index/jobs/'
-const packages = '/api/index/packages/'
+const route = '/api/index/folder-run'
 
-async function waitForJob(id, json, onStatus) {
-  let previous
-  for (;;) {
-    const { job } = await json(jobs + id)
-    if (!['pending', 'running', 'paused'].includes(job.status)) return job
-    const status = job.pauseRequested && job.status === 'running' ? 'pausing' : job.status
-    if (status !== previous) onStatus?.(status)
-    previous = status
-    await new Promise(resolve => setTimeout(resolve, 1000))
-  }
+function statusMessage(run) {
+  if (run.phase === 'cancelled') return 'Обработка папки отменена. Исходники оставлены.'
+  if (run.phase === 'failed') return run.error
+  if (run.phase === 'done') return cleanupMessage(run.cleanup)
+  if (run.phase === 'cleanup') return 'Проверка исходников и результатов импорта…'
+  if (run.phase === 'reviewing') return 'Очистка была прервана. Проверьте оставшиеся исходники.'
+  if (run.step === 'discover') return 'Анализ выбранной папки…'
+  const action = run.status === 'pausing' ? 'Приостановка обработки папки' :
+    run.status === 'paused' ? 'Обработка папки на паузе' :
+      run.step === 'export' ? 'Экспорт результата' : run.step === 'scan' ? 'Индексация результата' : 'Обработка папки'
+  return action + ' · ' + (run.position + 1) + ' из ' + run.total
 }
 
-async function runFolder({ path, destination, json, post, enqueue, refresh, setStatus, showExport }) {
-  const inspect = target => json(packages + 'inspect', post(target)).then(response => response.package)
-  const target = { path }
-  let direct
-  try {
-    direct = await inspect(target)
-  } catch (error) {
-    if (!error.message.startsWith('Выберите проект Unity, папку UPM')) throw error
-  }
-  const report = direct ? null : await json(packages + 'folder', post(target))
-  if (report?.truncated) throw new Error('Папка превышает лимит поиска. Выберите вложенную папку.')
-  const targets = direct ? [target] : report.packages.map(({ path }) => ({ root: report.root, path }))
-  if (!targets.length) throw new Error('В папке нет поддерживаемых пакетов Unity или Unreal.')
-  const completed = []
-  const failures = []
-  try {
-    for (const [index, target] of targets.entries()) {
-      const counter = ' · ' + (index + 1) + ' из ' + targets.length
-      setStatus('Обработка папки' + counter)
-      try {
-        const plan = direct ?? await inspect(target)
-        const { job: queued } = await enqueue(target, plan)
-        await refresh()
-        const job = await waitForJob(queued.id, json, status => {
-          const message = status === 'pausing' ? 'Приостановка обработки папки' :
-            status === 'paused' ? 'Обработка папки на паузе' : 'Обработка папки'
-          setStatus(message + counter)
-        })
-        if (job.status === 'cancelled') return { completed: [], failures, cancelled: true }
-        if (job.status !== 'completed') throw new Error(job.error || 'Импорт не завершён.')
-        const scan = job.result?.scanJobId && await waitForJob(job.result.scanJobId, json)
-        if (scan?.status === 'cancelled') return { completed: [], failures, cancelled: true }
-        if (scan?.status !== 'completed') throw new Error(scan?.error || 'Индексация не завершена.')
-        if (destination) {
-          setStatus('Экспорт результата' + counter)
-          const options = { destination, processedOnly: true }
-          const { key } = await json(jobs + job.id + '/export-plan', post(options))
-          const { directory } = await json(jobs + job.id + '/export', post({ ...options, key }))
-          showExport(directory)
-        }
-        completed.push(job.id)
-      } catch (error) {
-        if (targets.length === 1) throw error
-        failures.push({ path: target.path, message: error.message })
-      }
-    }
-    return { completed, failures }
-  } finally {
-    await refresh()
-  }
-}
-
-export function mountFolderProcessing({ get, bridge, json, post, enqueue, refresh, runLocked }) {
-  if (!bridge?.cleanupSource || !bridge.chooseFolder) return
+export function mountFolderProcessing({ get, bridge, json, post, importOptions, refresh, runLocked }) {
+  if (!bridge?.cleanupFolderRun || !bridge.chooseFolder) return
   const section = get('source-cleanup')
   const source = get('process-source')
   const destination = get('process-destination')
@@ -76,10 +24,81 @@ export function mountFolderProcessing({ get, bridge, json, post, enqueue, refres
   const destinationPick = get('process-destination-pick')
   const process = get('process-cleanup')
   const restore = get('restore-confirmation')
+  const review = get('review-folder-cleanup')
+  const leave = get('leave-folder-cleanup')
   const status = get('cleanup-status')
   const output = get('process-output')
+  const controls = [source, destination, sourcePick, destinationPick, process, restore]
   const setStatus = message => { status.textContent = message }
+  let run
+  let polling = false
+  let busy = false
+  let submitting = false
+  let submission = 0
+  let timer
+  let lastUpdate
   section.hidden = false
+
+  function display(next) {
+    const active = next && ['running', 'cleanup', 'reviewing'].includes(next.phase)
+    controls.forEach(control => { control.disabled = Boolean(active || submitting) })
+    review.hidden = leave.hidden = busy || next?.phase !== 'reviewing'
+    if (!next) return
+    if (next.id !== run?.id) {
+      source.value = next.source
+      destination.value = next.destination ?? ''
+      if (active) section.open = true
+    }
+    run = next
+    output.textContent = next.exported > 1 ? 'Экспортировано пакетов · ' + next.exported + ' · ' + next.destination :
+      next.firstExport ? 'Экспорт · ' + next.firstExport : ''
+    const message = busy ? 'Проверка исходников и результатов импорта…' : statusMessage(next)
+    setStatus(message + (next.failureCount && next.phase !== 'failed'
+      ? ' · Ошибок обработки ' + next.failureCount + ' · ' + next.firstFailure.path + ' · ' + next.firstFailure.error
+      : ''))
+    const update = [next.id, next.phase, next.position, next.step, next.status].join('/')
+    if (update !== lastUpdate) {
+      lastUpdate = update
+      void refresh()
+    }
+  }
+
+  async function cleanup(id, action) {
+    if (busy) return
+    busy = true
+    display(run)
+    try { return await bridge.cleanupFolderRun(id, action) }
+    catch (error) { setStatus(error.message) }
+    finally { busy = false }
+  }
+
+  async function poll() {
+    if (polling) return
+    clearTimeout(timer)
+    polling = true
+    try {
+      if (submitting) {
+        timer = setTimeout(poll, 1000)
+        return
+      }
+      const currentSubmission = submission
+      const { run: next } = await json(route)
+      if (submitting || currentSubmission !== submission) {
+        timer = setTimeout(poll, 1000)
+        return
+      }
+      display(next)
+      if (next?.phase === 'cleanup') {
+        const result = await cleanup(next.id, 'offer')
+        if (result?.status === 'failed') setStatus(cleanupMessage(result))
+        timer = setTimeout(poll, 300)
+      } else if (next?.phase === 'running' || busy) timer = setTimeout(poll, 1000)
+      else if (next?.phase === 'reviewing') timer = setTimeout(poll, 3000)
+    } catch (error) {
+      setStatus(error.message)
+      timer = setTimeout(poll, 3000)
+    } finally { polling = false }
+  }
 
   for (const [button, input] of [[sourcePick, source], [destinationPick, destination]]) {
     button.addEventListener('click', () => void runLocked(async () => {
@@ -92,44 +111,44 @@ export function mountFolderProcessing({ get, bridge, json, post, enqueue, refres
 
   get('process-folder-form').addEventListener('submit', event => {
     event.preventDefault()
+    if (process.disabled) return
     void runLocked(async () => {
-      const controls = [source, destination, sourcePick, destinationPick, process, restore]
+      submitting = true
+      submission++
       controls.forEach(control => { control.disabled = true })
-      setStatus('')
       output.textContent = ''
+      setStatus('Выбор папки для обработки…')
+      let started
       try {
         const path = source.value.trim() || await bridge.chooseFolder()
         if (!path) return
         source.value = path
-        const folder = destination.value.trim()
-        let exported = 0
-        const showExport = directory => {
-          exported++
-          output.textContent = exported === 1 ? 'Экспорт · ' + directory :
-            'Экспортировано пакетов · ' + exported + ' · ' + folder
-        }
-        setStatus('Анализ выбранной папки…')
-        const { completed, failures, cancelled } = await runFolder({ path, destination: folder, json, post,
-          enqueue, refresh, setStatus, showExport })
-        if (cancelled) setStatus('Обработка папки отменена. Исходники оставлены.')
-        else if (completed.length) await requestPackageCleanup(bridge, completed, status)
-        else setStatus('Нет завершённых импортов для очистки.')
-        if (failures.length) {
-          const [{ path, message }] = failures
-          status.textContent += ' · Ошибок обработки ' + failures.length + ' · ' + path + ' · ' + message
-        }
-      } catch (error) {
-        setStatus(error.message)
-      } finally {
-        controls.forEach(control => { control.disabled = false })
+        const { mode, formats, editorVersion: unityVersion } = importOptions('unitypackage')
+        const { editorVersion: unrealVersion } = importOptions('unreal-content')
+        const response = await json(route, post({ path, destination: destination.value.trim(),
+          mode, formats, unityVersion, unrealVersion }))
+        started = response.run
+      } catch (error) { setStatus(error.message) }
+      finally {
+        submitting = false
+        if (started) { display(started); void poll() }
+        else controls.forEach(control => { control.disabled = false })
       }
     })
   })
 
+  for (const [button, action] of [[review, 'review'], [leave, 'leave']]) {
+    button.addEventListener('click', async () => {
+      if (!run) return
+      await cleanup(run.id, action)
+      void poll()
+    })
+  }
   restore.addEventListener('click', () => void runLocked(async () => {
     try {
       const enabled = await bridge.restoreCleanupConfirmation()
       setStatus(enabled ? 'Подтверждения Unity и Unreal включены.' : 'Не удалось включить подтверждения.')
     } catch (error) { setStatus(error.message) }
   }))
+  void poll()
 }

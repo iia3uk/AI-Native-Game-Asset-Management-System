@@ -10,7 +10,8 @@ import { sameSource } from '../../files/hash.mjs'
 import { IndexConflictError, IndexInputError } from '../../index/index-errors.mjs'
 import { packageHashPattern } from '../source.mjs'
 import { isUnrealLoose } from '../unreal/loose/source.mjs'
-import { preparePackageExport, verifyExportDestination } from './plan.mjs'
+import { preparePackageExport, verifyExportDestination, verifyExportSpace } from './plan.mjs'
+import { verifyPublishedPackage } from './recover.mjs'
 
 async function copyVerified(source, file, target, signal) {
   const changed = () => new IndexConflictError('Не удалось подтвердить SHA-256 файла ' + file.path + '.')
@@ -51,23 +52,28 @@ async function removeDirectory(destination, directory) {
   await rm(directory.path, { recursive: true, force: true, maxRetries: 3 })
 }
 
-export async function exportPackageResult(importDirectory, protectedRoots, job, input, { preview, signal, jobSource }) {
+export async function exportPackageResult(importDirectory, protectedRoots, job, input, { preview, signal, jobSource, journal }) {
   const deadline = AbortSignal.timeout(10 * 60_000)
   signal = signal ? AbortSignal.any([signal, deadline]) : deadline
-  if (!preview && (typeof input?.key !== 'string' || !packageHashPattern.test(input.key))) {
+  if (!preview && !journal && (typeof input?.key !== 'string' || !packageHashPattern.test(input.key))) {
     throw new IndexInputError('Составьте план перед экспортом.')
   }
   let prepared
   try {
+    if (journal) await verifyExportDestination(journal.destination)
     const format = job?.result?.report?.packageFormat
     let sourceRoot
     if (jobSource && (format === 'unity-project' || format === 'unity-upm')) sourceRoot = jobSource
     if (jobSource && isUnrealLoose(format)) sourceRoot = job.result.report.selectedDirectory ? jobSource : dirname(jobSource)
     const roots = sourceRoot ? [...protectedRoots, sourceRoot] : protectedRoots
-    prepared = await preparePackageExport(importDirectory, roots, job, input, signal)
+    prepared = await preparePackageExport(importDirectory, roots, job, input, signal, { checkSpace: !journal })
     if (!prepared || preview) return prepared?.plan ?? null
-    if (prepared.plan.key !== input.key) throw new IndexConflictError('План изменился. Проверьте его перед экспортом.')
-    return await publish(prepared, signal)
+    if (!journal && prepared.plan.key !== input.key) throw new IndexConflictError('План изменился. Проверьте его перед экспортом.')
+    if (journal && (prepared.destination.path !== journal.destination.path ||
+        prepared.destination.dev !== journal.destination.dev || prepared.destination.ino !== journal.destination.ino)) {
+      throw new IndexConflictError('Папка назначения изменилась.')
+    }
+    return await publish(prepared, signal, journal)
   } catch (error) {
     if (deadline.aborted) throw new IndexConflictError('Истекло время ожидания экспорта.')
     if (error.code === 'ENOSPC') throw new IndexConflictError('Недостаточно свободного места для экспорта.')
@@ -75,12 +81,26 @@ export async function exportPackageResult(importDirectory, protectedRoots, job, 
   }
 }
 
-async function publish({ destination, plan, source, files, reports }, signal) {
+async function publish({ destination, plan, source, files, reports }, signal, journal) {
   await verifyExportDestination(destination)
+  let reservation = journal?.reservation
+  if (reservation) {
+    if (dirname(reservation.path) !== destination.path) throw new IndexConflictError('Папка экспорта не соответствует заданию.')
+    await verifyExportDestination(reservation)
+    const directory = await verifyPublishedPackage(reservation, files, reports, signal)
+    if (directory) return { ...plan, directory }
+  }
+  if (journal?.verifyOnly) throw new IndexConflictError('Экспортированные файлы недоступны.')
+  if (journal?.stage) {
+    if (dirname(journal.stage.path) !== destination.path) throw new IndexConflictError('Временная папка экспорта изменилась.')
+    await removeDirectory(destination, journal.stage)
+  }
+  if (journal) await verifyExportSpace(destination.path, plan.bytes)
   const stage = await createDirectory(join(destination.path, '.asset-viewer-export-'))
-  let reservation
+  let keepReservation = Boolean(reservation)
   let directory
   try {
+    journal?.save('stage', stage)
     if (plan.scope === 'package') {
       for (const folder of exportFolders) await mkdir(join(stage.path, folder))
     }
@@ -98,7 +118,11 @@ async function publish({ destination, plan, source, files, reports }, signal) {
     }
     signal.throwIfAborted()
     await verifyExportDestination(destination)
-    reservation = await createDirectory(join(destination.path, plan.prefix + '-'))
+    reservation ??= await createDirectory(join(destination.path, plan.prefix + '-'))
+    if (journal && !keepReservation) {
+      journal.save('reservation', reservation)
+      keepReservation = true
+    }
     await verifyExportDestination(stage)
     await verifyExportDestination(reservation)
     const target = join(reservation.path, plan.scope === 'package' ? 'Package' : 'Asset')
@@ -108,7 +132,7 @@ async function publish({ destination, plan, source, files, reports }, signal) {
   } finally {
     if (!directory) {
       await removeDirectory(destination, stage)
-      await removeDirectory(destination, reservation)
+      if (!keepReservation) await removeDirectory(destination, reservation)
     }
   }
 }

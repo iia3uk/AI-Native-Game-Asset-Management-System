@@ -37,6 +37,11 @@ export async function verifyExportDestination({ path, dev, ino }) {
   }
 }
 
+export async function verifyExportSpace(path, bytes) {
+  const { bavail, bsize } = await statfs(path, { bigint: true })
+  if (bavail * bsize < BigInt(bytes + spaceReserve)) throw new IndexConflictError('Недостаточно свободного места для экспорта.')
+}
+
 function assetFiles(asset) {
   return [
     asset.output && { path: asset.output, sha256: asset.hash, size: asset.size },
@@ -85,7 +90,7 @@ function selectDocuments(managed, selection, dependencies, conversion, files) {
   }
 }
 
-export async function preparePackageExport(importDirectory, protectedRoots, job, input, signal) {
+export async function preparePackageExport(importDirectory, protectedRoots, job, input, signal, { checkSpace = true } = {}) {
   signal.throwIfAborted()
   const managed = await readPackageResult(importDirectory, job)
   if (!managed) return null
@@ -116,8 +121,7 @@ export async function preparePackageExport(importDirectory, protectedRoots, job,
   const bytes = assetBytes + Object.values(reports).reduce((total, report) => total + Buffer.byteLength(report), 0)
   if (bytes > byteLimit) throw new IndexInputError('Превышен лимит размера экспорта.')
   await verifyExportDestination(destination)
-  const { bavail, bsize } = await statfs(destination.path, { bigint: true })
-  if (bavail * bsize < BigInt(bytes + spaceReserve)) throw new IndexConflictError('Недостаточно свободного места для экспорта.')
+  if (checkSpace) await verifyExportSpace(destination.path, bytes)
   const hash = createHash('sha256').update(JSON.stringify([job.id, ordinal, destination, files.map(({ path, sha256, info }) =>
     [path, sha256, info.size])]))
   for (const document of [managed.manifest, dependencies, conversion]) hash.update(document.text).update('\0')

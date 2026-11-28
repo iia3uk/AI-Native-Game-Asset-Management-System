@@ -13,6 +13,7 @@ import { thumbnailPlan } from '../thumbnails/thumbnail-input.mjs'
 import { maxPakInput } from '../packages/unreal/pak/limits.mjs'
 import { watchedFormatByExtension, watchedPackageRecipe } from '../packages/watch-formats.mjs'
 import { watchSerializedSource } from '../packages/unity/bundle/watch-source.mjs'
+import { FolderRuns } from '../packages/folder-processing/state.mjs'
 
 const readable = 'a.id, a.library_id AS libraryId, l.name AS library, a.path, a.name, a.ext, a.kind,' +
   ' a.size, a.mtime, a.hash, a.first_seen AS firstSeen, a.missing_since AS missingSince,' +
@@ -76,6 +77,7 @@ export class AssetIndex {
         migrate(this.#db)
       }
       this.jobs = new ProcessingJobs(this.#db)
+      this.folderRuns = new FolderRuns(this.#db)
       this.qualityProfiles = new QualityProfiles(this.#db)
     } catch (error) {
       this.#db.close()

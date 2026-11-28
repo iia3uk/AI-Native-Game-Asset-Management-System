@@ -109,16 +109,16 @@ export class ProcessingJobs {
     return this.get(id)
   }
 
-  enqueueImport(path, key, exportFormats = '', { mode = 'engineless', editorVersion = '' } = {}) {
+  enqueueImport(path, key, exportFormats = '', { mode = 'engineless', editorVersion = '' } = {}, onQueued = job => job) {
     return transaction(this.#db, () => {
       const current = this.#activeImport(path, key, exportFormats, mode, editorVersion)
       if (current) {
         this.#db.prepare("UPDATE processing_jobs SET trigger = 'manual', priority = MAX(priority, 0) WHERE id = ? AND cancel_requested = 0")
           .run(current.id)
-        return this.get(current.id)
+        return onQueued(this.get(current.id))
       }
       if (this.#importCount() >= importLimit) throw new IndexInputError('Очередь импорта заполнена.')
-      return this.#createImport(path, key, exportFormats, mode, editorVersion, 0, 'manual')
+      return onQueued(this.#createImport(path, key, exportFormats, mode, editorVersion, 0, 'manual'))
     })
   }
 

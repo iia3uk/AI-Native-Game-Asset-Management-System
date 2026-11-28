@@ -48,6 +48,7 @@ const indexedFolders = new Map()
 let demoRequest
 const paths = dataPaths()
 const indexed = indexRoutes({ database: paths.database, thumbnailDirectory: paths.thumbnails,
+  desktop: Boolean(desktopToken),
   importDirectory: paths.imports, ignoredWatchPaths: [paths.cache, paths.backups, paths.imports], json, body, allowsWrite,
   exportProtectedRoots: [paths.data, paths.cache, paths.config, library],
   openFolder: openIndexedFolder, invalidateFolder: invalidateIndexedFolder })

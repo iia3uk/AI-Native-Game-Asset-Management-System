@@ -11,14 +11,18 @@ import { packageRoutes } from './package-routes.mjs'
 import { packageManifestPage } from '../packages/manifest-page.mjs'
 import { exportPackageResult } from '../packages/export/publish.mjs'
 import { engineInventory } from '../engines/inventory.mjs'
+import { FolderRunWorker } from '../packages/folder-processing/runner.mjs'
+import { prepareFolderRun } from '../packages/folder-processing/source.mjs'
+import { folderRunSummary } from '../packages/folder-processing/state.mjs'
 
 export function indexRoutes({ database, thumbnailDirectory, importDirectory, ignoredWatchPaths = [], exportProtectedRoots = [],
-  json, body, allowsWrite, openFolder, invalidateFolder }) {
+  json, body, allowsWrite, openFolder, invalidateFolder, desktop = false }) {
   let pendingIndex
   let worker
   let thumbnails
   let importer
   let watcher
+  let folderWorker
   const cache = new ThumbnailCache(thumbnailDirectory)
   const shutdown = new AbortController()
   const packages = packageRoutes({ json, body, shutdown: shutdown.signal, ignoredPaths: ignoredWatchPaths,
@@ -41,6 +45,12 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
         importer = new ProcessingWorker(index, { type: 'package-import', importDirectory,
           onImportComplete: () => worker.wake(), onImportSettled: queuePackages })
         watcher = new LibraryWatcher(index, () => worker.wake(), { ignoredPaths: ignoredWatchPaths, onRefresh: queuePackages })
+        if (desktop) {
+          folderWorker = new FolderRunWorker(index, { signal: shutdown.signal, importDirectory,
+            protectedRoots: exportProtectedRoots, ignoredPaths: ignoredWatchPaths,
+            wakeImport: () => importer.wake(), wakeScan: () => worker.wake() })
+          folderWorker.wake()
+        }
         void cache.maintain().catch(error => console.error('Thumbnail cache:', error.message))
       }
       return index
@@ -73,6 +83,16 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
     }
     try {
       if (packageAction) return await packages(index, request, response, packageAction)
+      if (resource === 'folder-run' && desktop) {
+        if (method === 'GET' && !id && !action) return json(response, 200, { run: folderRunSummary(index.folderRuns.get(), index.jobs) })
+        if (method === 'POST' && !id && !action) {
+          const input = await body(request).catch(() => null)
+          const roots = [...exportProtectedRoots, ...index.libraries().map(library => library.root)]
+          const run = index.folderRuns.start(await prepareFolderRun(input, roots, ignoredWatchPaths))
+          folderWorker.wake()
+          return json(response, 202, { run: folderRunSummary(run, index.jobs) })
+        }
+      }
       if (method === 'GET' && resource === 'libraries' && !id) return json(response, 200, { libraries: index.libraries() })
       if (method === 'POST' && resource === 'libraries' && !id) {
         const input = await body(request).catch(() => null)
@@ -229,6 +249,7 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
     },
     async close() {
       const index = await pendingIndex
+      await folderWorker?.stop()
       await watcher?.stop()
       await importer?.stop()
       await worker?.stop()

@@ -30,6 +30,8 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | GET | `/api/index/quality-profiles` | Returns the six saved or default profiles and the supported field definitions |
 | POST | `/api/index/quality-profiles/:id` | `{"revision":0,"limits":{"maxTriangles":12000}}` replaces the enabled limits. `{"revision":0,"reset":true}` restores defaults. Stale revisions return 409 |
 | POST | `/api/index/packages/folder` | `{"path":"<absolute local folder>"}` returns its canonical `root`, detected `packages` with relative `path` and `format`, plus `visited`, `skipped` and `truncated` |
+| GET | `/api/index/folder-run` | Desktop service only. Returns `{run}` with the current or latest run, or `null` before the first run |
+| POST | `/api/index/folder-run` | Desktop service only. Accepts an absolute source `path`, optional absolute `destination`, `mode`, `formats`, `unityVersion` and `unrealVersion`. Returns 202 with the saved run, or 409 while another run needs processing or cleanup review |
 | POST | `/api/index/packages/inspect` | An absolute `path` to a file, Unity project or UPM folder, or a folder search result's `root` and relative `path`. Returns the detected format, SHA-256, entry count and up to 500 preview entries |
 | POST | `/api/index/packages/import` | Send the same absolute `path` or folder `root` and relative `path` as for inspection, along with the inspection `hash` and optional `formats` such as `["fbx","glb"]`. Returns 202 and the new or active import job. The default mode `engineless` extracts originals when formats are omitted. Optional `mode` values `auto` and `engine-assisted` allow Unity for native objects and default to both formats. Optional `editorVersion` specifies the preferred Unity version in these modes |
 | GET | `/api/index/jobs/:id/manifest?limit=50&offset=0` | Lists a completed package's assets with per-format output statuses, relative paths, method and hashes. Returns `assets`, `total` and `nextOffset`. The maximum limit is 100 |
@@ -37,6 +39,8 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | POST | `/api/index/jobs/:id/export` | Send the same destination and selection with the plan's `key`. Returns 201 and the new `directory` |
 | GET | `/api/index/engines` | Lists detected Unity, Unreal and Blender executables and available version metadata without starting an editor |
 | POST | `/api/demo` | Creates and opens a separate procedural demo session on demand |
+
+For a desktop folder run, the summary includes the run ID, phase, current step, progress, destination, export count and any processing failures. The service restores the run on startup. Pause, resume and cancel use the existing job routes. Source cleanup runs through Electron IPC after processing.
 
 For Unity folders, inspection returns `format` as `unity-project` or `unity-upm`, the declared project `engineVersion` when available and a `packages` list with local UPM names and versions. Send the same absolute path and inspection hash to queue the job. The manifest retains normalized resource paths, GUIDs and the engine version. Jobs using an Editor default to the declared project version when present.
 
