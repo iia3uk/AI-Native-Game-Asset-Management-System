@@ -62,9 +62,17 @@ void launchSmoke().then(async ({ window, origin }) => {
   }
   await waitFor("document.querySelector('#library-stats').textContent.includes('3D-файлов')")
   await waitFor("document.querySelector('.brand-mark').naturalWidth > 0")
-  assert.equal(await webContents.executeJavaScript(`
-    document.querySelector('.brand-mark').src === document.querySelector('link[rel=icon]').href
-  `), true)
+  assert.deepEqual(await webContents.executeJavaScript(`
+    (() => {
+      const mark = document.querySelector('.brand-mark')
+      return {
+        header: new URL(mark.currentSrc).pathname,
+        tab: new URL(document.querySelector('link[rel=icon]').href).pathname,
+        sourceWidth: mark.naturalWidth,
+        displayWidth: mark.getBoundingClientRect().width,
+      }
+    })()
+  `), { header: '/brand/asset-viewer.png', tab: '/brand/asset-viewer.ico', sourceWidth: 128, displayWidth: 36 })
   assert.equal(await webContents.executeJavaScript("typeof window.assetViewerDesktop.chooseFolder"), 'function')
   await webContents.executeJavaScript("document.querySelector('#demo-mode').click()")
   await waitFor("document.querySelector('#animation-tools').hidden === false")
