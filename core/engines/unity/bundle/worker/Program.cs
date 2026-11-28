@@ -6,7 +6,7 @@ namespace AssetViewer.UnityBundle;
 
 internal static class Program
 {
-    public const int DecoderRevision = 6;
+    public const int DecoderRevision = 7;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { MaxDepth = 10 };
 
     public static int Main(string[] args)
@@ -52,7 +52,8 @@ internal sealed record Asset(string Member, string PathId, int ClassId, string? 
 internal sealed record Product(string Name, string Format, byte[] Bytes,
     int? Width = null, int? Height = null, int? Vertices = null, int? Triangles = null,
     string? TextureEncoding = null, string? TextureStorage = null, SpriteSource? Sprite = null, AudioSource? Audio = null);
-internal sealed record SpriteSource(string TexturePathId, int X, int Y);
+internal sealed record SpriteSource(string TexturePathId, int X, int Y, PackedSprite? Packed = null);
+internal sealed record PackedSprite(string AtlasPathId, int Width, int Height, int OffsetX, int OffsetY, int Rotation);
 internal sealed record AudioSource(int Channels, int SampleRate, int Frames);
 internal sealed record Report(int Protocol, int DecoderRevision, string Status, uint Format, string UnityVersion,
     IReadOnlyList<Asset> Assets);

@@ -5,6 +5,7 @@ import { isUnrealLoose, unrealLooseSource } from '../unreal/loose/source.mjs'
 import { unityFolderLayout } from '../unity/folder/layout.mjs'
 import { watchedPackageRecipe } from '../watch-formats.mjs'
 import { relativeSourcePath } from './files.mjs'
+import { unityBinaryReadyForCleanup } from './unity-binary.mjs'
 
 const derivatives = new Set(['fbx', 'glb', 'png', 'tga', 'tiff', 'exr', 'wav', 'ogg', 'flac'])
 const unityFolder = format => format === 'unity-project' || format === 'unity-upm'
@@ -79,6 +80,7 @@ export async function* cleanupCandidates(format, source, manifest, assets, selec
 
   const name = basename(source)
   if (!watchedPackageRecipe(format)?.extensions.includes(unrealFileType(name))) return
+  if (['unityfs', 'unity-serialized'].includes(format) && !unityBinaryReadyForCleanup(assets)) return
   const backups = assets.flatMap(asset => [original(asset), ...exportsOf(asset)].filter(Boolean))
   if (backups.length) yield { root: dirname(source), path: name, size: manifest.source.size,
     sha256: manifest.source.contentsSha256 ?? manifest.source.sha256, backups }

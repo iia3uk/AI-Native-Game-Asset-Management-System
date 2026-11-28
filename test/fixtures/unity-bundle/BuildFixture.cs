@@ -56,5 +56,7 @@ public static class AssetViewerBundleFixture
             BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.StrictMode,
             BuildTarget.StandaloneWindows64) == null)
             throw new System.InvalidOperationException("Unity failed to build the uncompressed fixture AssetBundle.");
+
+        AssetViewerAtlasFixture.Build();
     }
 }

@@ -172,6 +172,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   await verifyPackageCleanup(webContents, waitFor)
   const bundle = process.env.ASSET_VIEWER_SMOKE_BUNDLE
   const sprites = process.env.ASSET_VIEWER_SMOKE_SPRITES
+  const atlas = process.env.ASSET_VIEWER_SMOKE_ATLAS
   const audio = process.env.ASSET_VIEWER_SMOKE_AUDIO
   const standalone = process.env.ASSET_VIEWER_SMOKE_STANDALONE
   const player = process.env.ASSET_VIEWER_SMOKE_PLAYER
@@ -180,6 +181,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   await verifyPackageWatch(webContents, waitFor, fixtures, { bundle, player: watchPlayer, pak })
   if (bundle) await verifyUnityBundle(webContents, waitFor, bundle)
   if (sprites) await verifyUnitySprites(webContents, waitFor, sprites)
+  if (atlas) await verifyUnitySprites(webContents, waitFor, atlas, { atlas: true })
   if (audio) await verifyUnityAudio(webContents, waitFor, audio)
   if (standalone) await verifyUnityBundle(webContents, waitFor, standalone, { standalone: true })
   if (player) await verifyUnityAudio(webContents, waitFor, player, { companion: true })
@@ -190,6 +192,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   console.log('Desktop startup, demo, library watching, thumbnail cache, analysis, metadata, package import, pause, export, PBR material preview and renderer isolation passed.')
   if (bundle) console.log('UnityFS folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
   if (sprites) console.log('UnityFS sprite inspection, queued import, dependency reporting and indexed PNG preview passed.')
+  if (atlas) console.log('UnityFS SpriteAtlas inspection, queued import and indexed PNG preview passed.')
   if (audio) console.log('UnityFS PCM inspection, queued import, local byte ranges and indexed WAV playback passed.')
   if (standalone) console.log('Standalone Unity file inspection, queued import and indexed GLB preview passed.')
   if (player) console.log('Unity Player companion inspection, queued texture and audio import and WAV playback passed.')

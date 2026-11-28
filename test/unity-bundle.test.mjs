@@ -17,6 +17,7 @@ import { buildAssetBundleFixture } from './fixtures/unity-bundle/project.mjs'
 import { buildUnityPlayerFixture } from './fixtures/unity-player/project.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 import { verifyBundleAudio } from './unity-bundle/audio.mjs'
+import { verifyBundleAtlas } from './unity-bundle/atlas.mjs'
 import { readTexture } from './unity-bundle/png.mjs'
 import { verifyPlayerExports, verifyPlayerMalformed } from './unity-bundle/player.mjs'
 import { verifyPlayerWatch } from './unity-bundle/player-watch.mjs'
@@ -86,6 +87,17 @@ test('UnityFS validates decoder reports and rejects non-bundle sources without t
     { ...sprite.sprite, x: -1 }, { ...sprite.sprite, y: 2047 }, { ...sprite.sprite, x: 1.5 }]) {
     assert.equal(bundleResult({ ...report, assets: [row, { ...sprite, sprite: invalid }] }, false), null)
   }
+  const atlas = { member: row.member, pathId: '82', classId: 687078895, status: 'unsupported',
+    issue: 'unity-bundle-sprite-atlas-container', output: null }
+  const packed = { atlasPathId: atlas.pathId, width: 2, height: 1, offsetX: 1, offsetY: 1, rotation: 3 }
+  const packedReport = (fields, atlasRow = atlas) => ({ ...report, assets: [row,
+    { ...sprite, sprite: { ...sprite.sprite, packed: fields } }, atlasRow] })
+  assert.deepEqual(bundleResult(packedReport(packed), false).assets[1].sprite.packed, packed)
+  for (const invalid of [{ ...packed, atlasPathId: '83' }, { ...packed, offsetX: 2 }, { ...packed, width: 0 },
+    { ...packed, rotation: 4 }, { ...packed, offsetY: -1 }]) {
+    assert.equal(bundleResult(packedReport(invalid), false), null)
+  }
+  assert.equal(bundleResult(packedReport(packed, { ...atlas, classId: 142 }), false), null)
   const audio = { member: 'CAB-123', pathId: '-110', classId: 83, status: 'decoded', issue: null,
     name: 'Sound', format: 'wav', bytes: 444, output: 0, audio: { channels: 2, sampleRate: 44100, frames: 100 } }
   assert.deepEqual(bundleResult({ ...report, assets: [audio] }, false).assets[0].audio, audio.audio)
@@ -255,6 +267,8 @@ test('Unity builds native UnityFS bundles and the independent worker indexes tex
   }
   const spriteData = join(root, 'sprite-data')
   await verifyBundleSprites(root, spriteData, client(spriteData))
+  const atlasData = join(root, 'atlas-data')
+  await verifyBundleAtlas(root, atlasData, client(atlasData))
   const audioData = join(root, 'audio-data')
   await verifyBundleAudio(root, audioData, client(audioData), worker)
   const standaloneData = join(root, 'standalone-data')

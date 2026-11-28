@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { planPackageCleanup, trashPackageSources } from '../core/packages/cleanup/plan.mjs'
 import { retireNativeCopies } from '../core/packages/cleanup/retired.mjs'
+import { unityBinaryReadyForCleanup } from '../core/packages/cleanup/unity-binary.mjs'
 import { exportPackageResult } from '../core/packages/export/publish.mjs'
 import { packageManifestPage } from '../core/packages/manifest-page.mjs'
 import { cleanupPreferences, saveCleanupPreferences } from '../desktop/package-cleanup/preferences.mjs'
@@ -72,6 +73,20 @@ test('Unity cleanup verifies archive identity and its published payloads', async
   await writeFile(join(plan.output, 'Source/Assets/Mesh.obj'), 'corrupt payload')
   assert.deepEqual((await planPackageCleanup(input)).files, [])
   assert.ok((await readFile(archive)).length > 0)
+})
+
+test('Unity binary cleanup retains packages with undecoded objects', () => {
+  const sprite = { member: 'CAB-1', status: 'converted', classId: 213, pathId: '2',
+    artifact: { status: 'converted', path: 'Textures/1/Sprite.png' }, sprite: { packed: { atlasPathId: '3' } } }
+  const atlas = { member: 'CAB-1', status: 'unsupported', classId: 687078895, pathId: '3',
+    issue: 'unity-bundle-sprite-atlas-container' }
+  const bundle = { member: 'CAB-1', status: 'unsupported', classId: 142, pathId: '1',
+    issue: 'unity-bundle-class-unsupported' }
+  assert.equal(unityBinaryReadyForCleanup([sprite, atlas, bundle]), true)
+  assert.equal(unityBinaryReadyForCleanup([atlas, bundle]), false)
+  assert.equal(unityBinaryReadyForCleanup([sprite, { ...atlas, member: 'CAB-2' }, bundle]), false)
+  assert.equal(unityBinaryReadyForCleanup([sprite, atlas, bundle, { status: 'unsupported', classId: 114 }]), false)
+  assert.equal(unityBinaryReadyForCleanup([sprite, atlas, bundle, { status: 'converted', artifact: null }]), false)
 })
 
 test('compaction retains usable files and provenance, and leaves changed or unsupported data alone', async t => {

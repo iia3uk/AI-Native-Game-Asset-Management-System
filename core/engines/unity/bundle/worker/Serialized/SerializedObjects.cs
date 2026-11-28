@@ -26,13 +26,9 @@ internal static class SerializedObjects
                 info.ByteSize > length - offset)
                 throw new BundleException("unity-bundle-object-range");
         }
-        var sprites = new SpriteReader(name, resources, inspectOnly, pathId =>
-        {
-            if (!objects.TryGetValue(pathId, out var texture) || texture.GetTypeId(file) != 28 ||
-                texture.ByteSize > 32L << 20)
-                throw new BundleException("unity-bundle-sprite-texture-reference");
-            return manager.GetBaseField(member, texture);
-        });
+        var atlases = new SpriteAtlasReader(pathId => ReadLocal(pathId, SpriteAtlasReader.ClassId, SpriteAtlasReader.ReferenceIssue));
+        var sprites = new SpriteReader(name, resources, inspectOnly,
+            pathId => ReadLocal(pathId, 28, "unity-bundle-sprite-texture-reference"), atlases);
         foreach (var info in file.AssetInfos)
         {
             var classId = info.GetTypeId(file);
@@ -41,12 +37,21 @@ internal static class SerializedObjects
             entries.Add(ReadObject(manager, member, info, row, resources, sprites, inspectOnly,
                 entries.Count, ref outputLimit, allowPlayerLayout));
         }
+
+        AssetTypeValueField ReadLocal(long pathId, int classId, string issue)
+        {
+            if (!objects.TryGetValue(pathId, out var info) || info.GetTypeId(file) != classId || info.ByteSize > 32L << 20)
+                throw new BundleException(issue);
+            return manager.GetBaseField(member, info);
+        }
     }
 
     private static Asset ReadObject(AssetsManager manager, AssetsFileInstance member, AssetFileInfo info,
         Asset row, SerializedResources resources, SpriteReader sprites, bool inspectOnly, int output,
         ref long outputLimit, bool allowPlayerLayout)
     {
+        if (row.ClassId == SpriteAtlasReader.ClassId)
+            return row with { Issue = "unity-bundle-sprite-atlas-container" };
         if (row.ClassId is not (28 or 43 or 83 or 213)) return row;
         var embedded = member.file.Metadata.TypeTreeEnabled;
         if (!embedded && (!allowPlayerLayout || !PlayerLayout.Matches(member.file, info, row.ClassId)))

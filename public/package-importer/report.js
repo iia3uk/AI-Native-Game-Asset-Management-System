@@ -23,7 +23,10 @@ const packageIssues = {
   'unity-bundle-texture-stream-path': 'Текстура ссылается на недопустимый источник данных',
   'unity-bundle-texture-stream-missing': 'Источник данных текстуры отсутствует',
   'unity-bundle-texture-stream-range': 'Данные текстуры выходят за границы источника',
-  'unity-bundle-sprite-atlas': 'Для спрайта требуется декодирование SpriteAtlas',
+  'unity-bundle-sprite-atlas': 'Атлас спрайта недоступен в этом разделе Unity',
+  'unity-bundle-sprite-atlas-key': 'В атласе отсутствует однозначная запись для спрайта',
+  'unity-bundle-sprite-atlas-variant': 'Варианты атласов и спрайты с изменённым масштабом не поддерживаются',
+  'unity-bundle-sprite-atlas-container': 'Атлас хранит разметку, отдельные спрайты и текстура обрабатываются в своих строках',
   'unity-bundle-sprite-packing': 'Способ упаковки спрайта не поддерживается',
   'unity-bundle-sprite-alpha': 'Раздельный альфа-канал спрайта не поддерживается',
   'unity-bundle-sprite-texture-reference': 'Текстура спрайта недоступна в этом разделе Unity',
@@ -107,7 +110,8 @@ const artifactRoles = {
 export const describeIssue = issue => packageIssues[issue] ?? issue
 
 export function assetLabel(asset) {
-  const sprite = asset.sprite && `Спрайт ${asset.width} × ${asset.height} (текстура #${asset.sprite.texturePathId})`
+  const atlas = asset.sprite?.packed && `, атлас #${asset.sprite.packed.atlasPathId}`
+  const sprite = asset.sprite && `Спрайт ${asset.width} × ${asset.height} (текстура #${asset.sprite.texturePathId}${atlas || ''})`
   const audio = asset.audio && `PCM 16 бит, ${asset.audio.sampleRate} Гц, ${asset.audio.channels} кан.`
   return asset.sourcePath ?? asset.path ?? [asset.name, sprite, audio, asset.textureEncoding?.toUpperCase(),
     asset.textureStorage === 'companion' && 'Внешние данные',

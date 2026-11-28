@@ -32,7 +32,9 @@ Watched standalone imports use the same fingerprint and size limits as manual im
 
 For streamed texture data, the worker accepts a reference to the serialized owner's `.resS` entry in the validated bundle directory. It checks the declared offset and size against that entry, reads only the bytes required for the highest-resolution mip and rejects output that would exceed the remaining budget before expanding the texture. The resource resolver has no filesystem path lookup.
 
-Sprite decoding follows Texture2D references only within the same validated serialized member. It checks the crop rectangle against the source dimensions and the remaining output budget. Each reader retains at most one source texture for repeated crops.
+Sprite decoding follows Texture2D and SpriteAtlas references only within the validated serialized member. It verifies the declared object classes, checks the full atlas key for an exact match and rejects duplicate keys. It bounds the crop by the source texture, the offset by the output canvas and the RGBA canvas by the remaining output budget. A reader retains at most one source texture and one atlas map for repeated crops.
+
+UnityFS and binary Unity cleanup requires converted artifacts for every reported resource object. The standard bundle metadata and an atlas referenced by converted sprites have no separate artifact. A failed or unsupported resource keeps the binary source out of the recycle plan.
 
 Audio decoding reads a bounded range of the owner's internal `.resource` entry. Inspection reads the bank and sample headers. Export checks their layout, matches the clip metadata, limits each WAV to 32 MiB and checks the remaining worker output budget before allocation. Publication verifies the WAV header, expected size and data chunk length. The browser uses the existing scoped local-file and byte-range routes for playback.
 

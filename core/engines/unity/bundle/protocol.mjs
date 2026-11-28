@@ -4,10 +4,22 @@ const issuePattern = /^unity-bundle-[a-z0-9-]{1,64}$/
 const versionPattern = /^\d{1,4}\.\d{1,3}\.\d{1,4}[abfp]\d{1,4}$/
 const memberPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,119}$/
 const pathIdPattern = /^-?\d{1,19}$/
-export const bundleDecoderRevision = 6
+export const bundleDecoderRevision = 7
 const pixelDimension = value => Number.isInteger(value) && value >= 1 && value <= 2048
 const validCount = (value, max) => Number.isSafeInteger(value) && value > 0 && value <= max
-const cropCoordinate = (value, length) => Number.isInteger(value) && value >= 0 && value + length <= 2048
+const cropCoordinate = (value, length, limit = 2048) => Number.isInteger(value) && value >= 0 && value + length <= limit
+
+function spriteSource(sprite, width, height) {
+  if (typeof sprite?.texturePathId !== 'string' || !pathIdPattern.test(sprite.texturePathId)) return null
+  const { texturePathId, x, y, packed } = sprite
+  if (packed == null) return cropCoordinate(x, width) && cropCoordinate(y, height) ? { texturePathId, x, y } : null
+  const { atlasPathId, width: cropWidth, height: cropHeight, offsetX, offsetY, rotation } = packed
+  if (typeof atlasPathId !== 'string' || !pathIdPattern.test(atlasPathId) ||
+      !pixelDimension(cropWidth) || !pixelDimension(cropHeight) || ![0, 1, 2, 3].includes(rotation) ||
+      !cropCoordinate(x, cropWidth) || !cropCoordinate(y, cropHeight) ||
+      !cropCoordinate(offsetX, cropWidth, width) || !cropCoordinate(offsetY, cropHeight, height)) return null
+  return { texturePathId, x, y, packed: { atlasPathId, width: cropWidth, height: cropHeight, offsetX, offsetY, rotation } }
+}
 
 export function bundleResult(report, inspectOnly, serialized = false) {
   if (report?.protocol !== 1) return null
@@ -43,9 +55,8 @@ export function bundleResult(report, inspectOnly, serialized = false) {
       size = width * height * 4
       if (!inspectOnly && asset.bytes !== size) return null
       if (classId === 213) {
-        if (typeof sprite?.texturePathId !== 'string' || !pathIdPattern.test(sprite.texturePathId) ||
-            !cropCoordinate(sprite.x, width) || !cropCoordinate(sprite.y, height)) return null
-        metrics.sprite = { texturePathId: sprite.texturePathId, x: sprite.x, y: sprite.y }
+        metrics.sprite = spriteSource(sprite, width, height)
+        if (!metrics.sprite) return null
       }
     } else if (classId === 43 && asset.format === 'glb' && validCount(vertices, 200_000) &&
         validCount(triangles, 200_000)) {
@@ -67,8 +78,12 @@ export function bundleResult(report, inspectOnly, serialized = false) {
     const product = inspectOnly ? {} : { file: output + '.' + format, size }
     assets.push({ ...row, name, ...metrics, ...product, format: format === 'rgba' ? 'png' : format })
   }
-  if (assets.some(asset => asset.sprite &&
-      classes.get(asset.member.toLowerCase() + ':' + asset.sprite.texturePathId) !== 28)) return null
+  for (const { member, sprite } of assets) {
+    if (!sprite) continue
+    const prefix = member.toLowerCase() + ':'
+    if (classes.get(prefix + sprite.texturePathId) !== 28 ||
+        (sprite.packed && classes.get(prefix + sprite.packed.atlasPathId) !== 687078895)) return null
+  }
   return { status: 'completed', format: report.format, unityVersion: report.unityVersion,
     decoderRevision: report.decoderRevision, assets }
 }

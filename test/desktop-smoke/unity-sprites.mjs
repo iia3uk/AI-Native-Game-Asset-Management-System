@@ -1,14 +1,17 @@
 import { basename } from 'node:path'
 
-export async function verifyUnitySprites(webContents, waitFor, fixture) {
+export async function verifyUnitySprites(webContents, waitFor, fixture, { atlas = false } = {}) {
+  const details = atlas ? ['Button · Спрайт 8 × 6', 'атлас #'] :
+    ['LowerSprite · Спрайт 3 × 4', 'Текстура спрайта недоступна']
+  const [other, preview, width, height] = atlas ? ['Sprite-Panel.png', 'Sprite-Button.png', 8, 6] :
+    ['Sprite-LowerSprite.png', 'Sprite-UpperSprite.png', 4, 2]
   await webContents.executeJavaScript(`
     if (!document.querySelector('#index-dialog').open) document.querySelector('#index-mode').click()
     document.querySelector('#package-importer').open = true
     document.querySelector('#package-path').value = ${JSON.stringify(fixture)}
     document.querySelector('#package-form').requestSubmit()
   `)
-  await waitFor("document.querySelector('#package-plans').textContent.includes('LowerSprite · Спрайт 3 × 4')")
-  await waitFor("document.querySelector('#package-plans').textContent.includes('Текстура спрайта недоступна')")
+  for (const text of details) await waitFor(`document.querySelector('#package-plans').textContent.includes(${JSON.stringify(text)})`)
   await webContents.executeJavaScript("document.querySelector('#package-plans button').click()")
   const job = `Array.from(document.querySelector('#package-jobs').children)
     .find(item => item.firstElementChild.textContent.startsWith(${JSON.stringify(basename(fixture) + ' · ')}))`
@@ -18,17 +21,17 @@ export async function verifyUnitySprites(webContents, waitFor, fixture) {
     row.querySelector('details').open = true
     Array.from(row.querySelectorAll('button')).find(button => button.textContent === 'Показать файлы').click()
   }`)
-  await waitFor(`(${job})?.textContent.includes('Sprite-LowerSprite.png') && (${job})?.textContent.includes('Sprite-UpperSprite.png')`)
+  for (const name of [other, preview]) await waitFor(`(${job})?.textContent.includes(${JSON.stringify(name)})`)
   await webContents.executeJavaScript(`Array.from((${job}).querySelectorAll('button'))
     .find(button => button.textContent === 'Показать в индексе').click()`)
-  await waitFor("document.querySelector('#index-results').textContent.includes('Sprite-UpperSprite.png')")
+  await waitFor(`document.querySelector('#index-results').textContent.includes(${JSON.stringify(preview)})`)
   await webContents.executeJavaScript(`Array.from(document.querySelectorAll('#index-results button'))
-    .find(button => button.textContent.startsWith('Sprite-UpperSprite.png')).click()`)
-  await waitFor("document.querySelector('#index-name').textContent === 'Sprite-UpperSprite.png' && !document.querySelector('#index-preview').disabled")
+    .find(button => button.textContent.startsWith(${JSON.stringify(preview)})).click()`)
+  await waitFor(`document.querySelector('#index-name').textContent === ${JSON.stringify(preview)} && !document.querySelector('#index-preview').disabled`)
   await webContents.executeJavaScript("document.querySelector('#index-preview').click()")
   await waitFor(`(() => {
     const image = document.querySelector('#stage-image')
     return !document.querySelector('#index-dialog').open && !image.hidden &&
-      image.alt === 'Sprite-UpperSprite.png' && image.naturalWidth === 4 && image.naturalHeight === 2
+      image.alt === ${JSON.stringify(preview)} && image.naturalWidth === ${width} && image.naturalHeight === ${height}
   })()`)
 }
