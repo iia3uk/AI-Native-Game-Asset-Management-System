@@ -2,13 +2,13 @@ import { IndexInputError } from '../index/index-errors.mjs'
 import { detectPackage } from '../packages/detect.mjs'
 import { inspectPackage, packageOptions } from '../packages/dispatch.mjs'
 import { folderPackageSource, scanPackageFolder } from '../packages/folder.mjs'
-import { packageHashPattern, packageSource } from '../packages/source.mjs'
+import { importSource, packageHashPattern } from '../packages/source.mjs'
 
 export function packageRoutes({ json, body, shutdown, wake, ignoredPaths }) {
   let inspecting = false
   return async (index, request, response, action) => {
     const input = await body(request).catch(() => null)
-    const source = () => input?.root === undefined ? packageSource(input?.path) :
+    const source = () => input?.root === undefined ? importSource(input?.path) :
       folderPackageSource(input.root, input.path, ignoredPaths)
     if (action === 'inspect' || action === 'folder') {
       if (inspecting) return json(response, 409, { error: 'Уже выполняется анализ пакета или папки.' })

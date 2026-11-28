@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -60,6 +60,13 @@ test('Unity staging retains GUID references and excludes package scripts, custom
   assert.match(await readFile(join(staged, entries[5].id, 'Plain.asset.meta'), 'utf8'),
     /\nNativeFormatImporter:\n  externalObjects: \{\}\n  mainObjectFileID: 4300000\n/)
   assert.deepEqual(await readdir(project), ['Assets'])
+
+  const folderProject = join(root, 'folder-project')
+  const folderInputs = await stageUnityInputs(output, folderProject, entries, undefined, true)
+  assert.ok(folderInputs.targets.some(target => target.id === entries[4].id && target.path.endsWith('/Foreign.prefab')))
+  assert.deepEqual(await readdir(folderProject), ['Assets'])
+  assert.deepEqual((await readdir(join(folderProject, 'Assets', 'BridgeInput'))).sort(),
+    [entries[0].id, entries[4].id, entries[5].id])
 })
 
 test('an unavailable Unity version preserves originals and reports the per-asset outcome', async t => {
@@ -186,6 +193,32 @@ test('native Unity bridge exports separately editable prefab parts, a mesh, an a
     assert.ok(animated.animations[0].tracks.some(track => track.name.includes('LeftPart')))
     assert.deepEqual(await readFile(path), original)
     assert.equal((await readdir(join(directory, '..'))).some(name => name.startsWith('.stage-')), false)
+
+    const project = join(root, 'FixtureProject')
+    const packageName = 'com.test.native-assets'
+    const embedded = join(project, 'Packages', packageName)
+    await rename(join(project, 'Assets', 'Fixture'), embedded)
+    await writeFile(join(embedded, 'package.json'), JSON.stringify({ name: packageName, version: '1.0.0' }))
+    const originalPrefab = await readFile(join(embedded, 'BridgeFixture.prefab'))
+    const inspection = await server.post('/api/index/packages/inspect', { path: project })
+    assert.equal(inspection.status, 200)
+    const { package: importedProject } = await inspection.json()
+    assert.equal(importedProject.engineVersion, requested)
+    const importRequest = await server.post('/api/index/packages/import', {
+      path: project, hash: importedProject.hash, formats: ['fbx'], mode: 'auto',
+    })
+    assert.equal(importRequest.status, 202)
+    const converted = await waitForJob(server, (await importRequest.json()).job.id)
+    assert.equal(converted.status, 'completed', converted.error)
+    assert.equal(converted.result.report.export.unity.status, 'completed', JSON.stringify(converted.result.report.export.unity))
+    assert.equal(converted.result.report.export.unity.editorVersion, requested)
+    const folderManifest = JSON.parse(await readFile(join(converted.result.directory, 'manifest.json'), 'utf8'))
+    const fromUpm = folderManifest.assets.find(asset => asset.sourcePath === 'Packages/' + packageName + '/BridgeFixture.prefab')
+    assert.equal(fromUpm.id, entry('BridgeFixture.prefab').id)
+    const folderFbx = fromUpm.exports.find(file => file.role === 'prefab' && file.status === 'converted')
+    const fileBytes = await readFile(join(converted.result.directory, folderFbx.path))
+    assert.equal(triangleCount(new FBXLoader().parse(Uint8Array.from(fileBytes).buffer, '')), 2)
+    assert.deepEqual(await readFile(join(embedded, 'BridgeFixture.prefab')), originalPrefab)
   } finally {
     await server.close()
   }

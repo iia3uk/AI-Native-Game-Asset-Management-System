@@ -42,14 +42,14 @@ async function runEditor(editor, project, signal) {
   }
 }
 
-export async function prepareUnityExports({ project, output, entries, selection, signal }) {
-  const candidates = entries.filter(isUnityExportTarget)
+export async function prepareUnityExports({ project, output, entries, selection, signal, includePackageAssets = false }) {
+  const candidates = entries.filter(entry => isUnityExportTarget(entry, includePackageAssets))
   if (!candidates.length) return { results: new Map(), summary: { status: 'not-needed' } }
   if (!selection.editor) return {
     results: new Map(candidates.map(({ id }) => [id, { issue: selection.issue }])),
     summary: { status: 'unavailable', issue: selection.issue },
   }
-  const { targets, rejected } = await stageUnityInputs(output, project, entries, signal)
+  const { targets, rejected } = await stageUnityInputs(output, project, entries, signal, includePackageAssets)
   const results = new Map([...rejected].map(([id, issue]) => [id, { issue }]))
   if (!targets.length) return { results, summary: { status: 'no-compatible-inputs' } }
   const { editor } = selection

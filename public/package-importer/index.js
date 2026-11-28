@@ -1,6 +1,6 @@
 import { mountEngineStatus } from './engine-status.js'
 import { mountPackageFolder } from './folder.js'
-import { formatLabel, isUnityBinary } from './formats.js'
+import { formatLabel, isUnityBinary, isUnityFolder } from './formats.js'
 import { appendManifest, assetLabel, describeIssue } from './report.js'
 import { mountImportOptions } from './import-options.js'
 import { mountPackageExport } from './export.js'
@@ -10,7 +10,7 @@ const jobsRoute = '/api/index/jobs'
 const packagesRoute = '/api/index/packages'
 const batchSize = 16
 const selectionKey = ({ root, path }) => JSON.stringify([root, path])
-const selectionLabel = ({ root, path }) => root ? path : path.split(/[\\/]/).at(-1)
+const selectionLabel = ({ root, path }) => root ? path : path.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1)
 const active = job => ['pending', 'running'].includes(job.status)
 const assetStatus = {
   ready: 'Готово', extracted: 'Прямое извлечение', unsupported: 'Не поддерживается',
@@ -121,6 +121,10 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
         details.append(element('p', formatLabel(packageFormat) + ' ' + format + ' · Unity ' + unityVersion +
           ' · Декодировано ' + converted + ' из ' + total))
       }
+      if (isUnityFolder(record.result.report.packageFormat)) {
+        const { packageFormat, engineVersion } = record.result.report
+        details.append(element('p', [formatLabel(packageFormat), engineVersion].filter(Boolean).join(' · ')))
+      }
       if (record.result.report.packageFormat === 'unreal-pak') {
         const { containerVersion, extracted, total } = record.result.report
         details.append(element('p', 'Unreal Pak ' + containerVersion + ' · Извлечено ' + extracted + ' из ' + total))
@@ -199,6 +203,12 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     if (plan.format === 'unreal-pak') {
       details.insertBefore(element('p', 'Unreal Pak ' + plan.containerVersion + ' · Извлечение исходных файлов'), preview)
     }
+    if (isUnityFolder(plan.format)) {
+      const packages = plan.packages.slice(0, 8).map(pack => pack.name + ' ' + pack.version)
+      if (plan.packages.length > packages.length) packages.push('ещё ' + (plan.packages.length - packages.length))
+      details.insertBefore(element('p', [formatLabel(plan.format), plan.engineVersion,
+        ...packages].filter(Boolean).join(' · ')), preview)
+    }
     if (plan.total > shown.length) details.append(element('p', 'Показано ' + shown.length + ' из ' + plan.total + ' записей.'))
     const start = button('Обработать и добавить в индекс', async () => {
       if (busy) return
@@ -248,6 +258,20 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     event.preventDefault()
     if (pathInput.value.trim()) void inspect([{ path: pathInput.value.trim() }])
   })
+  if (bridge?.chooseFolder) {
+    const pickProject = $('pick-project')
+    pickProject.hidden = false
+    pickProject.addEventListener('click', async () => {
+      if (busy) return
+      try {
+        const path = await bridge.chooseFolder()
+        if (path) {
+          pathInput.value = path
+          await inspect([{ path }])
+        }
+      } catch (error) { showError(error) }
+    })
+  }
   section.addEventListener('toggle', () => void refresh())
   dialog.addEventListener('close', () => {
     if (!dialog.open) void refresh()

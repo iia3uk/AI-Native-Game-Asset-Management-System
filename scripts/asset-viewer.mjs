@@ -8,7 +8,7 @@ import { ProcessingWorker } from '../core/processing/processing-worker.mjs'
 import { ThumbnailCache } from '../core/thumbnails/thumbnail-cache.mjs'
 import { assetThumbnail } from '../core/thumbnails/thumbnail-service.mjs'
 import { inspectPackage, packageOptions } from '../core/packages/dispatch.mjs'
-import { packageSource } from '../core/packages/source.mjs'
+import { importSource } from '../core/packages/source.mjs'
 import { importUnityBundle } from '../core/packages/unity/bundle/import.mjs'
 import { engineInventory } from '../core/engines/inventory.mjs'
 import { inspectUnreal } from '../core/packages/unreal/inspect.mjs'
@@ -236,7 +236,7 @@ async function main([command, ...args]) {
   }
   if (command === 'package-inspect' || command === 'package-import') {
     if (values.queue && values['dry-run']) throw new IndexInputError('Use only one of --queue or --dry-run.')
-    const source = await packageSource(input)
+    const source = await importSource(input)
     const report = await inspectPackage(source, { signal: AbortSignal.timeout(120_000) })
     if (command === 'package-inspect') return print(report, values.json)
     const { formats: exportFormats, ...options } = packageOptions(report.format, {

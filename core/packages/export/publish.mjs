@@ -50,7 +50,7 @@ async function removeDirectory(destination, directory) {
   await rm(directory.path, { recursive: true, force: true, maxRetries: 3 })
 }
 
-export async function exportPackageResult(importDirectory, protectedRoots, job, input, { preview, signal }) {
+export async function exportPackageResult(importDirectory, protectedRoots, job, input, { preview, signal, jobSource }) {
   const deadline = AbortSignal.timeout(10 * 60_000)
   signal = signal ? AbortSignal.any([signal, deadline]) : deadline
   if (!preview && (typeof input?.key !== 'string' || !packageHashPattern.test(input.key))) {
@@ -58,7 +58,9 @@ export async function exportPackageResult(importDirectory, protectedRoots, job, 
   }
   let prepared
   try {
-    prepared = await preparePackageExport(importDirectory, protectedRoots, job, input, signal)
+    const format = job?.result?.report?.packageFormat
+    const roots = format === 'unity-project' || format === 'unity-upm' ? [...protectedRoots, jobSource] : protectedRoots
+    prepared = await preparePackageExport(importDirectory, roots, job, input, signal)
     if (!prepared || preview) return prepared?.plan ?? null
     if (prepared.plan.key !== input.key) throw new IndexConflictError('План изменился. Проверьте его перед экспортом.')
     return await publish(prepared, signal)

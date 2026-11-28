@@ -1,5 +1,6 @@
-import { basename, dirname, isAbsolute, win32 } from 'node:path'
-import { fileInfo, folderPath } from '../files/asset-files.mjs'
+import { lstat } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, normalize, win32 } from 'node:path'
+import { checkedPath, fileInfo, folderPath } from '../files/asset-files.mjs'
 import { IndexInputError } from '../index/index-errors.mjs'
 
 export const packageHashPattern = /^[0-9a-f]{64}$/
@@ -21,6 +22,17 @@ export async function packageSource(input) {
   return { root, path: file.path, name: basename(file.path) }
 }
 
+export async function importSource(input) {
+  const value = typeof input === 'string' ? input.trim().replace(/^"(.*)"$/, '$1') : ''
+  if (isAbsolute(value) && value.length <= 4096) {
+    const folder = await folderPath(value).catch(() => null)
+    if (folder && validPackageSegment(basename(folder))) return directorySource(folder)
+  }
+  return packageSource(input)
+}
+
+const directorySource = path => ({ root: path, path, name: basename(path), directory: true })
+
 export async function scopedPackageSource(root, path) {
   if (typeof root !== 'string' || !isAbsolute(root) || root.length > 4096 ||
       (process.platform === 'win32' && !/^[a-z]:[\\/]/i.test(root)) ||
@@ -35,6 +47,8 @@ export async function scopedPackageSource(root, path) {
 
 export async function queuedPackageSource(path) {
   // Queue entries already store a canonical path. Resolve it again without accepting a replacement link.
+  const directory = typeof path === 'string' && isAbsolute(path) && await checkedPath(normalize(path), path)
+  if (directory && (await lstat(directory).catch(() => null))?.isDirectory()) return directorySource(directory)
   const root = dirname(path)
   const file = await fileInfo(root, path)
   if (!file) throw new IndexInputError('Исходный пакет больше не доступен. Проанализируйте файл снова.')

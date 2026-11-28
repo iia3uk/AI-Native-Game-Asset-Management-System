@@ -177,10 +177,11 @@
     <details id="package-importer" class="index-analysis">
       <summary>Импорт пакетов Unity и Unreal</summary>
       <form id="package-form">
-        <label for="package-path">Полный путь к пакету</label>
+        <label for="package-path">Полный путь к файлу пакета, проекту Unity или папке UPM</label>
         <div class="folder-path-row">
           <input id="package-path" maxlength="4096" autocomplete="off" spellcheck="false">
           <button id="package-pick" type="button" class="control" hidden>Выбрать файлы…</button>
+          <button id="package-pick-project" type="button" class="control" hidden>Выбрать проект или UPM…</button>
           <button class="control">Проанализировать</button>
         </div>
         <input id="package-files" type="file" multiple hidden>

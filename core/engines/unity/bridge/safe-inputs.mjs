@@ -21,8 +21,11 @@ const builtInImporters = {
   controller: 'NativeFormatImporter', overridecontroller: 'NativeFormatImporter', fbx: 'ModelImporter',
 }
 
-export function isUnityExportTarget(entry) {
-  return Boolean(entry.output && entry.sourcePath.startsWith('Assets/') &&
+const eligiblePath = (path, includePackageAssets) => path.startsWith('Assets/') ||
+  (includePackageAssets && path.startsWith('Packages/'))
+
+export function isUnityExportTarget(entry, includePackageAssets = false) {
+  return Boolean(entry.output && eligiblePath(entry.sourcePath, includePackageAssets) &&
     targetFormats.has(extname(entry.sourcePath).slice(1).toLowerCase()))
 }
 
@@ -49,7 +52,7 @@ async function cleanMeta(root, entry, ext) {
     '  externalObjects: {}\n' + settings + '  userData: \n  assetBundleName: \n  assetBundleVariant: \n'
 }
 
-export async function stageUnityInputs(output, project, entries, signal) {
+export async function stageUnityInputs(output, project, entries, signal, includePackageAssets = false) {
   const targets = []
   const rejected = new Map()
   const root = join(project, 'Assets', 'BridgeInput')
@@ -58,9 +61,10 @@ export async function stageUnityInputs(output, project, entries, signal) {
   let count = 0
   for (const entry of entries) {
     signal?.throwIfAborted()
-    if (!entry.output || !guid.test(entry.id) || !entry.sourcePath.startsWith('Assets/')) continue
+    if (!entry.output || !guid.test(entry.id) || !eligiblePath(entry.sourcePath, includePackageAssets)) continue
     const ext = extname(entry.sourcePath).slice(1).toLowerCase()
     if (!classIDs[ext] && ext !== 'fbx' && !textureFormats.has(ext)) continue
+    const target = isUnityExportTarget(entry, includePackageAssets)
     const file = await fileInfo(output, entry.output)
     let issue
     if (!file) issue = 'unity-input-unavailable'
@@ -70,12 +74,12 @@ export async function stageUnityInputs(output, project, entries, signal) {
       if (!validateUnityText(text, ext)) issue = 'unity-serialization-excluded'
     }
     if (issue) {
-      if (isUnityExportTarget(entry)) rejected.set(entry.id, issue)
+      if (target) rejected.set(entry.id, issue)
       continue
     }
     const space = await statfs(root, { bigint: true })
     if (space.bavail * space.bsize < BigInt(file.info.size + 768 * MiB)) {
-      if (isUnityExportTarget(entry)) rejected.set(entry.id, 'unity-space-limit')
+      if (target) rejected.set(entry.id, 'unity-space-limit')
       continue
     }
     const name = posix.basename(entry.sourcePath)
@@ -86,7 +90,7 @@ export async function stageUnityInputs(output, project, entries, signal) {
     await writeFile(destination + '.meta', await cleanMeta(output, entry, ext), { flag: 'wx', signal })
     bytes += file.info.size
     count++
-    if (isUnityExportTarget(entry)) targets.push({ id: entry.id, path: 'Assets/BridgeInput/' + entry.id + '/' + name, kind: ext })
+    if (target) targets.push({ id: entry.id, path: 'Assets/BridgeInput/' + entry.id + '/' + name, kind: ext })
   }
   return { targets, rejected }
 }

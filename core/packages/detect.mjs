@@ -3,10 +3,13 @@ import { isSerializedUnity, serializedProbeSize } from '../engines/unity/seriali
 import { checkedPath, fileInfo, sameFile } from '../files/asset-files.mjs'
 import { IndexInputError } from '../index/index-errors.mjs'
 import { pakFooter } from './unreal/containers.mjs'
+import { unityFolderFormat } from './unity/folder/layout.mjs'
 
 export const unityFsMagic = Buffer.from('UnityFS\0')
 
 export async function detectPackage(source, { signal } = {}) {
+  signal?.throwIfAborted()
+  if (source.directory) return unityFolderFormat(source.root)
   const format = await probePackageFormat(source, { signal })
   if (format) return format
   throw new IndexInputError('Ожидается Unity Package, UnityFS, бинарный файл Unity или Unreal Pak.')

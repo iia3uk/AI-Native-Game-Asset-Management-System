@@ -1,26 +1,12 @@
 import { createHash } from 'node:crypto'
 import { open, statfs } from 'node:fs/promises'
-import { extname, join } from 'node:path'
-import { modelFormats, imageFormats, audioFormats, unityDataFormats as unityData } from '../../files/formats.mjs'
+import { join } from 'node:path'
 import { unityTar } from '../archive/package-tar.mjs'
 import { checkPathTree, logicalPath, segments } from './paths.mjs'
 import { guidPattern, invalid, MiB, packageLimits } from './policy.mjs'
+import { classification, unitySummary } from './records.mjs'
 
 const attributes = new Set(['pathname', 'asset', 'asset.meta', 'preview.png'])
-
-function classification(path, folder) {
-  if (folder) return { kind: 'folder', status: 'ready' }
-  const ext = extname(path).slice(1).toLowerCase()
-  if (modelFormats.has(ext)) return { kind: 'model', status: 'extracted' }
-  if (imageFormats.has(ext) && ext !== 'svg') return { kind: 'texture', status: 'extracted' }
-  if (audioFormats.has(ext)) return { kind: 'audio', status: 'extracted' }
-  if (unityData.has(ext)) {
-    const kind = ({ mat: 'material', anim: 'animation', prefab: 'prefab', unity: 'scene' })[ext] ?? 'unity-data'
-    return { kind, status: ['mat', 'anim'].includes(ext) ? 'extracted' : 'requires-engine' }
-  }
-  if (['bin', 'mtl', 'txt', 'md', 'pdf'].includes(ext)) return { kind: 'support', status: 'extracted' }
-  return { kind: 'unsupported', status: 'unsupported' }
-}
 
 async function smallEntry(consume, size) {
   const bytes = Buffer.alloc(size)
@@ -122,10 +108,6 @@ function recordMetadata(record, prefix, id) {
   record.folder = /^folderAsset:[ \t]*(?:yes|true|1)[ \t]*\r?$/im.test(text)
 }
 
-function summary({ assets, ...archive }) {
-  return { ...archive, total: assets.length, assets: assets.slice(0, 500).map(({ payload, meta, preview, ...publicFields }) => publicFields) }
-}
-
 export async function inspectUnityPackage(source, { signal, limits = packageLimits } = {}) {
-  return summary(await readPackage(source, { signal, limits }))
+  return unitySummary(await readPackage(source, { signal, limits }))
 }

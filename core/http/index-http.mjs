@@ -124,7 +124,7 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
           const roots = [...exportProtectedRoots, ...index.libraries().map(library => library.root)]
           const input = await body(request).catch(() => null)
           const result = await exportPackageResult(importDirectory, roots, index.jobs.get(id), input,
-            { preview: action === 'export-plan', signal: shutdown.signal })
+            { preview: action === 'export-plan', signal: shutdown.signal, jobSource: index.jobs.importSource(id) })
           if (result) return json(response, action === 'export-plan' ? 200 : 201, result)
         }
         if (method === 'POST' && id && action === 'cancel') {

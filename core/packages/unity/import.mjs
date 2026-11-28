@@ -1,8 +1,12 @@
 import { createHash } from 'node:crypto'
 import { renameSync } from 'node:fs'
-import { lstat, mkdir, mkdtemp, open, readdir, realpath, rm } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, open, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { checkedPath, fileInfo, readBoundedText, sameFile } from '../../files/asset-files.mjs'
+import { hashFile } from '../../files/hash.mjs'
+import { packageWorkspaceRoot } from '../workspace.mjs'
+import { readUnityFolder } from './folder/inspect.mjs'
+import { unityFolderLayout } from './folder/layout.mjs'
 import { readPackage } from './inspect.mjs'
 import { hashPattern, invalid, MiB, packageLimits, unityPackageVersion } from './policy.mjs'
 import { packageDocuments } from './report.mjs'
@@ -15,16 +19,7 @@ import { locateUnityBridge, prepareUnityExports, removeUnityProject } from '../.
 
 const packageDirectory = 'unitypackage-v' + unityPackageVersion
 
-async function importRoot(directory, exportEnabled) {
-  await mkdir(directory, { recursive: true, mode: 0o700 })
-  const root = await realpath(directory)
-  const version = join(root, exportEnabled ? packageDirectory + '-export-v' + packageExportVersion : packageDirectory)
-  await mkdir(version, { mode: 0o700, recursive: true })
-  if (!await checkedPath(root, version)) throw invalid('каталог импорта недоступен.')
-  return version
-}
-
-async function reuse(root, key, hash, formats, signal, limits) {
+async function reuse(root, key, hash, formats, signal, limits, verifyOriginals) {
   const directory = join(root, key)
   const existing = await lstat(directory).catch(error => {
     if (error.code === 'ENOENT') return null
@@ -48,6 +43,7 @@ async function reuse(root, key, hash, formats, signal, limits) {
     if (formats.length && (recorded.export?.version !== packageExportVersion ||
         recorded.export.formats?.join(',') !== formats.join(',') ||
         !await verifyExports(directory, metadata.assets, signal))) throw new Error('Invalid export manifest')
+    if (verifyOriginals) await verifySourceOutputs(directory, metadata.assets, signal)
     return { directory, source: formats.length ? directory : source, report: recorded, reused: true }
   } catch {
     signal?.throwIfAborted()
@@ -60,36 +56,37 @@ export async function stageUnityPackage(directory, source, hash, {
 }) {
   signal?.throwIfAborted()
   if (!hashPattern.test(hash)) throw invalid('некорректный SHA-256 пакета.')
+  const readSource = source.directory ? readUnityFolder : readPackage
+  if (source.directory && mode !== 'engineless' && !editorVersion) {
+    editorVersion = (await unityFolderLayout(source.root, signal)).engineVersion ?? ''
+  }
   const [blender, editor] = await Promise.all([
     formats.length ? locateBatchBlender() : null,
     mode === 'engineless' ? null : locateUnityBridge(editorVersion),
   ])
   const engine = editor && [mode, editorVersion, editor.identity ?? editor.issue]
   const key = formats.length ? hash + '-' + exportRecipe(formats, blender, engine) : hash
-  const root = await importRoot(directory, formats.length)
-  for (const entry of await readdir(root, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !/^\.stage-[a-zA-Z0-9]{6}$/.test(entry.name)) continue
-    const target = join(root, entry.name)
-    if (await checkedPath(root, target) && Date.now() - (await lstat(target)).mtimeMs > 60 * 60 * 1000) {
-      await rm(target, { recursive: true, force: true })
-    }
-  }
-  const cached = await reuse(root, key, hash, formats, signal, limits)
+  const recipeDirectory = formats.length ? packageDirectory + '-export-v' + packageExportVersion : packageDirectory
+  const root = await packageWorkspaceRoot(directory, recipeDirectory, { sourceRoot: source.directory ? source.root : undefined })
+  const cached = await reuse(root, key, hash, formats, signal, limits, source.directory)
   if (cached) {
-    await verifyPackageHash(source, hash, limits, signal)
+    if (source.directory) {
+      if ((await readSource(source, { signal, onProgress, limits })).hash !== hash) throw stalePackage()
+    } else await verifyPackageHash(source, hash, limits, signal)
     signal?.throwIfAborted()
     return publish(cached, () => {})
   }
   const staging = await mkdtemp(join(root, '.stage-'))
   try {
-    const records = await readPackage(source, { staging, signal, onProgress, limits })
-    if (records.hash !== hash) throw invalid('пакет изменился после анализа. Проанализируйте его снова.')
+    const records = await readSource(source, { staging, signal, onProgress, limits })
+    if (records.hash !== hash) throw stalePackage()
     const output = join(staging, 'output')
     await mkdir(join(output, 'Source'), { recursive: true })
     const createExports = formats.length ? async entries => {
       const project = join(staging, 'unity')
       try {
-        const bridge = editor && await prepareUnityExports({ project, output, entries, selection: editor, signal })
+        const bridge = editor && await prepareUnityExports({ project, output, entries, selection: editor, signal,
+          includePackageAssets: source.directory })
         return await exportPackage({ output, scratch: staging, entries, formats, blender, bridge, signal, onProgress })
       } finally {
         if (editor) await removeUnityProject(project)
@@ -104,21 +101,35 @@ export async function stageUnityPackage(directory, source, hash, {
   }
 }
 
+const stalePackage = () => invalid('пакет изменился после анализа. Проанализируйте его снова.')
+
+async function verifySourceOutputs(directory, assets, signal) {
+  for (const entry of assets) {
+    signal?.throwIfAborted()
+    for (const [path, hash] of [[entry.output, entry.hash], [entry.metadata, entry.metadataHash]]) {
+      if (!path) continue
+      const file = path.startsWith('Source/') && await fileInfo(directory, path)
+      if (!file || await hashFile(directory, file.path, file.info, signal) !== hash) {
+        throw new Error('Invalid source output')
+      }
+    }
+  }
+}
+
 async function verifyPackageHash(source, expected, limits, signal) {
   const handle = await open(source.path)
   try {
     const opened = await handle.stat()
-    const changed = () => invalid('пакет изменился после анализа. Проанализируйте его снова.')
-    if (!opened.isFile() || opened.size > limits.compressed || !await checkedPath(source.root, source.path)) throw changed()
+    if (!opened.isFile() || opened.size > limits.compressed || !await checkedPath(source.root, source.path)) throw stalePackage()
     const hash = createHash('sha256')
     let bytes = 0
     for await (const chunk of handle.createReadStream({ autoClose: false, signal })) {
       bytes += chunk.length
-      if (bytes > opened.size) throw changed()
+      if (bytes > opened.size) throw stalePackage()
       hash.update(chunk)
     }
     if (bytes !== opened.size || hash.digest('hex') !== expected || !sameFile(opened, await handle.stat()) ||
-        !await checkedPath(source.root, source.path)) throw changed()
+        !await checkedPath(source.root, source.path)) throw stalePackage()
   } finally {
     await handle.close()
   }

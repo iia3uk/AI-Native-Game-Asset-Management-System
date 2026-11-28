@@ -5,6 +5,7 @@ import { detectPackage } from './detect.mjs'
 import { processUnityBundle } from './unity/bundle/import.mjs'
 import { stageUnityPackage } from './unity/import.mjs'
 import { inspectUnityPackage } from './unity/inspect.mjs'
+import { inspectUnityFolder } from './unity/folder/inspect.mjs'
 import { processUnrealPak } from './unreal/pak/import.mjs'
 
 function bundleError(issue, serialized) {
@@ -33,6 +34,7 @@ function pakError(issue) {
 
 export async function inspectPackage(source, { signal } = {}) {
   const format = await detectPackage(source, { signal })
+  if (source.directory) return inspectUnityFolder(source, { signal })
   if (format === 'unitypackage') return inspectUnityPackage(source, { signal })
   if (format === 'unreal-pak') {
     const { entries: assets, ...report } = await processUnrealPak(source, { inspectOnly: true, signal })
@@ -69,7 +71,7 @@ export async function stagePackage(directory, source, job, { signal, onProgress,
   if (expectedFormat && expectedFormat !== format) {
     throw new IndexInputError('Содержимое файла не соответствует формату автоимпорта (' + expectedFormat + ').')
   }
-  if (format === 'unitypackage') {
+  if (format === 'unitypackage' || source.directory) {
     return stageUnityPackage(directory, source, job.sourceKey, {
       signal, onProgress, formats: job.exportFormats, mode: job.engineMode, editorVersion: job.editorVersion,
       publish: (result, move) => publish(result, move, Boolean(result.report.written)),

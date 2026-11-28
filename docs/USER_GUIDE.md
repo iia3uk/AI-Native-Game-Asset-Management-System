@@ -48,6 +48,17 @@ npm run cli -- jobs --type package-import --json
 
 The default CLI command waits for extraction and indexing. Add `--queue` to hand processing to the running desktop app or loopback server.
 
+## Import a Unity project or local UPM package
+
+In **Импорт пакетов Unity и Unreal**, click **Выбрать проект или UPM…** or paste the absolute folder path. Use the project root that contains `Assets` and `ProjectSettings`, or the package root that contains `package.json`. Analyze the folder and click **Обработать и добавить в индекс**. The report includes the project's Unity version, included UPM packages, original paths and resolved GUID links. The input folder stays read-only.
+
+Project import includes embedded packages and local folder dependencies contained in the project. Registry packages, project caches, external dependencies and UPM tarballs are outside this workflow. Select a separate local UPM folder directly to import it. For optional Editor conversion, the importer uses the project's declared Unity version when you leave the version field blank. [Unity package manifests](https://docs.unity.com/en-us/engine/6000.0/manual/packages-list/cus-pkg-development/upm-manifest-pkg).
+
+```sh
+npm run cli -- package-inspect "/absolute/path/MyUnityProject" --json
+npm run cli -- package-import "/absolute/path/com.example.assets" --export fbx,glb --json
+```
+
 ## Save completed imports to a folder
 
 In **Отчёт об импорте**, open **Экспортировать в папку** for the whole package. For one resource, click **Показать файлы** and use **Выбрать для экспорта** on its row. Choose an existing destination outside connected libraries. Click **Составить план** to review files, size and known missing links. **Экспортировать** creates a new subdirectory with the artifacts and three reports. A single-resource export includes known linked resources with their relative paths. UnityFS and Pak reports show when dependency coverage is limited.

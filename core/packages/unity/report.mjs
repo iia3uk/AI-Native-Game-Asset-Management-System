@@ -17,6 +17,7 @@ function extractReferences(text) {
 }
 
 export async function packageDocuments(packageInfo, output, signal, limits, onProgress, createExports, mode = 'engineless') {
+  const method = packageInfo.format + '-direct'
   const descriptions = []
   const byId = new Map()
   const materialSources = new Map()
@@ -25,9 +26,9 @@ export async function packageDocuments(packageInfo, output, signal, limits, onPr
   let remainingReferences = limits.dependencies
   for (const asset of packageInfo.assets) {
     signal?.throwIfAborted()
-    const { payload, meta, preview, hasMeta, hasPreview, ...fields } = asset
-    const entry = { ...fields, method: 'unitypackage-direct', hash: payload?.hash ?? null, license: null,
-      output: null, metadata: null, metadataHash: null, preview: null, previewHash: null, fileIDs: [], issues: [] }
+    const { payload, meta, preview, hasMeta, hasPreview, issue, ...fields } = asset
+    const entry = { ...fields, method, hash: payload?.hash ?? null, license: null,
+      output: null, metadata: null, metadataHash: null, preview: null, previewHash: null, fileIDs: [], issues: issue ? [issue] : [] }
     const allowed = !['unsupported', 'failed'].includes(entry.status)
     const path = join(output, 'Source', asset.sourcePath)
     if (allowed && (payload || meta)) await mkdir(dirname(path), { recursive: true })
@@ -45,7 +46,7 @@ export async function packageDocuments(packageInfo, output, signal, limits, onPr
         metadataText = await readBoundedText(output, path + '.meta', limits.metadata) ?? ''
         textBudget -= meta.size
       } else entry.issues.push('metadata-analysis-limit')
-    } else if (!hasMeta) entry.issues.push('metadata-missing')
+    } else if (!hasMeta && !issue) entry.issues.push('metadata-missing')
     if (allowed && preview && await validPackagePreview(preview.temp)) {
       const target = 'Previews/' + asset.id + '.png'
       await mkdir(join(output, 'Previews'), { recursive: true })
@@ -116,13 +117,16 @@ export async function packageDocuments(packageInfo, output, signal, limits, onPr
   signal?.throwIfAborted()
   const exports = await createExports?.(descriptions)
   const materials = await writeMaterialOutputs(output, byId, materialSources, textureImporters, limits.dependencyBytes, signal)
-  const source = { format: packageInfo.format, sha256: packageInfo.hash, size: packageInfo.size }
-  const manifest = { version: unityPackageVersion, source, engineVersion: null, assets: descriptions,
+  const source = { format: packageInfo.format, sha256: packageInfo.hash, size: packageInfo.size,
+    ...(packageInfo.packages && { packages: packageInfo.packages }) }
+  const manifest = { version: unityPackageVersion, source, engineVersion: packageInfo.engineVersion ?? null, assets: descriptions,
     ...(exports?.unity?.editorVersion && { conversionEditorVersion: exports.unity.editorVersion }) }
   const counts = Object.create(null)
   for (const { status } of descriptions) counts[status] = (counts[status] ?? 0) + 1
   const written = descriptions.filter(entry => entry.output || entry.metadata).length
-  const report = { version: unityPackageVersion, mode, method: 'unitypackage-direct', counts, written, materials,
+  const report = { version: unityPackageVersion, mode, method, counts, written, materials,
+    ...(packageInfo.packages && { packageFormat: packageInfo.format, engineVersion: packageInfo.engineVersion,
+      packages: packageInfo.packages }),
     converted: exports?.modelsConverted ?? 0, ...(exports && { export: exports }),
     limitations: ['native-unity-decoding-unavailable', ...(!exports ? ['no-generated-model-export'] : []),
       'material-graphs-not-converted'] }

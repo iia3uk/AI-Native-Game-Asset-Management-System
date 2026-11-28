@@ -5,6 +5,7 @@ const artifactStatus = {
 }
 
 const packageIssues = {
+  'metadata-guid-invalid': 'Неверный GUID в файле .meta',
   'unity-material-yaml-unrecognized': 'Не удалось разобрать описание материала Unity',
   'unity-material-output-limit': 'Достигнут лимит описаний материалов',
   'unity-version-unavailable': 'Запрошенная версия Unity недоступна',

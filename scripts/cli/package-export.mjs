@@ -21,7 +21,7 @@ export async function runPackageExport(index, paths, jobId, destination, { asset
   try {
     const result = await exportPackageResult(paths.imports, roots, index.jobs.get(jobId), {
       destination, asset: asset === undefined ? undefined : Number(asset), key,
-    }, { preview: key === undefined, signal: stop.signal })
+    }, { preview: key === undefined, signal: stop.signal, jobSource: index.jobs.importSource(jobId) })
     if (!result) throw new IndexInputError('Completed package import unavailable.')
     return result
   } finally {

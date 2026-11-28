@@ -165,6 +165,8 @@ textarea { resize: vertical; min-height: 60px; padding: 7px 8px; font-size: 13px
 .folder-dialog::backdrop { background: #050a06b8; }
 .folder-dialog h2 { margin: 0 0 17px; font-size: 22px; }
 .folder-path-row, .dialog-actions { display: flex; gap: 8px; }
+#package-form .folder-path-row { flex-wrap: wrap; }
+#package-path { flex: 1 1 15rem; }
 .folder-browser { display: grid; gap: 4px; max-height: 208px; margin-top: 10px; padding: 6px; overflow: auto; background: #101612; border: 1px solid #354237; border-radius: 7px; }
 .folder-browser button { text-align: left; overflow-wrap: anywhere; }
 .dialog-actions { justify-content: flex-end; margin-top: 15px; }
