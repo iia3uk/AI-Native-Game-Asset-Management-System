@@ -129,15 +129,20 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
         details.append(element('p', [formatLabel(packageFormat), engineVersion].filter(Boolean).join(' · ')))
       }
       if (isUnrealLoose(record.result.report.packageFormat)) {
-        const { packageFormat, engineVersion, unreal, media, unrealViewer } = record.result.report
+        const { packageFormat, engineVersion, unreal, media, unrealViewer, unrealSourceMeshes } = record.result.report
+        const gltf = (unrealViewer?.gltf ?? 0) + (unrealSourceMeshes?.gltf ?? 0)
+        const textured = (unrealViewer?.materials?.texturedGltf ?? 0) + (unrealSourceMeshes?.texturedGltf ?? 0)
+        const fbx = (unrealViewer?.derivatives?.fbx ?? 0) + (unrealSourceMeshes?.derivatives?.fbx ?? 0)
+        const glb = (unrealViewer?.derivatives?.glb ?? 0) + (unrealSourceMeshes?.derivatives?.glb ?? 0)
         details.append(element('p', [formatLabel(packageFormat), engineVersion || unreal?.editorVersion,
           media?.png && media.png + ' PNG', media?.wav && media.wav + ' WAV',
-          unrealViewer?.gltf && unrealViewer.gltf + ' glTF', unrealViewer?.psa && unrealViewer.psa + ' PSA',
+          unrealSourceMeshes?.meshes && 'Статических моделей UE4 · ' + unrealSourceMeshes.meshes,
+          gltf && gltf + ' glTF', unrealViewer?.psa && unrealViewer.psa + ' PSA',
           unrealViewer?.materials?.materialJson && unrealViewer.materials.materialJson + ' материалов',
           unrealViewer?.materials?.packedMaterials && unrealViewer.materials.packedMaterials + ' материалов с картой AO/roughness/metallic',
-          unrealViewer?.materials?.texturedGltf && unrealViewer.materials.texturedGltf + ' glTF с текстурами',
-          unrealViewer?.derivatives?.fbx && unrealViewer.derivatives.fbx + ' FBX',
-          unrealViewer?.derivatives?.glb && unrealViewer.derivatives.glb + ' GLB',
+          textured && textured + ' glTF с текстурами',
+          fbx && fbx + ' FBX', glb && glb + ' GLB',
+          unrealSourceMeshes?.issue && describeIssue(unrealSourceMeshes.issue),
           unrealViewer?.issue && describeIssue(unrealViewer.issue),
           unreal?.issue && describeIssue(unreal.issue)].filter(Boolean).join(' · ')))
       }

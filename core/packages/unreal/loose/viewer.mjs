@@ -31,10 +31,12 @@ export async function decodeLooseWithViewer({ viewer, records, output, workspace
 export async function recoverLooseViewerMaterials({ decoded, viewer, records, output, workspace, signal }) {
   if (!decoded?.parameters) return
   const { targets, parameters, store, summary, models } = decoded
-  const { counts, material } = await publishViewerMaterials({ targets, parameters, store, records, version: viewer.version, signal })
+  const { counts, material, lookupBySourcePath } = await publishViewerMaterials({ targets, parameters, store, records,
+    version: viewer.version, signal })
   await publishTexturedViewerModels({ models, material, counts, records, output, workspace, store, signal })
   summary.materials = counts
   if (summary.status === 'no-compatible-inputs' && (counts.materialJson || counts.texturePng)) {
     summary.status = 'completed'
   }
+  return lookupBySourcePath
 }

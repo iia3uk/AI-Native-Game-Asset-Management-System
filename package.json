@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
+    "@threenative/raw-unreal": "0.1.26",
     "rhino3dm": "8.32.1",
     "three": "^0.187.0",
     "zod": "4.6.7"

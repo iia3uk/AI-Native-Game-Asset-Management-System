@@ -79,12 +79,14 @@ export async function publishViewerMaterials({ targets, parameters, store, recor
         status: target ? 'resolved' : 'missing', ...(parameter && { parameter }) })
     }
   }
+  const publishedMaterial = asset => {
+    const description = asset && descriptions.get(asset.id)
+    return description ? { asset, description } : null
+  }
   const material = name => {
     const matches = byName.get(key(name))
     if (matches?.length !== 1) return null
-    const [asset] = matches
-    const description = descriptions.get(asset.id)
-    return description ? { asset, description } : null
+    return publishedMaterial(matches[0])
   }
-  return { counts, material }
+  return { counts, material, lookupBySourcePath: path => publishedMaterial(resolve(path)) }
 }

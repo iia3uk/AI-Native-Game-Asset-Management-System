@@ -14,7 +14,7 @@ function scalar(description, name, max) {
   return values.size === 1 && value >= 0 && value <= max ? value : null
 }
 
-export function bindViewerMaterials(document, lookup, modelPath) {
+export function bindViewerMaterials(document, lookup, modelPath, lookupPath) {
   if (!Array.isArray(document.materials) || !document.materials.length || document.materials.length > 128 ||
       document.images || document.textures) return null
   const sources = new Set()
@@ -40,7 +40,7 @@ export function bindViewerMaterials(document, lookup, modelPath) {
   }
   for (const [index, material] of document.materials.entries()) {
     if (!material?.name || typeof material.name !== 'string') continue
-    const match = lookup(material.name)
+    const match = lookupPath ? lookupPath(material.extras?.unrealMaterial) : lookup(material.name)
     if (!match) continue
     const { asset, description } = match
     sources.add(asset)
@@ -76,17 +76,20 @@ export function bindViewerMaterials(document, lookup, modelPath) {
   return { sources, images: images.size }
 }
 
-export async function publishTexturedViewerModels({ models, material, counts, records, output, workspace, store, signal }) {
+export async function publishTexturedViewerModels({ models, material, counts, records, output, workspace, store, signal,
+  method = 'ue-viewer-material-binding', materialByPath }) {
   for (const { asset, artifact } of models) {
     signal?.throwIfAborted()
     const text = await readBoundedText(output, artifact.path, 16 * 1024 ** 2)
     if (!text) continue
     const document = JSON.parse(text)
-    const result = bindViewerMaterials(document, material, artifact.path)
+    const result = bindViewerMaterials(document, material, artifact.path, materialByPath)
     if (!result) continue
-    for (const source of result.sources) {
-      records.dependencies.push({ source: asset.id, target: source.id, path: source.sourcePath,
-        type: 'unreal-model-material', status: 'resolved', lod: artifact.lod })
+    if (!materialByPath) {
+      for (const source of result.sources) {
+        records.dependencies.push({ source: asset.id, target: source.id, path: source.sourcePath,
+          type: 'unreal-model-material', status: 'resolved', lod: artifact.lod })
+      }
     }
     if (!result.images) continue
     const path = artifact.path.replace(/\.gltf$/, '-materials.gltf')
@@ -102,7 +105,7 @@ export async function publishTexturedViewerModels({ models, material, counts, re
     const { format, role, lod, metrics, converterVersion } = artifact
     const textured = await store.save(path, { path: scratch, info: { size } }, {
       format, role, lod, metrics, converterVersion, status: 'converted', from: artifact.path,
-      images: result.images, method: 'ue-viewer-material-binding',
+      images: result.images, method,
       issues: ['unreal-material-preview-approximate'],
     })
     asset.exports.push(textured)

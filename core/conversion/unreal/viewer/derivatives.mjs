@@ -22,7 +22,7 @@ export async function createViewerDerivatives({ models, store, blender, output, 
     const requested = formats.filter(format => !asset.exports.some(item => item.path && item.format === format &&
       item.method === 'unreal-editor' && item.role === artifact.role && artifact.lod === 0))
     if (!requested.length) continue
-    let input = asset.exports.find(item => item.path && item.method === 'ue-viewer-material-binding' &&
+    let input = asset.exports.find(item => item.path && ['ue-viewer-material-binding', 'unreal-source-mesh-material-binding'].includes(item.method) &&
       item.from === artifact.path) ?? artifact
     const describe = format => ({ format, role: artifact.role, lod: artifact.lod, method: 'blender', from: input.path })
     const issue = !blender ? 'blender-unavailable' : Date.now() >= deadline ? 'converter-time-budget' :
@@ -58,7 +58,8 @@ export async function createViewerDerivatives({ models, store, blender, output, 
             'invalid-converter-output' : failure ?? 'invalid-converter-output' })
           continue
         }
-        const target = [destination[format], asset.id, 'ue-viewer', basename(artifact.path, '.gltf') + '.' + format].join('/')
+        const adapter = artifact.method === 'unreal-source-mesh' ? 'unreal-source' : 'ue-viewer'
+        const target = [destination[format], asset.id, adapter, basename(artifact.path, '.gltf') + '.' + format].join('/')
         const saved = await store.save(target, file, { ...description, status: 'converted', converterVersion: result.version,
           sourceScene: result.metrics, issues: [...input.issues, ...(result.issues ?? []),
             ...(converterOutput !== scratch ? ['unreal-material-conversion-fallback'] : [])] })

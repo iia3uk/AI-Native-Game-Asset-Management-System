@@ -4,10 +4,13 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { exportRecipe, verifyExports } from '../../../conversion/cache.mjs'
 import { recoverUnrealMedia } from '../../../conversion/unreal/source-media/extract.mjs'
+import { publishSourceMeshes } from '../../../conversion/unreal/source-mesh/publish.mjs'
+import { publishTexturedViewerModels } from '../../../conversion/unreal/viewer/bind-materials.mjs'
 import { createViewerDerivatives } from '../../../conversion/unreal/viewer/derivatives.mjs'
 import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
 import { unrealBridgeVersion } from '../../../engines/unreal/bridge/project.mjs'
 import { locateUnrealBridge } from '../../../engines/unreal/bridge/selection.mjs'
+import { sourceMeshRevision } from '../../../engines/unreal/source-mesh/run.mjs'
 import { locateUnrealViewer, unrealViewerRevision } from '../../../engines/unreal/viewer/run.mjs'
 import { checkedPath, fileInfo } from '../../../files/asset-files.mjs'
 import { IndexInputError } from '../../../index/index-errors.mjs'
@@ -63,10 +66,10 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     engineMode === 'engineless' ? null : locateUnrealBridge(source, editorVersion || undefined),
     locateUnrealViewer(),
   ])
-  const blender = (viewer && exportFormats.length || selection && exportFormats.includes('glb')) ?
-    await locateBatchBlender() : null
+  const blender = exportFormats.length ? await locateBatchBlender() : null
   const editor = await editorRecipe(selection, engineMode, editorVersion)
-  const engineRecipe = viewer ? [editor, ['ue-viewer', unrealViewerRevision, ...viewer.identity]] : editor
+  const engineRecipe = [editor, ['unreal-source-mesh', sourceMeshRevision],
+    viewer && ['ue-viewer', unrealViewerRevision, ...viewer.identity]]
   const recipe = exportRecipe(exportFormats, blender, engineRecipe)
   const root = await packageWorkspaceRoot(directory, 'unreal-loose-v' + version, { sourceRoot: source.protectedRoot })
   const name = sourceKey + '-' + recipe
@@ -85,7 +88,9 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     if (records.hash !== sourceKey) throw unrealSourceChanged()
     const decoded = viewer && records.written ?
       await decodeLooseWithViewer({ viewer, records, output, workspace, source, signal }) : null
-    const unrealViewer = decoded?.summary ?? (exportFormats.length > 0 && !selection?.editor ?
+    const sourceMeshes = records.written ? await publishSourceMeshes({ records, output, workspace, source, store: decoded?.store, signal }) : null
+    const unrealSourceMeshes = sourceMeshes?.summary
+    const unrealViewer = decoded?.summary ?? (exportFormats.length > 0 && !selection?.editor && !unrealSourceMeshes?.gltf ?
       { status: 'unavailable', issue: 'unreal-viewer-unavailable' } : undefined)
     if (decoded) onProgress?.(65)
     const conversion = selection && records.written ?
@@ -93,12 +98,21 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
         onProgress: progress => onProgress?.((decoded ? 65 : 60) + Math.floor((progress - 60) * 0.4)) }) : null
     const media = await recoverUnrealMedia(records, { output, workspace, signal,
       onProgress: progress => onProgress?.(79 + Math.floor(progress * 0.04)) })
-    if (decoded) {
-      await recoverLooseViewerMaterials({ decoded, viewer, records, output, workspace, signal })
-      onProgress?.(85)
-      if (exportFormats.length) {
-        unrealViewer.derivatives = await createViewerDerivatives({ ...decoded, workspace, output, blender, formats: exportFormats, signal,
-          onProgress: progress => onProgress?.(85 + Math.floor(progress * 0.09)) })
+    const materialByPath = decoded && await recoverLooseViewerMaterials({ decoded, viewer, records, output, workspace, signal })
+    if (materialByPath && sourceMeshes?.models.length) {
+      await publishTexturedViewerModels({ ...sourceMeshes, counts: unrealSourceMeshes, records, output, workspace, signal,
+        method: 'unreal-source-mesh-material-binding',
+        materialByPath: path => {
+          const target = sourceMeshes.resolveMaterial(path)
+          return target ? materialByPath(target.sourcePath) : null
+        } })
+    }
+    const derivativeStages = [decoded, sourceMeshes].filter(stage => stage?.models.length)
+    onProgress?.(85)
+    if (exportFormats.length) {
+      for (const [index, stage] of derivativeStages.entries()) {
+        stage.summary.derivatives = await createViewerDerivatives({ ...stage, workspace, output, blender, formats: exportFormats, signal,
+          onProgress: progress => onProgress?.(85 + Math.floor((index + progress / 100) * 9 / derivativeStages.length)) })
       }
     }
     const counts = Object.create(null)
@@ -110,12 +124,14 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
       status: records.written ? 'completed' : 'no-compatible-inputs', counts, written: records.written, total: records.assets.length,
       engineVersion: source.association ?? null, ...conversion, converted: counts.converted ?? 0, media,
       ...(unrealViewer && { unrealViewer }),
+      ...(unrealSourceMeshes && { unrealSourceMeshes }),
       limitations: ['unsupported-cooked-unreal-objects-preserved-as-source', 'dependency-resolution-requires-asset-registry',
         'material-graphs-not-converted', ...(decoded ? ['ue-viewer-material-graphs-and-collision-not-exported'] : [])] }
     await Promise.all(Object.entries({ manifest, dependencies: { version, dependencies: records.dependencies },
       'conversion-report': report }).map(([key, value]) =>
       writeFile(join(output, key + '.json'), JSON.stringify(value, null, 2) + '\n', { flag: 'wx', signal })))
-    const destination = join(root, unrealViewer?.status === 'partial' ? name + '-' + randomUUID() : name)
+    const partial = unrealViewer?.status === 'partial' || unrealSourceMeshes?.issue
+    const destination = join(root, partial ? name + '-' + randomUUID() : name)
     signal?.throwIfAborted()
     onProgress?.(95)
     return publish({ directory: destination, source: destination,

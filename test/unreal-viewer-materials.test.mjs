@@ -95,6 +95,14 @@ test('Unreal materials bind matching owned textures and export the mesh, materia
   assert.equal(exported.unresolved, 1)
   assert.ok(await verifyExports(output, records.assets, signal))
   assert.deepEqual(bindViewerMaterials(gltf, () => null, modelPath), { sources: new Set(), images: 0 })
+  const sourceModel = structuredClone(gltf)
+  const materialPath = '/Game/Fixture/Materials/FixtureMaterial'
+  sourceModel.materials[0].name = 'Original authoring slot'
+  sourceModel.materials[0].extras = { unrealMaterial: materialPath }
+  const sourceBound = bindViewerMaterials(sourceModel, () => assert.fail('Source meshes must use package references'),
+    modelPath, path => path === materialPath ? viewer.lookupBySourcePath(shader.sourcePath) : null)
+  assert.deepEqual(sourceBound, { sources: new Set([shader]), images: 2 })
+  assert.equal(sourceModel.images[0].uri, '../../../Textures/Textures/My%20Albedo.png')
 })
 
 test('packed Unreal material selection preserves ORM, remaps MRA, and rejects conflicting or unconfirmed layouts', async t => {

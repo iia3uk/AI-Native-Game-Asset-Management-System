@@ -83,6 +83,10 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'core/conversion/unreal/preview.mjs',
     'core/conversion/unreal/source-media/extract.mjs',
     'core/conversion/unreal/source-media/payload.mjs',
+    'core/engines/unreal/source-mesh/package.mjs',
+    'core/engines/unreal/source-mesh/worker.mjs',
+    'core/conversion/unreal/source-mesh/publish.mjs',
+    'core/conversion/unreal/source-mesh/gltf.mjs',
     'core/engines/inventory.mjs',
     'core/engines/blender/preview.mjs',
     'core/engines/unity/bundle/run.mjs',
@@ -110,6 +114,8 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'node_modules/three/examples/jsm/libs/draco/gltf/draco_decoder.wasm',
     'node_modules/three/examples/jsm/libs/basis/basis_transcoder.wasm',
     'node_modules/rhino3dm/rhino3dm.wasm',
+    'node_modules/@threenative/raw-unreal/dist/index.js',
+    'node_modules/@threenative/raw-unreal/LICENSE',
   ]) {
     if (!statFile(archive, normalize(path)).size) throw new Error('Missing renderer dependency in app.asar: ' + path)
   }
