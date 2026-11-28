@@ -6,6 +6,9 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { planPackageCleanup, trashPackageSources } from '../core/packages/cleanup/plan.mjs'
+import { retireNativeCopies } from '../core/packages/cleanup/retired.mjs'
+import { exportPackageResult } from '../core/packages/export/publish.mjs'
+import { packageManifestPage } from '../core/packages/manifest-page.mjs'
 import { cleanupPreferences, saveCleanupPreferences } from '../desktop/package-cleanup/preferences.mjs'
 import { sourceWave, ue4SourceFixture } from './fixtures/unreal-source-media.mjs'
 import { unityEntries, unityFixtureEntries, writeUnityFixture } from './fixtures/unitypackage.mjs'
@@ -69,6 +72,56 @@ test('Unity cleanup verifies archive identity and its published payloads', async
   await writeFile(join(plan.output, 'Source/Assets/Mesh.obj'), 'corrupt payload')
   assert.deepEqual((await planPackageCleanup(input)).files, [])
   assert.ok((await readFile(archive)).length > 0)
+})
+
+test('compaction retains usable files and provenance, and leaves changed or unsupported data alone', async t => {
+  const root = await testDirectory(t)
+  const pack = join(root, 'Unreal compact')
+  const destination = join(root, 'Exports')
+  await Promise.all([mkdir(pack), mkdir(destination)])
+  const source = join(pack, 'Step.uasset')
+  const original = ue4SourceFixture('SoundWave', sourceWave())
+  const unsupported = ue4SourceFixture('SoundWave', Buffer.alloc(12))
+  await Promise.all([writeFile(source, original), writeFile(join(pack, 'Broken.uasset'), unsupported)])
+  const input = await imported(root, pack)
+  const recycled = join(root, 'recycled.uasset')
+  const plan = await planPackageCleanup(input)
+  const managed = join(plan.output, 'Source', 'Content', 'Step.uasset')
+  const wave = join(plan.output, 'Audio', 'Step.wav')
+  assert.equal(plan.files.length, 1)
+  assert.equal((await trashPackageSources(plan, path => rename(path, recycled), input.signal)).moved, 1)
+
+  await writeFile(wave, 'changed')
+  assert.equal((await retireNativeCopies(input.imports, plan.files, input.signal)).skippedRetirement, 1)
+  assert.deepEqual(await readFile(managed), original)
+  const stillPresent = await packageManifestPage(input.imports, input.job, 0, 10)
+  assert.ok(stillPresent.assets.find(asset => asset.sourcePath.endsWith('Step.uasset')).output)
+
+  await writeFile(wave, sourceWave())
+  await rename(recycled, source)
+  const verified = await planPackageCleanup(input)
+  assert.equal((await trashPackageSources(verified, path => rename(path, recycled), input.signal)).moved, 1)
+  assert.deepEqual(await retireNativeCopies(input.imports, verified.files, input.signal),
+    { retired: 1, retiredBytes: original.length, skippedRetirement: 0 })
+  await assert.rejects(readFile(managed), { code: 'ENOENT' })
+  assert.deepEqual(await readFile(recycled), original)
+  assert.deepEqual(await readFile(join(plan.output, 'Source', 'Content', 'Broken.uasset')), unsupported)
+  assert.deepEqual(await readFile(wave), sourceWave())
+  const page = await packageManifestPage(input.imports, input.job, 0, 10)
+  const row = page.assets.find(asset => asset.sourcePath.endsWith('Step.uasset'))
+  assert.equal(row.output, null)
+  assert.equal(row.sourceRetired, true)
+  assert.match(row.hash, /^[0-9a-f]{64}$/)
+
+  const { imports, protectedRoots, job, signal } = input
+  const preview = await exportPackageResult(imports, protectedRoots, job, { destination }, { preview: true, signal })
+  const published = await exportPackageResult(imports, protectedRoots, job, { destination, key: preview.key }, { signal })
+  assert.deepEqual(await readFile(join(published.directory, 'Audio', 'Step.wav')), sourceWave())
+  await assert.rejects(readFile(join(published.directory, 'Source', 'Content', 'Step.uasset')), { code: 'ENOENT' })
+  await rename(recycled, source)
+  const repeat = await imported(root, pack)
+  assert.equal(repeat.job.result.reused, true)
+  assert.equal(repeat.job.result.directory, input.job.result.directory)
 })
 
 test('cleanup confirmation preferences persist separately and reset', async t => {

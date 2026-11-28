@@ -27,7 +27,12 @@ export async function planPackageCleanup({ imports, protectedRoots, job, source,
       if (!file) break
       backups.push(file)
     }
-    if (backups.length === candidate.backups.length) files.push({ original, root: candidate.root, backups, output: result.directory })
+    if (backups.length === candidate.backups.length) {
+      const nativeCopy = candidate.nativeCopy && {
+        relative: candidate.nativeCopy.path, sha256: candidate.nativeCopy.sha256, file: backups[0],
+      }
+      files.push({ original, root: candidate.root, backups, output: result.directory, nativeCopy })
+    }
   }
   return { engine, source, output: result.directory, files,
     bytes: files.reduce((sum, file) => sum + file.original.info.size, 0) }

@@ -14,13 +14,17 @@ export async function prepareFolderRun(input, protectedRoots, ignoredPaths) {
   const { dev, ino } = await stat(path)
   const source = { path, dev, ino }
   const destination = input.destination ? await exportDestination(input.destination, [...protectedRoots, path]) : null
+  const { compact = false } = input
+  if (typeof compact !== 'boolean' || (compact && !destination)) {
+    throw new IndexInputError('Укажите общую папку экспорта для удаления служебных копий.')
+  }
   const { mode } = unityImportOptions(input.mode)
   const formats = packageExportFormats(input.formats).split(',').filter(Boolean)
   const { unityVersion = '', unrealVersion = '' } = input
   if ([unityVersion, unrealVersion].some(version => typeof version !== 'string' || version.length > 32)) {
     throw new IndexInputError('Укажите версию редактора.')
   }
-  return { source, destination, options: { mode, formats, unityVersion, unrealVersion } }
+  return { source, destination, options: { mode, formats, unityVersion, unrealVersion, compact } }
 }
 
 async function verifySource({ path, dev, ino }) {

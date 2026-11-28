@@ -114,6 +114,7 @@ export function appendManifest({ details, record, json, element, button, assetSt
         const name = assetLabel(asset)
         const ordinal = offset + index
         const row = element('li', name + ' · ' + (assetStatus[asset.status] ?? asset.status))
+        if (asset.sourceRetired) row.append(element('p', 'Служебная копия исходника удалена.'))
         const issues = [...new Set([asset.issue, ...(asset.issues ?? [])])].filter(issue => /^(unity|unreal)-/.test(issue))
         if (issues.length) row.append(element('p', issues.map(describeIssue).join(' · ')))
         if (asset.materialDescription) {

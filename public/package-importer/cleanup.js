@@ -7,6 +7,8 @@ export function cleanupMessage(result) {
     case 'completed':
       return 'В корзине · ' + result.moved + ' · ' + sizeLabel(result.bytes) +
         (result.skipped ? ' · Не удалось перенести ' + result.skipped : '') +
+        (result.retired ? ' · Удалено служебных копий ' + result.retired + ' · ' + sizeLabel(result.retiredBytes) : '') +
+        (result.skippedRetirement ? ' · Служебных копий оставлено ' + result.skippedRetirement : '') +
         (!result.preferenceSaved ? ' · Настройка подтверждения не сохранилась' : '') + skippedExports
     case 'cancelled': return 'Исходники оставлены.' + skippedExports
     case 'empty': return 'Нет исходников с проверенными результатами для очистки.' + skippedExports

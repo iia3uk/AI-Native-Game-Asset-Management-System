@@ -57,7 +57,8 @@ export async function* cleanupCandidates(format, source, manifest, assets, selec
       const root = unreal ? loose.root : mount?.path
       if (!root || (format === 'unreal-asset' && path !== basename(source))) continue
       const relative = unreal ? path : path.slice(mount.logical.length + 1)
-      yield { root, path: relative, sha256: asset.hash, size: asset.size, backups: [original(asset), ...rendered] }
+      const nativeCopy = original(asset)
+      yield { root, path: relative, sha256: asset.hash, size: asset.size, backups: [nativeCopy, ...rendered], nativeCopy }
     }
     return
   }

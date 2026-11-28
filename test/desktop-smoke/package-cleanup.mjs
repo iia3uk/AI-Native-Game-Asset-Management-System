@@ -19,6 +19,7 @@ export async function verifyPackageCleanup(webContents, waitFor) {
   const moved = []
   let confirm = false
   let exportRoot
+  let beforeAnswer
   try {
     dialog.showMessageBox = async (_window, options) => {
       if (exportRoot) {
@@ -37,6 +38,7 @@ export async function verifyPackageCleanup(webContents, waitFor) {
           assert.equal(asset.output, null)
           const wav = asset.exports.find(item => item.format === 'wav')
           assert.deepEqual(await readFile(join(directory, wav.path)), sourceWave())
+          await beforeAnswer?.(join(directory, wav.path))
         }
       }
       prompts.push(options)
@@ -48,11 +50,13 @@ export async function verifyPackageCleanup(webContents, waitFor) {
       moved.push(path)
     }
     const input = ue4SourceFixture('SoundWave', sourceWave())
-    async function submit(folder, destination) {
+    async function submit(folder, destination, compact = false) {
       await webContents.executeJavaScript(`{
         document.querySelector('#package-source-cleanup').open = true
         document.querySelector('#package-process-source').value = ${JSON.stringify(folder)}
         document.querySelector('#package-process-destination').value = ${JSON.stringify(destination ?? folder)}
+        document.querySelector('#package-process-destination').dispatchEvent(new Event('input'))
+        document.querySelector('#package-process-compact').checked = ${compact}
         document.querySelector('#package-engine-mode').value = 'engineless'
         document.querySelector('#package-process-cleanup').click()
       }`)
@@ -174,6 +178,37 @@ export async function verifyPackageCleanup(webContents, waitFor) {
     assert.match(prompts[5].checkboxLabel, /Unreal/)
     assert.deepEqual(moved, [first, second, unitySource, mixedUnity])
     assert.deepEqual(await readFile(mixedUnreal), input)
+
+    exportRoot = join(root, 'Compact output')
+    await mkdir(exportRoot)
+    const compactFolder = join(root, 'Compact Unreal')
+    const compactSource = join(compactFolder, 'Step.uasset')
+    await mkdir(compactFolder)
+    await writeFile(compactSource, input)
+    beforeAnswer = wave => writeFile(wave, 'edited after confirmation displayed')
+    confirm = true
+    await submit(compactFolder, exportRoot, true)
+    await waitFor("document.querySelector('#package-cleanup-status').textContent.includes('Экспорт не подтверждён для пакетов: 1')")
+    assert.equal(prompts.length, 7)
+    assert.match(prompts[6].detail, /служебные копии/)
+    assert.deepEqual(await readFile(compactSource), input)
+
+    beforeAnswer = undefined
+    await submit(compactFolder, exportRoot, true)
+    await waitFor("document.querySelector('#package-cleanup-status').textContent.includes('Удалено служебных копий 1')")
+    assert.equal(prompts.length, 8)
+    assert.deepEqual(moved, [first, second, unitySource, mixedUnity, compactSource])
+    const index = await AssetIndex.open(join(process.env.ASSET_VIEWER_DATA_DIR, 'index.sqlite'))
+    try {
+      const run = index.folderRuns.get()
+      const [item] = run.items
+      assert.equal(run.options.compact, true)
+      assert.equal(run.cleanup.retired, 1)
+      const result = index.jobs.get(item.jobId).result
+      await assert.rejects(readFile(join(result.directory, 'Source', 'Content', 'Step.uasset')), { code: 'ENOENT' })
+      assert.deepEqual(await readFile(join(result.directory, 'Audio', 'Step.wav')), sourceWave())
+      assert.deepEqual(await readFile(join(item.directory, 'Audio', 'Step.wav')), sourceWave())
+    } finally { await index.close() }
   } finally {
     dialog.showMessageBox = ask
     dialog.showOpenDialog = pick

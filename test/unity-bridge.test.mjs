@@ -10,6 +10,8 @@ import { promisify } from 'node:util'
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js'
 import { locateUnityBridge } from '../core/engines/unity/bridge/run.mjs'
 import { stageUnityInputs } from '../core/engines/unity/bridge/safe-inputs.mjs'
+import { planPackageCleanup, trashPackageSources } from '../core/packages/cleanup/plan.mjs'
+import { retireNativeCopies } from '../core/packages/cleanup/retired.mjs'
 import { archiveBytes, ids, unityEntries } from './fixtures/unitypackage.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 
@@ -219,6 +221,29 @@ test('native Unity bridge exports separately editable prefab parts, a mesh, an a
     const fileBytes = await readFile(join(converted.result.directory, folderFbx.path))
     assert.equal(triangleCount(new FBXLoader().parse(Uint8Array.from(fileBytes).buffer, '')), 2)
     assert.deepEqual(await readFile(join(embedded, 'BridgeFixture.prefab')), originalPrefab)
+
+    const source = join(embedded, 'Triangle.asset')
+    const recycled = join(root, 'recycled-triangle.asset')
+    const triangleBytes = await readFile(source)
+    const imports = join(root, 'data', 'imports')
+    const signal = AbortSignal.timeout(20_000)
+    const plan = await planPackageCleanup({ imports, protectedRoots: [join(root, 'data')], job: converted, source: project, signal })
+    const triangle = plan.files.find(file => file.original.path === source)
+    assert.ok(triangle?.nativeCopy)
+    assert.equal((await trashPackageSources({ files: [triangle] }, path => rename(path, recycled), signal)).moved, 1)
+    assert.equal((await retireNativeCopies(imports, [triangle], signal)).retired, 1)
+    await assert.rejects(readFile(triangle.nativeCopy.file.path), { code: 'ENOENT' })
+    const triangleExport = triangle.backups.find(file => file.path.endsWith('.fbx'))
+    assert.equal(triangleCount(new FBXLoader().parse(Uint8Array.from(await readFile(triangleExport.path)).buffer, '')), 1)
+    await rename(recycled, source)
+    assert.deepEqual(await readFile(source), triangleBytes)
+    const repeat = await server.post('/api/index/packages/import', {
+      path: project, hash: importedProject.hash, formats: ['fbx'], mode: 'auto',
+    })
+    assert.equal(repeat.status, 202)
+    const reused = await waitForJob(server, (await repeat.json()).job.id)
+    assert.equal(reused.status, 'completed', reused.error)
+    assert.equal(reused.result.reused, true)
   } finally {
     await server.close()
   }

@@ -1,6 +1,7 @@
 import { realpath } from 'node:fs/promises'
 import { checkedPath, readBoundedText } from '../files/asset-files.mjs'
 import { IndexInputError } from '../index/index-errors.mjs'
+import { availablePackageAssets } from './cleanup/retired.mjs'
 
 export async function readPackageDocument(directory, name) {
   const text = await readBoundedText(directory, name + '.json', 64 * 1024 ** 2)
@@ -26,7 +27,7 @@ export async function packageManifestPage(importDirectory, job, offset, limit) {
   }
   const result = await readPackageResult(importDirectory, job)
   if (!result) return null
-  const { assets } = result
+  const assets = await availablePackageAssets(result.directory, result.assets)
   return { assets: assets.slice(offset, offset + limit), total: assets.length,
     nextOffset: offset + limit < assets.length ? offset + limit : null }
 }

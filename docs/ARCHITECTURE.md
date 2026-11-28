@@ -91,6 +91,8 @@ The Electron main process launches the loopback server in a UtilityProcess and i
 
 `core/packages/export/processed.mjs` preserves usable source media, derived artifacts and provenance in the destination. The publisher uses the same copy and verification steps as a full export. The native cleanup handler checks the selected destination again before offering to recycle source files.
 
+With compact cleanup enabled, `core/packages/cleanup/retired.mjs` records affected paths and source hashes in an atomic per-import marker before unlinking verified managed native copies. The full import manifest retains provenance. The cache, manifest page and full or individual asset export account for a recorded copy once it is absent. The processed-only export keeps the same manifest format and the managed library is scheduled for a rescan.
+
 `npm run desktop` opens an interactive window. `npm run test:desktop` uses the same bootstrap with a hidden window and automatically creates an isolated data directory when no override is set. Set `ASSET_VIEWER_SMOKE_SCREENSHOT` to save a capture of the demo during the test.
 
 `desktop/window/startup.mjs` waits for the viewer script and the first paint before showing the interactive window. Startup timeouts and renderer exits write `desktop-error.log` in the application log directory and show a native error.

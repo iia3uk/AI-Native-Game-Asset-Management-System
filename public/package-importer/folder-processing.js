@@ -20,6 +20,7 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
   const section = get('source-cleanup')
   const source = get('process-source')
   const destination = get('process-destination')
+  const compact = get('process-compact')
   const sourcePick = get('process-source-pick')
   const destinationPick = get('process-destination-pick')
   const process = get('process-cleanup')
@@ -47,8 +48,10 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
     if (next.id !== run?.id) {
       source.value = next.source
       destination.value = next.destination ?? ''
+      compact.checked = next.compact
       if (active) section.open = true
     }
+    compact.disabled = Boolean(active || submitting || !destination.value.trim())
     run = next
     output.textContent = next.exported > 1 ? 'Экспортировано пакетов · ' + next.exported + ' · ' + next.destination :
       next.firstExport ? 'Экспорт · ' + next.firstExport : ''
@@ -105,10 +108,15 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
     button.addEventListener('click', () => void runLocked(async () => {
       try {
         const folder = await bridge.chooseFolder()
-        if (folder) input.value = folder
+        if (folder) {
+          input.value = folder
+          input.dispatchEvent(new Event('input'))
+        }
       } catch (error) { setStatus(error.message) }
     }))
   }
+
+  destination.addEventListener('input', () => { compact.disabled = !destination.value.trim() })
 
   get('process-folder-form').addEventListener('submit', event => {
     event.preventDefault()
@@ -116,7 +124,7 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
     void runLocked(async () => {
       submitting = true
       submission++
-      controls.forEach(control => { control.disabled = true })
+      for (const control of [...controls, compact]) control.disabled = true
       output.textContent = ''
       setStatus('Выбор папки для обработки…')
       let started
@@ -126,14 +134,18 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
         source.value = path
         const { mode, formats, editorVersion: unityVersion } = importOptions('unitypackage')
         const { editorVersion: unrealVersion } = importOptions('unreal-content')
-        const response = await json(route, post({ path, destination: destination.value.trim(),
+        const target = destination.value.trim()
+        const response = await json(route, post({ path, destination: target, compact: Boolean(target && compact.checked),
           mode, formats, unityVersion, unrealVersion }))
         started = response.run
       } catch (error) { setStatus(error.message) }
       finally {
         submitting = false
         if (started) { display(started); void poll() }
-        else controls.forEach(control => { control.disabled = false })
+        else {
+          controls.forEach(control => { control.disabled = false })
+          compact.disabled = !destination.value.trim()
+        }
       }
     })
   })

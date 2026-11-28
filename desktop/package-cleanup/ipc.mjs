@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { dialog, ipcMain, shell } from 'electron'
 import { pathKey } from '../../core/files/asset-files.mjs'
 import { planPackageCleanup, trashPackageSources } from '../../core/packages/cleanup/plan.mjs'
+import { retireNativeCopies } from '../../core/packages/cleanup/retired.mjs'
 import { exportPackageResult } from '../../core/packages/export/publish.mjs'
 import { FolderRuns } from '../../core/packages/folder-processing/state.mjs'
 import { ProcessingJobs } from '../../core/processing/processing-jobs.mjs'
@@ -27,6 +28,7 @@ async function confirmRemoval(window, plan) {
     detail: [
       items.join('\n'), plan.files.length + ' файл(ов) · ' + size + ' МиБ',
       'Исходники могут содержать данные, которых нет в экспорте, и использоваться в проекте. В корзине их можно восстановить.',
+      ...(plan.compact ? ['После переноса оригиналов Asset Viewer удалит их проверенные служебные копии. Готовые форматы останутся в библиотеке и в папке экспорта.'] : []),
     ].join('\n\n'),
     buttons: ['Оставить файлы', 'Перенести в корзину'], defaultId: 0, cancelId: 0, noLink: true,
     checkboxLabel: 'Больше не спрашивать для ' + engines[plan.engine],
@@ -73,20 +75,22 @@ export function bindPackageCleanup({ window, origin, paths, preferencesDirectory
         const signal = AbortSignal.timeout(10 * 60_000)
         const items = new Map(run.items.filter(item => item.complete).map(item => [item.jobId, item]))
         const records = completedJobs(jobs, [...items.keys()])
-        let skippedExports = 0
+        const skippedExports = new Set()
+        const verifyPublished = async record => {
+          const id = record.job.id
+          const valid = await verifyExport(run, items.get(id), record, signal)
+          if (!valid) skippedExports.add(id)
+          return valid
+        }
         const verified = []
         for (const record of records) {
-          if (run.destination) {
-            const item = items.get(record.job.id)
-            if (!await verifyExport(run, item, record, signal)) {
-              skippedExports++
-              continue
-            }
-          }
-          verified.push(record)
+          if (!run.destination || await verifyPublished(record)) verified.push(record)
         }
-        const result = await performCleanup(verified, signal, action === 'review')
-        if (skippedExports) result.skippedExports = skippedExports
+        const compact = run.destination && run.options?.compact === true ? verifyPublished : null
+        const result = await performCleanup(verified, signal, {
+          requireConfirmation: action === 'review', compact, jobs,
+        })
+        if (skippedExports.size) result.skippedExports = skippedExports.size
         store.save({ ...run, cleanup: result }, 'done')
         return result
       } finally { db.close() }
@@ -94,7 +98,7 @@ export function bindPackageCleanup({ window, origin, paths, preferencesDirectory
   })
 
   async function verifyExport(run, item, { job, source }, signal) {
-    if (!item.directory || !item.reservation) return false
+    if (!item?.directory || !item.reservation) return false
     try {
       const result = await exportPackageResult(paths.imports, [...protectedRoots, run.source.path], job,
         { destination: run.destination.path, processedOnly: true }, {
@@ -109,12 +113,15 @@ export function bindPackageCleanup({ window, origin, paths, preferencesDirectory
     }
   }
 
-  async function performCleanup(records, signal, requireConfirmation = false) {
+  async function performCleanup(records, signal, { requireConfirmation, compact, jobs } = {}) {
     const store = await realpath(preferencesDirectory)
     const groups = { unity: new Map(), unreal: new Map() }
-    for (const { job, source } of records) {
+    const importsByOutput = new Map()
+    for (const record of records) {
+      const { job, source } = record
       const plan = await planPackageCleanup({ imports: paths.imports, protectedRoots, job, source, signal })
       if (!plan) continue
+      if (compact) importsByOutput.set(plan.output, record)
       for (const file of plan.files) groups[plan.engine].set(pathKey(file.original.path), file)
     }
     const preferences = await cleanupPreferences(store)
@@ -122,10 +129,11 @@ export function bindPackageCleanup({ window, origin, paths, preferencesDirectory
     let changedPreferences = false
     for (const [engine, group] of Object.entries(groups)) {
       if (!group.size) continue
-      const files = [...group.values()]
+      let files = [...group.values()]
       let optOut = false
       if (requireConfirmation || !preferences[engine]) {
         const answer = await confirmRemoval(window, { engine, files,
+          compact: compact && files.some(file => file.nativeCopy),
           bytes: files.reduce((sum, file) => sum + file.original.info.size, 0) })
         if (answer.response !== 1) {
           if (result.status === 'empty') result.status = 'cancelled'
@@ -133,12 +141,34 @@ export function bindPackageCleanup({ window, origin, paths, preferencesDirectory
         }
         optOut = answer.checkboxChecked === true
       }
-      const moved = await trashPackageSources({ files }, path => shell.trashItem(path), signal)
+      if (compact) {
+        const rejected = new Set()
+        for (const output of new Set(files.filter(file => file.nativeCopy).map(file => file.output))) {
+          if (!await compact(importsByOutput.get(output))) rejected.add(output)
+        }
+        files = files.filter(file => !file.nativeCopy || !rejected.has(file.output))
+        if (!files.length) continue
+      }
+      const movedCopies = []
+      const moved = await trashPackageSources({ files }, async path => {
+        await shell.trashItem(path)
+        if (compact) movedCopies.push(group.get(pathKey(path)))
+      }, signal)
       result.status = 'completed'
       result.moved += moved.moved
       result.skipped += moved.skipped
       result.bytes += moved.bytes
       if (moved.moved && optOut) preferences[engine] = changedPreferences = true
+      if (movedCopies.length) {
+        const retirement = await retireNativeCopies(paths.imports, movedCopies, signal)
+        for (const [key, value] of Object.entries(retirement)) result[key] = (result[key] ?? 0) + value
+        if (retirement.retired) {
+          for (const output of new Set(movedCopies.filter(file => file.nativeCopy).map(file => file.output))) {
+            const libraryId = importsByOutput.get(output)?.job.libraryId
+            if (libraryId) jobs.enqueue(libraryId)
+          }
+        }
+      }
     }
     if (changedPreferences) {
       result.preferenceSaved = await saveCleanupPreferences(store, preferences)

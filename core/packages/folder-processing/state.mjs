@@ -50,7 +50,8 @@ export function folderRunSummary(run, jobs) {
   const active = jobs.get(items[position]?.jobId ?? '')
   const failures = items.filter(item => item.error)
   const exports = items.filter(item => item.directory).map(item => item.directory)
-  return { id, phase, step, source: source.path, destination: destination?.path, position, total: items.length,
+  return { id, phase, step, source: source.path, destination: destination?.path, compact: run.options?.compact === true,
+    position, total: items.length,
     exported: exports.length, reused: items.filter(item => item.directory && item.exportJobId).length,
     firstExport: exports[0], failureCount: failures.length,
     firstFailure: failures[0] && { path: failures[0].path, error: failures[0].error },

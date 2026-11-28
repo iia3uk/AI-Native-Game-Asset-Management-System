@@ -82,6 +82,7 @@ test('one folder run imports Unity archives, an Unreal project and loose Unreal 
       assert.deepEqual(formats(await singleFolder.json()), { '.': 'unreal-content', 'UnityCopy.unitypackage': 'unitypackage' })
       const analyzed = await server.post('/api/index/packages/inspect', { root: pack, path: '.' })
       assert.equal(analyzed.status, 200, await analyzed.text())
+      assert.equal((await server.post(route, { path: input, compact: true })).status, 400)
       const response = await server.post(route, { path: input, destination: output })
       assert.equal(response.status, 202)
       const done = await server.until(run => run?.phase !== 'running')

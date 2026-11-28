@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { checkedPath, fileInfo, readBoundedText, sameFile } from '../../files/asset-files.mjs'
 import { hashFile } from '../../files/hash.mjs'
 import { packageWorkspaceRoot } from '../workspace.mjs'
+import { availablePackageAssets } from '../cleanup/retired.mjs'
 import { readUnityFolder } from './folder/inspect.mjs'
 import { unityFolderLayout } from './folder/layout.mjs'
 import { readPackage } from './inspect.mjs'
@@ -40,10 +41,11 @@ async function reuse(root, key, hash, formats, signal, limits, verifyOriginals) 
     if (!await verifyMaterialOutputs(directory, metadata.assets, recorded.materials?.written ?? 0, limits.dependencyBytes, signal)) {
       throw new Error('Invalid material descriptions')
     }
+    const assets = verifyOriginals ? await availablePackageAssets(directory, metadata.assets, signal) : metadata.assets
     if (formats.length && (recorded.export?.version !== packageExportVersion ||
         recorded.export.formats?.join(',') !== formats.join(',') ||
-        !await verifyExports(directory, metadata.assets, signal))) throw new Error('Invalid export manifest')
-    if (verifyOriginals) await verifySourceOutputs(directory, metadata.assets, signal)
+        !await verifyExports(directory, assets, signal))) throw new Error('Invalid export manifest')
+    if (verifyOriginals) await verifySourceOutputs(directory, assets, signal)
     return { directory, source: formats.length ? directory : source, report: recorded, reused: true }
   } catch {
     signal?.throwIfAborted()

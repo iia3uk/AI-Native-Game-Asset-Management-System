@@ -26,6 +26,7 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'core/packages/discovery/recipe.mjs',
     'core/packages/export/recover.mjs',
     'core/packages/export/reuse.mjs',
+  'core/packages/cleanup/retired.mjs',
     'public/package-importer/cleanup.js',
     'public/app.js',
     'public/catalog/classification.js',

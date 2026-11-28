@@ -17,6 +17,7 @@ import { locateUnrealViewer, unrealViewerRevision } from '../../../engines/unrea
 import { checkedPath, fileInfo } from '../../../files/asset-files.mjs'
 import { IndexInputError } from '../../../index/index-errors.mjs'
 import { readPackageDocument } from '../../manifest-page.mjs'
+import { availablePackageAssets } from '../../cleanup/retired.mjs'
 import { packageHashPattern } from '../../source.mjs'
 import { packageWorkspaceRoot } from '../../workspace.mjs'
 import { convertLoosePackages } from './convert.mjs'
@@ -44,7 +45,8 @@ async function cachedResult(root, name, hash, source, recipe, signal) {
     const data = manifest?.data
     if (!links || data?.version !== version || data.source?.format !== source.format || data.source.sha256 !== hash ||
         data.recipe !== recipe || report?.method !== method || report.version !== version ||
-        !Number.isSafeInteger(report.written) || !await verifyExports(directory, data.assets, signal)) {
+        !Number.isSafeInteger(report.written) ||
+        !await verifyExports(directory, await availablePackageAssets(directory, data.assets, signal), signal)) {
       throw new Error('Invalid cached Unreal outputs')
     }
     return { directory, source: directory, report: { ...report, selectedDirectory: source.selectedDirectory }, reused: true }
