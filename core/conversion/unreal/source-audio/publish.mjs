@@ -60,7 +60,7 @@ export async function publishSourceSoundCues({ records, output, workspace, sourc
       continue
     }
     const outputPath = 'Audio/Cues/' + asset.sourcePath.replace(/\.uasset$/i, '.soundcue.json')
-    const waves = linkWaves(cue, resolve, outputPath)
+    const waves = linkWaves(cue, path => resolve(path, asset), outputPath)
     const linked = waves.filter(wave => wave.status === 'resolved').length
     const issues = [...cue.issues]
     if (waves.some(wave => wave.status === 'missing')) issues.push('unreal-sound-cue-wave-missing')

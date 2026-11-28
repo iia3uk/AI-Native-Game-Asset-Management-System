@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { bindViewerMaterials } from '../core/conversion/unreal/viewer/bind-materials.mjs'
+import { unrealGameAssetResolver } from '../core/engines/unreal/editor-package/game-path.mjs'
 import { readSourceMaterial } from '../core/engines/unreal/source-material/properties.mjs'
+import { sourceTextureSettings } from '../core/engines/unreal/source-material/texture-properties.mjs'
 import { describeUnrealMaterial } from '../core/materials/unreal/describe.mjs'
 import { sourceMaterialParameters } from '../core/materials/unreal/source-parameters.mjs'
-import { sourceMaterialFixture } from './fixtures/unreal-source-material.mjs'
+import { sourceMaterialFixture, sourceNormalTexture } from './fixtures/unreal-source-material.mjs'
 
 const texture = '/Game/Example/T_Colors'
 const asset = { id: 'example', sourcePath: 'Example/MI_Example.uasset', hash: 'abc' }
@@ -24,6 +26,39 @@ test('stock UE4 material properties require typed imports and bounded tagged arr
   assert.equal(readSourceMaterial(sourceMaterialFixture({ badObject: true })).textures[0].status, 'unsupported-reference')
   assert.throws(() => readSourceMaterial(sourceMaterialFixture({ entries: 257 })), RangeError)
   assert.throws(() => readSourceMaterial(sourceMaterialFixture({ entries: 2 })), RangeError)
+})
+
+test('UE4 514 material and texture layouts retain the legacy parameter name and import settings', () => {
+  const options = { legacy: true }
+  const bytes = sourceMaterialFixture(options)
+  assert.equal(readSourceMaterial(bytes), null)
+  assert.deepEqual(readSourceMaterial(bytes, 514), readSourceMaterial(sourceMaterialFixture()))
+  assert.equal(readSourceMaterial(sourceMaterialFixture({ ...options, badObject: true }), 514).textures[0].status,
+    'unsupported-reference')
+  assert.throws(() => readSourceMaterial(sourceMaterialFixture({ ...options, modernParameter: true }), 514), RangeError)
+  bytes.writeInt32LE(40, 40)
+  assert.equal(readSourceMaterial(bytes, 514), null)
+  assert.deepEqual(sourceTextureSettings(sourceNormalTexture({ flip: true, png: Buffer.alloc(0), legacy: true }), 514), {
+    compression: 'TC_Normalmap', srgb: false, flipGreenOnImport: true, discardAlpha: false, legacyGamma: false, repeat: true,
+  })
+})
+
+test('a nested Unreal project resolves /Game only inside its own Content tree', () => {
+  const packageAt = sourcePath => ({ type: 'uasset', sourcePath, output: 'Source/Content/' + sourcePath })
+  const projects = ['Export/First', 'Other/Second'].map(path => ({ type: 'uproject', sourcePath: path + '/Project.uproject' }))
+  const from = packageAt('Export/First/Content/Example/MI_Example.uasset')
+  const first = packageAt('Export/First/Content/Example/T_Colors.uasset')
+  const second = packageAt('Other/Second/Content/Example/T_Colors.uasset')
+  const foreign = packageAt('Other/Second/Content/Example/T_Foreign.uasset')
+  const loose = packageAt('Example/T_Colors.uasset')
+  const nested = [from, first, second, foreign, loose]
+  const resolve = unrealGameAssetResolver([...projects, ...nested], 'F:\\Assets')
+  assert.equal(resolve(texture, from), first)
+  assert.equal(resolve(texture, foreign), second)
+  assert.equal(resolve(texture, loose), loose)
+  assert.equal(resolve('/Game/Example/T_Foreign', from), null)
+  assert.equal(resolve('/Game/../Other/Second/Content/Example/T_Foreign', from), null)
+  assert.equal(resolve('/Game/Other/Second/Content/Example/T_Foreign', loose), null)
 })
 
 test('UE4 material previews require a known parameter and exact matching UV0 texture metadata', () => {

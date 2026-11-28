@@ -43,7 +43,7 @@ export async function recoverUnrealMedia(records, { output, workspace, signal, o
     const media = input && unrealSourceMedia(input, signal)
     if (!media) continue
     const { bytes, ...metadata } = media
-    const sampling = media.role === 'texture' ? sourceTextureSettings(input) : null
+    const sampling = media.role === 'texture' ? sourceTextureSettings(input, asset.ue4) : null
     const normalSettings = sourceNormalSettings(sampling)
     if (sampling && createHash('sha256').update(input).digest('hex') !== asset.hash) {
       throw new Error('Staged Unreal texture package changed during extraction')

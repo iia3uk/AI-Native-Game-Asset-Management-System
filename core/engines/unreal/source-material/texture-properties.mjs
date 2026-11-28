@@ -8,9 +8,10 @@ function bool(field, fallback) {
   return field.type === 'BoolProperty' && field.size === 0 && [0, 1].includes(field.value) ? !!field.value : null
 }
 
-export function sourceTextureSettings(bytes) {
+export function sourceTextureSettings(bytes, version = 522) {
+  if (version !== 514 && version !== 522) return null
   try {
-    const table = editorPackage(bytes)
+    const table = editorPackage(bytes, version)
     const texture = table?.topLevel(textures)
     if (!texture) return null
     const { properties } = taggedProperties(bytes, texture.start, texture.end, table.nameAt)

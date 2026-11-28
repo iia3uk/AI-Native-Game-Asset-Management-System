@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { readSourceMaterial, sourceMaterialRevision } from '../../../engines/unreal/source-material/properties.mjs'
+import { readSourceMaterial, sourceMaterialRevision, sourceMaterialVersions } from '../../../engines/unreal/source-material/properties.mjs'
 import { fileInfo } from '../../../files/asset-files.mjs'
 import { readVerifiedFile } from '../../../files/read-verified.mjs'
 import { describeUnrealMaterial } from '../../../materials/unreal/describe.mjs'
@@ -18,7 +18,7 @@ async function readMaterials(assets, output, signal) {
   for (const asset of assets) {
     signal?.throwIfAborted()
     if (!asset.output || asset.issue || asset.type !== 'uasset' || asset.storage !== 'editor' ||
-        asset.layout !== -7 || asset.ue4 !== 522 || asset.ue5 !== 0 || asset.size > maxPackageSize) continue
+        asset.layout !== -7 || !sourceMaterialVersions.has(asset.ue4) || asset.ue5 !== 0 || asset.size > maxPackageSize) continue
     if (Date.now() >= deadline) return { parsed, issue: 'unreal-source-material-time-budget' }
     const changed = () => new Error('Staged Unreal package changed during material decoding')
     const file = await fileInfo(output, asset.output)
@@ -26,7 +26,7 @@ async function readMaterials(assets, output, signal) {
     const { prefix, hash } = await readVerifiedFile(output, file, { capture: asset.size, changed, signal })
     if (hash !== asset.hash) throw changed()
     try {
-      const properties = readSourceMaterial(prefix)
+      const properties = readSourceMaterial(prefix, asset.ue4)
       if (properties) parsed.set(asset.id, properties)
     } catch (error) {
       if (!(error instanceof RangeError)) throw error
@@ -66,8 +66,10 @@ export async function prepareSourceMaterials({ records, output, workspace, signa
   await mkdir(scratch)
   const normalCache = new Map()
   const opacityCache = new Map()
-  const parameters = asset => parsed.has(asset.id) ? sourceMaterialParameters(asset, parsed, resolve) : null
+  const resolveFor = asset => path => resolve(path, asset)
+  const parameters = asset => parsed.has(asset.id) ? sourceMaterialParameters(asset, parsed, resolveFor(asset)) : null
   const applySourceMaps = async (description, asset, { normal, surface } = parameters(asset) ?? {}) => {
+    const resolve = resolveFor(asset)
     const map = await publishSourceNormal(normal, { store, resolve, workspace: scratch, cache: normalCache,
       version: sourceMaterialRevision, signal, summary })
     if (map) {
@@ -84,16 +86,17 @@ export async function prepareSourceMaterials({ records, output, workspace, signa
       if (!opacity.colorImage) description.limitations.push('unreal-opacity-mask-neutral-color')
     } else if (surface?.blend === 'BLEND_Masked') description.limitations.push('unreal-opacity-mask-unresolved')
   }
-  return { parsed, parameters, applySourceMaps, scratch, summary }
+  return { parsed, parameters, applySourceMaps, resolveFor, scratch, summary }
 }
 
-export async function publishSourceMaterials({ records, signal, store, resolve, cache, sourceMaterials }) {
-  const { parsed, parameters, applySourceMaps, scratch, summary } = sourceMaterials
+export async function publishSourceMaterials({ records, signal, store, cache, sourceMaterials }) {
+  const { parsed, parameters, applySourceMaps, resolveFor, scratch, summary } = sourceMaterials
   const published = new Map()
   for (const asset of records.assets) {
     signal?.throwIfAborted()
     const source = parsed.get(asset.id)
     if (!source || asset.exports.some(item => item.path && item.role === 'material' && item.format === 'json')) continue
+    const resolve = resolveFor(asset)
     const { parentStatus, corroborate, normal, surface, ...effectiveParameters } = parameters(asset)
     const properties = { parent: source.parent, textures: effectiveParameters.textures.filter(row => row.path),
       scalars: effectiveParameters.scalars.filter(row => Number.isFinite(row.value)) }

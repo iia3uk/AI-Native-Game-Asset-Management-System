@@ -1,7 +1,11 @@
 import { readPackageLayout } from '@threenative/raw-unreal'
 
 const exportStride = 104
-const editorLayouts = new Map([[518, { editorVersion: 37, importStride: 28 }], [522, { editorVersion: 40, importStride: 36 }]])
+const editorLayouts = new Map([
+  [514, { editorVersion: 20, importStride: 28, localizationId: false }],
+  [518, { editorVersion: 37, importStride: 28, localizationId: true }],
+  [522, { editorVersion: 40, importStride: 36, localizationId: true }],
+])
 
 export const requireLayout = (condition) => {
   if (!condition) throw new RangeError('Unsupported or invalid Unreal editor package layout')
@@ -44,7 +48,8 @@ export function editorPackage(bytes, version = 522) {
   const { totalHeaderSize, bulkDataStartOffset, exportCount, exportOffset, nameOffset, nameCount } = layout
   requireLayout(exportCount <= 4096 && nameCount <= 32_768)
   const folderEnd = skipUnrealString(bytes, 28 + bytes.readInt32LE(20) * 20, nameOffset)
-  const localEnd = skipUnrealString(bytes, folderEnd + 12, nameOffset)
+  const localStart = folderEnd + 12
+  const localEnd = schema.localizationId ? skipUnrealString(bytes, localStart, nameOffset) : localStart
   requireLayout(localEnd + 28 <= nameOffset && (bytes.readUInt32LE(folderEnd) & 0x80000200) === 0)
   const importCount = bytes.readInt32LE(localEnd + 16)
   const importOffset = bytes.readInt32LE(localEnd + 20)

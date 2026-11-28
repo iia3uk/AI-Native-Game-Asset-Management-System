@@ -101,7 +101,7 @@ export async function publishSourceMeshes({ records, output, workspace, source, 
       models.push({ asset, artifact })
       summary.gltf++
       for (const path of materialPaths) {
-        const material = resolveMaterial(path)
+        const material = resolveMaterial(path, asset)
         records.dependencies.push({ source: asset.id, target: material?.id ?? null, path: material?.sourcePath ?? path,
           type: 'unreal-model-material', status: material ? 'resolved' : 'missing', lod })
       }

@@ -94,7 +94,7 @@ export async function publishTexturedViewerModels({ models, material, counts, re
     const text = await readBoundedText(output, artifact.path, 16 * 1024 ** 2)
     if (!text) continue
     const document = JSON.parse(text)
-    const result = bindViewerMaterials(document, material, artifact.path, materialByPath)
+    const result = bindViewerMaterials(document, material, artifact.path, materialByPath && (path => materialByPath(path, asset)))
     if (!result) continue
     if (!materialByPath) {
       for (const source of result.sources) {

@@ -1,6 +1,6 @@
 import { sourceMeshHeaders } from './unreal-source-mesh.mjs'
 
-function editorFixture(build) {
+function editorFixture(build, { legacy = false } = {}) {
   const names = new Map([['None', 0]])
   const i32 = value => {
     const bytes = Buffer.alloc(4)
@@ -30,7 +30,7 @@ function editorFixture(build) {
   }
   const { imports: importRows, objects } = build({ i32, name, tag, struct, array, none, object, enumValue, bool, streaming })
   const imports = Buffer.concat(importRows.map(([type, label, owner = 0]) =>
-    Buffer.concat([none, name(type), i32(owner), name(label), none])))
+    Buffer.concat([none, name(type), i32(owner), name(label), ...(legacy ? [] : [none])])))
   const exports = Buffer.alloc(104 * objects.length)
   for (const [index, [type, label, owner]] of objects.entries()) {
     const at = index * 104
@@ -41,7 +41,10 @@ function editorFixture(build) {
   const table = Buffer.concat([...names.keys()].map(value => Buffer.concat([
     i32(Buffer.byteLength(value) + 1), Buffer.from(value), Buffer.alloc(5),
   ])))
-  const summary = sourceMeshHeaders().bytes.subarray(0, 220)
+  const modernSummary = sourceMeshHeaders().bytes.subarray(0, 220)
+  // This UE4 layout predates the localization ID and persistent package GUID.
+  const summary = legacy ? Buffer.concat([modernSummary.subarray(0, 68), modernSummary.subarray(72, 128),
+    modernSummary.subarray(144)]) : modernSummary
   const importAt = summary.length + table.length
   const exportAt = importAt + imports.length
   const start = exportAt + exports.length
@@ -55,20 +58,27 @@ function editorFixture(build) {
   })
   summary.writeInt32LE(start, 44)
   summary.writeInt32LE(names.size, 56)
-  summary.writeInt32LE(objects.length, 76)
-  summary.writeInt32LE(exportAt, 80)
-  summary.writeInt32LE(imports.length / 36, 84)
-  summary.writeInt32LE(importAt, 88)
-  summary.writeInt32LE(start, 92)
-  summary.writeBigInt64LE(BigInt(end), 196)
+  summary.writeInt32LE(summary.length, 60)
+  const exportsAt = legacy ? 72 : 76
+  summary.writeInt32LE(objects.length, exportsAt)
+  summary.writeInt32LE(exportAt, exportsAt + 4)
+  summary.writeInt32LE(importRows.length, exportsAt + 8)
+  summary.writeInt32LE(importAt, exportsAt + 12)
+  summary.writeInt32LE(start, exportsAt + 16)
+  summary.writeBigInt64LE(BigInt(end), legacy ? 176 : 196)
+  if (legacy) {
+    summary.writeInt32LE(514, 12)
+    summary.writeInt32LE(20, 40)
+  }
   return Buffer.concat([summary, table, imports, exports, ...payloads, Buffer.from('c1832a9e', 'hex')])
 }
 
 const texture = '/Game/Example/T_Colors'
 
-export function sourceMaterialFixture({ badObject = false, uv = 0, entries = 1 } = {}) {
+export function sourceMaterialFixture({ badObject = false, uv = 0, entries = 1, legacy = false, modernParameter = false } = {}) {
   return editorFixture(({ i32, name, tag, struct, array, none, object, enumValue, streaming }) => {
-    const info = struct('ParameterInfo', 'MaterialParameterInfo', Buffer.concat([
+    const info = legacy && !modernParameter ? tag('ParameterName', 'NameProperty', name('BaseColor')) :
+      struct('ParameterInfo', 'MaterialParameterInfo', Buffer.concat([
       tag('Name', 'NameProperty', name('BaseColor')),
       enumValue('Association', 'EMaterialParameterAssociation', 'GlobalParameter'),
       tag('Index', 'IntProperty', i32(-1)), none,
@@ -84,7 +94,7 @@ export function sourceMaterialFixture({ badObject = false, uv = 0, entries = 1 }
       ['Material', 'M_Master', -4], ['Package', '/Game/Example/M_Master'],
       [badObject ? 'Material' : 'Texture2D', 'T_Colors', -6], ['Package', texture],
     ], objects: [[-1, 'MI_Example', 0, serialized]] }
-  })
+  }, { legacy })
 }
 
 export function sourceNormalGraph({ tangent = true, customCoordinates = false, uv = 0, classOwner = 1 } = {}) {
@@ -106,7 +116,7 @@ export function sourceNormalGraph({ tangent = true, customCoordinates = false, u
   })
 }
 
-export function sourceNormalTexture({ flip, srgb = false, png }) {
+export function sourceNormalTexture({ flip, srgb = false, png, legacy = false }) {
   return editorFixture(({ none, enumValue, bool }) => {
     const properties = Buffer.concat([
       enumValue('CompressionSettings', 'TextureCompressionSettings', 'TC_Normalmap'), bool('SRGB', srgb),
@@ -114,7 +124,7 @@ export function sourceNormalTexture({ flip, srgb = false, png }) {
     ])
     return { imports: [['Class', 'Texture2D', -2], ['Package', '/Script/Engine']],
       objects: [[-1, 'T_Colors', 0, properties]] }
-  })
+  }, { legacy })
 }
 
 export function sourceOpacityGraph({ separate = false, customCoordinates = false, uv = 0 } = {}) {

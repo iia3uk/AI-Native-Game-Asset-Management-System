@@ -4,7 +4,8 @@ import { importedGameObject, softGameObject } from '../editor-package/references
 import { directNormalInput } from './normal-input.mjs'
 import { readMaterialSurface } from './surface-input.mjs'
 
-export const sourceMaterialRevision = 3
+export const sourceMaterialRevision = 4
+export const sourceMaterialVersions = new Set([514, 522])
 const materials = new Set(['Material', 'MaterialInstanceConstant'])
 const textures = new Set(['Texture2D'])
 
@@ -31,12 +32,21 @@ function parameterInfo(bytes, nameAt, field) {
   return { name: value, association: nameAt(association.start), index: bytes.readInt32LE(index.start) }
 }
 
+function legacyParameterInfo(nameAt, row) {
+  const field = row.get('ParameterName')
+  requireLayout(!row.has('ParameterInfo') && matches(field, 'NameProperty', 8))
+  const name = nameAt(field.start)
+  requireLayout(name !== 'None' && name.length <= 256)
+  return { name, association: 'GlobalParameter', index: -1 }
+}
+
 function parameters(kind, bytes, table, properties) {
   const field = properties.get(kind + 'ParameterValues')
   if (!field) return []
   const { nameAt, imported } = table
   return structArray(bytes, field, nameAt, kind + 'ParameterValue').map(row => {
-    const info = parameterInfo(bytes, nameAt, row.get('ParameterInfo'))
+    const info = table.layout.fileVersionUE4 === 514 ? legacyParameterInfo(nameAt, row) :
+      parameterInfo(bytes, nameAt, row.get('ParameterInfo'))
     const data = row.get('ParameterValue')
     if (!data) return info // The serialized default can be omitted, so keep the override unresolved.
     if (kind === 'Texture') {
@@ -67,8 +77,9 @@ function streamingData(bytes, nameAt, field) {
   })
 }
 
-export function readSourceMaterial(bytes) {
-  const table = editorPackage(bytes)
+export function readSourceMaterial(bytes, version = 522) {
+  if (!sourceMaterialVersions.has(version)) return null
+  const table = editorPackage(bytes, version)
   const object = table?.topLevel(materials)
   if (!object) return null
   const { properties } = taggedProperties(bytes, object.start, object.end, table.nameAt)

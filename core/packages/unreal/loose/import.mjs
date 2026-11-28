@@ -113,12 +113,12 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     const materialByPath = decoded ? await recoverLooseViewerMaterials({ decoded, viewer, records, output, workspace, signal,
       cache: packedMapCache, applySourceMaps: sourceMaterialInput?.applySourceMaps }) : null
     const sourceMaterials = sourceMeshes && await publishSourceMaterials({ records, signal, sourceMaterials: sourceMaterialInput,
-      store: sourceMeshes.store, resolve: sourceMeshes.resolveMaterial, cache: packedMapCache })
+      store: sourceMeshes.store, cache: packedMapCache })
     if (sourceMeshes?.models.length) {
       await publishTexturedViewerModels({ ...sourceMeshes, counts: unrealSourceMeshes, records, output, workspace, signal,
         method: 'unreal-source-mesh-material-binding',
-        materialByPath: path => {
-          const target = sourceMeshes.resolveMaterial(path)
+        materialByPath: (path, asset) => {
+          const target = sourceMeshes.resolveMaterial(path, asset)
           return target ? materialByPath?.(target.sourcePath) ?? sourceMaterials.material(target) : null
         } })
     }
