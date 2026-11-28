@@ -21,25 +21,35 @@ export function assertZenPng(png, srgb) {
     Buffer.from([0]), zenFixtureRgba.subarray(8)]))
 }
 
-export function zenTexturePackage({ mode, packageName = zenFixtureName, label = 'Sample', publicHash }) {
+export function zenTexturePackage({ mode, packageName = zenFixtureName, label = 'Sample', publicHash,
+  format = 'PF_B8G8R8A8', width = 2, height = 2, pixels = bgraPixels(), normalMap = false }) {
   const external = mode !== 'inline'
-  const format = 'PF_B8G8R8A8'
-  const names = [packageName, label, 'None', format, 'SRGB', 'BoolProperty']
+  const normalNames = ['CompressionSettings', 'ByteProperty', 'TextureCompressionSettings', 'TC_Normalmap']
+  const names = [packageName, label, 'None', format, 'SRGB', 'BoolProperty', ...(normalMap ? normalNames : [])]
   const name = value => zenName(names, value)
-  const pixels = Buffer.from(zenFixtureRgba)
-  for (let i = 0; i < pixels.length; i += 4) [pixels[i], pixels[i + 2]] = [pixels[i + 2], pixels[i]]
   const padding = Buffer.from([12, 34, 56])
   const bulkOffset = mode === 'broken' ? padding.length + 1 : padding.length
   const bulkMap = external ? Buffer.concat([long(bulkOffset), long(0), long(pixels.length), words(0x101, 0)]) : Buffer.alloc(0)
   const formatString = Buffer.from(format + '\0')
   const mip = external ? words(0) : Buffer.concat([words(0x40, pixels.length, pixels.length), long(0), pixels])
-  const platform = Buffer.concat([Buffer.alloc(16), words(2, 2, 1, formatString.length), formatString, words(0, 1),
-    mip, words(2, 2, 1, 0)])
-  const properties = external ? Buffer.concat([Buffer.from([0]), name('SRGB'), name('BoolProperty'), words(0, 0), Buffer.from([0])]) : null
-  const object = Buffer.concat([...(properties ? [properties] : []), name('None'), words(0), Buffer.from([1, 0, 1, 0]),
+  const platform = Buffer.concat([Buffer.alloc(16), words(width, height, 1, formatString.length), formatString, words(0, 1),
+    mip, words(width, height, 1, 0)])
+  const properties = external ? [Buffer.from([0]), name('SRGB'), name('BoolProperty'), words(0, 0), Buffer.from([0])] : []
+  if (normalMap) {
+    const type = external ? [name(normalNames[1]), words(1), name(normalNames[2]), words(0, 8)] :
+      [name(normalNames[1]), words(8, 0), name(normalNames[2])]
+    properties.push(name(normalNames[0]), ...type, Buffer.alloc(1), name(normalNames[3]))
+  }
+  const object = Buffer.concat([...properties, name('None'), words(0), Buffer.from([1, 0, 1, 0]),
     words(1, 1), name(format), long(8 + platform.length), platform, name('None')])
   return {
     asset: zenPackage({ ue54: external, names, classId: engineTexture, bulkMap, object, label, publicHash }),
     bulk: Buffer.concat([padding, pixels]),
   }
+}
+
+function bgraPixels() {
+  const pixels = Buffer.from(zenFixtureRgba)
+  for (let i = 0; i < pixels.length; i += 4) [pixels[i], pixels[i + 2]] = [pixels[i + 2], pixels[i]]
+  return pixels
 }

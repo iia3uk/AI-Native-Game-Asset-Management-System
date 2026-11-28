@@ -34,8 +34,8 @@ internal static class CookedTexture
             if (length > remaining) throw new InputException("unreal-cooked-texture-limit");
             if (bulk.Data is not { Length: > 0 } bytes) continue;
             if (bytes.Length != expected) throw new InputException("unreal-cooked-texture-mip");
-            var result = TexturePixels.Decode(bytes, format, width, height);
-            return (result, new TextureExport(width, height, platform.FirstMipToSerialize + i, format.ToString(), texture.SRGB));
+            return TexturePixels.Decode(bytes, format, width, height, platform.FirstMipToSerialize + i,
+                texture.SRGB, texture.IsNormalMap);
         }
         throw new InputException("unreal-cooked-texture-mip");
     }

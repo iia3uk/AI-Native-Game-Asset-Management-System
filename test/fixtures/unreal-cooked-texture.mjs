@@ -57,8 +57,9 @@ export function cookedObject({ name, type, extraNames, serialize, sidecars = [],
   ]
 }
 
-export function cookedTexture({ name, format, width, height, pixels, external = false, ...options }) {
-  return cookedObject({ name, type: 'Texture2D', extraNames: [format], ...options,
+export function cookedTexture({ name, format, width, height, pixels, external = false, normalMap = false, ...options }) {
+  const normalNames = ['CompressionSettings', 'ByteProperty', 'TextureCompressionSettings', 'TC_Normalmap']
+  return cookedObject({ name, type: 'Texture2D', extraNames: [format, ...(normalMap ? normalNames : [])], ...options,
     sidecars: external ? [{ path: name + '.ubulk', content: pixels }] : [],
     serialize(fname, headerSize) {
       const texture = Buffer.concat([
@@ -66,7 +67,9 @@ export function cookedTexture({ name, format, width, height, pixels, external = 
         i32(1), i32(external ? 0x101 : 0x40), i32(pixels.length), i32(pixels.length), i64(0),
         ...(external ? [] : [pixels]), i32(width), i32(height), i32(1), i32(0),
       ])
-      const start = Buffer.concat([fname('None'), i32(0), Buffer.from([1, 0, 1, 0]), i32(1), fname(format)])
+      const tags = normalMap ? [fname(normalNames[0]), fname(normalNames[1]), i32(8), i32(0),
+        fname(normalNames[2]), Buffer.alloc(1), fname(normalNames[3])] : []
+      const start = Buffer.concat([...tags, fname('None'), i32(0), Buffer.from([1, 0, 1, 0]), i32(1), fname(format)])
       return Buffer.concat([start, i64(headerSize + start.length + 8 + texture.length), texture, fname('None')])
     },
   })

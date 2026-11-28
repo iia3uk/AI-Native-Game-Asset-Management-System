@@ -29,7 +29,7 @@ internal static class PakTextures
                 var maximumSize = Png.MaximumSize(data.Length, export.Height);
                 if (maximumSize > remaining) throw new InputException("unreal-cooked-texture-limit");
                 using var output = File.Open(PakDecoder.OutputPath(index, "png"), FileMode.CreateNew, FileAccess.Write);
-                Png.Write(output, export.Width, export.Height, data);
+                Png.Write(output, export.Width, export.Height, data, export.Srgb);
                 entries[i] = entry with { Texture = export with { Size = output.Length } };
                 remaining -= output.Length;
             }

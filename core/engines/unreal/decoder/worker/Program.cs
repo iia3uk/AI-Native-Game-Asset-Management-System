@@ -63,7 +63,7 @@ internal static class Program
 }
 
 internal sealed record Request(int Protocol, string Format, bool InspectOnly, long MaxOutputBytes, int Count = 0);
-internal sealed record TextureExport(int Width, int Height, int Mip, string PixelFormat, bool Srgb, long Size = 0);
+internal sealed record TextureExport(int Width, int Height, int Mip, string PixelFormat, bool Srgb, bool NormalZReconstructed, long Size = 0);
 internal sealed record Entry(string Path, long Size, string Status, string? Issue, int? Output,
     TextureExport? Texture = null, string? TextureIssue = null, AudioExport? Audio = null, string? AudioIssue = null);
 internal sealed record Report(int Protocol, string Status, int ContainerVersion, IReadOnlyList<Entry> Entries, int TextureDecoder, int AudioDecoder);

@@ -27,7 +27,7 @@ internal static class BlockCompression
                 var colorBlock = hasAlphaBlock ? block[8..] : block;
                 ColorPalette(colorBlock, colors, hasAlphaBlock);
                 var colorIndices = BinaryPrimitives.ReadUInt32LittleEndian(colorBlock[4..]);
-                var alphaIndices = hasAlphaBlock ? AlphaPalette(block[..8], alpha) : 0;
+                var alphaIndices = hasAlphaBlock ? ChannelPalette(block[..8], alpha) : 0;
 
                 for (var row = 0; row < Math.Min(Side, height - y); row++)
                 {
@@ -81,7 +81,49 @@ internal static class BlockCompression
         color[3] = 255;
     }
 
-    private static ulong AlphaPalette(ReadOnlySpan<byte> block, Span<byte> alpha)
+    public static byte[] DecodeChannels(ReadOnlySpan<byte> source, int width, int height, bool twoChannels, bool normalMap)
+    {
+        var pixels = new byte[width * height * 4];
+        Span<byte> red = stackalloc byte[8];
+        Span<byte> green = stackalloc byte[8];
+        var blockSize = twoChannels ? 16 : 8;
+        var offset = 0;
+        for (var y = 0; y < height; y += Side)
+        {
+            for (var x = 0; x < width; x += Side)
+            {
+                var block = source.Slice(offset, blockSize);
+                offset += blockSize;
+                var rIndices = ChannelPalette(block[..8], red);
+                var gIndices = twoChannels ? ChannelPalette(block[8..], green) : 0;
+                for (var row = 0; row < Math.Min(Side, height - y); row++)
+                {
+                    for (var column = 0; column < Math.Min(Side, width - x); column++)
+                    {
+                        var shift = (row * Side + column) * 3;
+                        var at = ((y + row) * width + x + column) * 4;
+                        var r = red[(int)((rIndices >> shift) & 7)];
+                        var g = twoChannels ? green[(int)((gIndices >> shift) & 7)] : r;
+                        pixels[at] = r;
+                        pixels[at + 1] = g;
+                        pixels[at + 2] = twoChannels ? (normalMap ? ReconstructZ(r, g) : (byte)0) : r;
+                        pixels[at + 3] = 255;
+                    }
+                }
+            }
+        }
+        return pixels;
+    }
+
+    private static byte ReconstructZ(byte red, byte green)
+    {
+        var x = red / 127.5 - 1;
+        var y = green / 127.5 - 1;
+        var z = Math.Sqrt(Math.Max(0, 1 - x * x - y * y));
+        return (byte)Math.Floor((1 + z) * 127.5 + 0.5);
+    }
+
+    private static ulong ChannelPalette(ReadOnlySpan<byte> block, Span<byte> alpha)
     {
         alpha[0] = block[0];
         alpha[1] = block[1];

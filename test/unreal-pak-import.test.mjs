@@ -98,8 +98,10 @@ test('a Pak publishes decoded Texture2D PNGs with native provenance, selective e
         assert.deepEqual([artifact.method, artifact.status, artifact.mip, artifact.from],
           ['cue4parse-cooked-texture', 'converted', 0, row(name).artifact.path])
         const png = await readFile(join(imported.result.directory, artifact.path))
-        assert.equal(png.subarray(37, 41).toString(), 'IDAT')
-        const pixels = inflateSync(png.subarray(41, 41 + png.readUInt32BE(33)))
+        assert.equal(png.subarray(37, 41).toString(), artifact.srgb ? 'sRGB' : 'gAMA')
+        const offset = 49 + png.readUInt32BE(33)
+        assert.equal(png.toString('ascii', offset, offset + 4), 'IDAT')
+        const pixels = inflateSync(png.subarray(offset + 4, offset + 4 + png.readUInt32BE(offset - 4)))
         assert.deepEqual([...pixels.subarray(0, 1 + expected.length)], [0, ...expected])
       }
       const { assets } = await (await server.request('/api/index/search?kind=image&library=' + imported.result.library.id)).json()

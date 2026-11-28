@@ -183,9 +183,9 @@ test('IoStore worker results only allow numbered texture outputs on extracted Ze
   const options = { inspectOnly: false, version: 8, chunks: 1, partitions: 2 }
   const entry = { path: 'Sample.uasset', size: 440, status: 'extracted', issue: null, output: 0,
     chunkId: '9d2fbb016ac3df0c00000001', kind: 'package',
-    texture: { width: 2, height: 2, size: 94, mip: 0, pixelFormat: 'PF_B8G8R8A8', srgb: true } }
+    texture: { width: 2, height: 2, size: 94, mip: 0, pixelFormat: 'PF_B8G8R8A8', srgb: true, normalZReconstructed: false } }
   const result = { protocol: 1, status: 'completed', containerVersion: 8, chunks: 1, partitions: 2,
-    textureDecoder: 1, audioDecoder: 1, meshDecoder: 1, materialDecoder: 1, entries: [entry] }
+    textureDecoder: 2, audioDecoder: 1, meshDecoder: 1, materialDecoder: 1, entries: [entry] }
   assert.equal(ioStoreResult(result, options).entries[0].texture.file, '00000.png')
   assert.equal(ioStoreResult({ ...result, textureDecoder: undefined }, options), null)
   assert.equal(ioStoreResult({ ...result, entries: [{ ...entry, path: 'Sample.umap' }] }, options), null)
@@ -201,7 +201,7 @@ test('IoStore mesh output uses numbered files and cannot claim a material or ano
     chunkId: '9d2fbb016ac3df0c00000001', kind: 'package', mesh }
   const options = { inspectOnly: false, version: 8, chunks: 1, partitions: 2 }
   const check = (value, settings = options) => ioStoreResult({ protocol: 1, status: 'completed', containerVersion: 8,
-    chunks: 1, partitions: 2, textureDecoder: 1, audioDecoder: 1, meshDecoder: 1, materialDecoder: 1, entries: [value] }, settings)
+    chunks: 1, partitions: 2, textureDecoder: 2, audioDecoder: 1, meshDecoder: 1, materialDecoder: 1, entries: [value] }, settings)
   assert.equal(check(entry).entries[0].mesh.lods[0].file, '00000-0.mesh')
   assert.equal(check({ ...entry, audioIssue: 'unreal-iostore-audio-layout' }), null)
   assert.equal(check({ ...entry, mesh: { ...mesh, missing: [0] } }), null)

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
+import { ioStoreTextureRevision } from '../../engines/unreal/decoder/protocol.mjs'
 import { fileInfo } from '../../files/asset-files.mjs'
 import { publishContainerAudio, zenAudioMethod } from './container-audio.mjs'
 import { containerFileFolders, validateContainerFile } from './container-files.mjs'
@@ -34,7 +35,8 @@ export async function publishIoStoreEntries(entries, root, store, version, signa
     const exports = []
     if (artifact.path && (texture || textureIssue)) {
       exports.push(await publishContainerTexture(root, store, row, artifact, id, { method: zenTextureMethod,
-        converterVersion: version, outputIssue: 'unreal-iostore-texture-output' }, signal))
+        converterVersion: version + '-zen-texture-' + ioStoreTextureRevision,
+        outputIssue: 'unreal-iostore-texture-output' }, signal))
     }
     if (artifact.path && (audio || audioIssue)) {
       exports.push(await publishContainerAudio(root, store, row, artifact, id, { method: zenAudioMethod,

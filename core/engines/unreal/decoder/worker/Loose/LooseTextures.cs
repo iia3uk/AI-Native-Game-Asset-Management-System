@@ -36,7 +36,7 @@ internal static class LooseTextures
             catch (InputException error) { entries.Add(new LooseTextureRow(index, TextureIssue: error.Code)); }
             catch (IOException) { entries.Add(new LooseTextureRow(index, TextureIssue: "unreal-cooked-texture-io")); }
         }
-        return new { protocol = 1, status = "completed", textureDecoder = 1, entries };
+        return new { protocol = 1, status = "completed", textureDecoder = TexturePixels.Revision, entries };
     }
 
     private static CookedInput? Input(string path)

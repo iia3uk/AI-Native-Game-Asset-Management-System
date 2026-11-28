@@ -57,7 +57,8 @@ internal static class IoStoreDecoder
             unpacked += size;
         }
         if (!request.InspectOnly && version >= 5) IoStoreAssets.Decode(entries, request.MaxOutputBytes - unpacked);
-        return new(1, "completed", version, resource.ChunkIds.Length, (int)resource.Header.PartitionCount, entries, 1, 1, 1, 1);
+        return new(1, "completed", version, resource.ChunkIds.Length, (int)resource.Header.PartitionCount, entries,
+            TexturePixels.Revision, 1, 1, 1);
     }
 
     internal static string OutputPath(int index, string extension) => Path.Combine("output", index.ToString("D5") + "." + extension);

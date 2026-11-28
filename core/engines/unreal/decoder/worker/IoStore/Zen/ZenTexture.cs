@@ -1,4 +1,5 @@
 using AssetViewer.UnrealDecode.Objects;
+using CUE4Parse.UE4.Assets.Objects;
 using CUE4Parse.UE4.Assets.Readers;
 using CUE4Parse.UE4.Assets.Exports.Texture;
 using CUE4Parse.UE4.Readers;
@@ -13,7 +14,7 @@ internal static class ZenTexture
     {
         using var source = new FByteArchive("Texture2D", bytes, package.Version);
         using var archive = new FAssetArchive(source, package);
-        var srgb = ReadColorSpace(archive);
+        var settings = ReadSettings(archive);
         if (Boolean(archive)) archive.Position += 16; // UObject GUID
         var strips = archive.Read<ushort>();
         _ = archive.Read<ushort>();
@@ -27,7 +28,7 @@ internal static class ZenTexture
         var skip = archive.Read<long>();
         if (skip < 8 || skip > bytes.Length - at - 8) throw ZenPackage.Invalid();
         var end = at + skip;
-        var image = ReadPlatform(archive, package, bytes, sidecars, format, end, srgb, remaining);
+        var image = ReadPlatform(archive, package, bytes, sidecars, format, end, settings, remaining);
         // Subsequent platform variants are bounded by their relative end offsets.
         while (!archive.ReadFName().IsNone)
         {
@@ -40,22 +41,30 @@ internal static class ZenTexture
         return image;
     }
 
-    private static bool ReadColorSpace(FAssetArchive archive)
+    private static (bool Srgb, bool NormalMap) ReadSettings(FAssetArchive archive)
     {
-        var srgb = true;
-        var seen = false;
+        bool? srgb = null;
+        bool? normalMap = null;
         TaggedProperties.Read(archive, tag =>
         {
-            if (!tag.Name.Text.Equals("SRGB", StringComparison.OrdinalIgnoreCase)) return;
-            if (seen) throw ZenPackage.Invalid();
-            srgb = TaggedBoolean(tag);
-            seen = true;
+            if (tag.Name.Text.Equals("SRGB", StringComparison.OrdinalIgnoreCase))
+            {
+                if (srgb != null) throw ZenPackage.Invalid();
+                srgb = TaggedBoolean(tag);
+            }
+            if (tag.Name.Text != "CompressionSettings") return;
+            if (normalMap != null) throw ZenPackage.Invalid();
+            normalMap = tag.ArrayIndex == 0 && tag.Size == 8 &&
+                tag.PropertyType.Text is "ByteProperty" or "EnumProperty" &&
+                tag.SerializeType == EPropertyTagSerializeType.Property &&
+                tag.TagData?.EnumName == "TextureCompressionSettings" &&
+                archive.ReadFName().Text is "TC_Normalmap" or "TextureCompressionSettings::TC_Normalmap";
         });
-        return srgb;
+        return (srgb ?? true, normalMap ?? false);
     }
 
     private static (byte[] Data, TextureExport Export) ReadPlatform(FAssetArchive archive, ZenPackage package, byte[] bytes,
-        IReadOnlyDictionary<string, string> sidecars, EPixelFormat format, long end, bool srgb, long remaining)
+        IReadOnlyDictionary<string, string> sidecars, EPixelFormat format, long end, (bool Srgb, bool NormalMap) settings, long remaining)
     {
         if (archive.Read<byte>() != 0) throw new InputException("derived-data");
         archive.Position += 15; // placeholder FDerivedData
@@ -85,8 +94,8 @@ internal static class ZenTexture
             if (mip.Payload.Size != size) throw ZenPackage.Invalid();
             if (4L * mip.Width * mip.Height > remaining) throw new InputException("limit");
             var data = mip.Payload.ReadBytes(bytes, sidecars, size);
-            if (data != null) return (TexturePixels.Decode(data, format, mip.Width, mip.Height),
-                new TextureExport(mip.Width, mip.Height, first + i, format.ToString(), srgb));
+            if (data != null) return TexturePixels.Decode(data, format, mip.Width, mip.Height, first + i,
+                settings.Srgb, settings.NormalMap);
         }
         throw new InputException("mip-unavailable");
     }

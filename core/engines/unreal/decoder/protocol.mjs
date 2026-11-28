@@ -6,11 +6,11 @@ import { ioStoreMeshRevision, meshProduct } from './mesh-protocol.mjs'
 const invalidChars = /[<>:"\\|?*\x00-\x1f\x7f-\x9f]/u
 const deviceName = /^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])$/i
 const issueCode = value => typeof value === 'string' && /^unreal-[a-z0-9-]{1,70}$/.test(value)
-const textureFormats = new Set(['PF_B8G8R8A8', 'PF_R8G8B8A8', 'PF_G8', 'PF_DXT1', 'PF_DXT5'])
-export const pakTextureRevision = 1
-export const ioStoreTextureRevision = 1
+const textureFormats = new Set(['PF_B8G8R8A8', 'PF_R8G8B8A8', 'PF_G8', 'PF_DXT1', 'PF_DXT5', 'PF_BC4', 'PF_BC5'])
+export const pakTextureRevision = 2
+export const ioStoreTextureRevision = 2
 export { ioStoreAudioRevision }
-export const looseTextureRevision = 1
+export const looseTextureRevision = 2
 export const decoderFormats = new Set(['uasset', 'umap', 'uexp', 'ubulk', 'uptnl', 'png', 'wav', 'fbx', 'glb'])
 
 function validPath(path) {
@@ -40,11 +40,13 @@ export function ioStoreResult(raw, { inspectOnly, version, chunks, partitions })
 }
 
 function textureProduct(value, file) {
-  const { width, height, size, mip, pixelFormat, srgb } = value
+  const { width, height, size, mip, pixelFormat, srgb, normalZReconstructed } = value
   if (![width, height].every(side => Number.isInteger(side) && side >= 1 && side <= 4096) ||
       !Number.isInteger(mip) || mip < 0 || mip > 30 || !textureFormats.has(pixelFormat) || typeof srgb !== 'boolean' ||
+      typeof normalZReconstructed !== 'boolean' || (normalZReconstructed && pixelFormat !== 'PF_BC5') ||
+      (srgb && (pixelFormat === 'PF_BC4' || pixelFormat === 'PF_BC5')) ||
       !Number.isSafeInteger(size) || size < 45 || size > width * height * 4 + height + 65536) return null
-  return { width, height, size, mip, pixelFormat, srgb, file }
+  return { width, height, size, mip, pixelFormat, srgb, ...(normalZReconstructed && { normalZReconstructed }), file }
 }
 
 export function looseTextureResult(raw, count) {

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
+import { pakTextureRevision } from '../../engines/unreal/decoder/protocol.mjs'
 import { fileInfo } from '../../files/asset-files.mjs'
 import { inspectUnrealFile } from '../../packages/unreal/inspect.mjs'
 import { cookedAudioMethod, publishContainerAudio } from './container-audio.mjs'
@@ -66,7 +67,8 @@ export async function publishPakEntries(entries, root, store, { backendVersion, 
     const exports = []
     if (artifact.path && (texture || textureIssue)) {
       exports.push(await publishContainerTexture(root, store, row, artifact, id, { method: 'cue4parse-cooked-texture',
-        converterVersion: backendVersion, outputIssue: 'unreal-cooked-texture-output' }, signal))
+        converterVersion: backendVersion + '-pak-texture-' + pakTextureRevision,
+        outputIssue: 'unreal-cooked-texture-output' }, signal))
     }
     if (artifact.path && (audio || audioIssue)) {
       exports.push(await publishContainerAudio(root, store, row, artifact, id, { method: cookedAudioMethod,

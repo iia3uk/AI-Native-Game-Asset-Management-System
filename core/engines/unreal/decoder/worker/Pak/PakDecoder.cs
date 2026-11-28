@@ -1,3 +1,4 @@
+using AssetViewer.UnrealDecode.Objects;
 using CUE4Parse.UE4.Pak;
 using CUE4Parse.UE4.Pak.Objects;
 using CUE4Parse.UE4.Versions;
@@ -54,7 +55,7 @@ internal static class PakDecoder
             var textures = PakTextures.Decode(entries, remaining);
             PakAudio.Decode(entries, remaining - textures);
         }
-        return new Report(1, "completed", (int)info.Version, entries, 1, 1);
+        return new Report(1, "completed", (int)info.Version, entries, TexturePixels.Revision, 1);
     }
 
     internal static string OutputPath(int index, string extension) => Path.Combine("output", index.ToString("D5") + "." + extension);
