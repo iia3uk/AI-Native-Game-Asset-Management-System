@@ -15,7 +15,7 @@ const classes = new Set(['StaticMesh'])
 const modelMethod = 'unreal-cooked-mesh-material-binding'
 const maxMeshes = 128
 
-async function candidates(inputs, { output, scratch, store, summary, signal }) {
+async function candidates(inputs, { output, scratch, store, summary, signal, skeletons }) {
   const found = []
   let collisionCount = 0
   for (const input of inputs) {
@@ -27,7 +27,10 @@ async function candidates(inputs, { output, scratch, store, summary, signal }) {
     } catch (error) {
       if (!(error instanceof RangeError)) throw error
     }
-    if (!mesh) continue
+    if (!mesh) {
+      if (table && skeletons) await skeletons.publishCooked(input, table)
+      continue
+    }
     if (collisionCount++ < maxMeshes) {
       await publishCookedCollision(input, table, mesh, { output, scratch, store, summary, signal })
     } else summary.issue = 'unreal-cooked-collision-budget'
@@ -56,14 +59,14 @@ async function materialDescriptions(records, output, resolve, models, signal) {
   return (path, asset) => descriptions.get(resolve(path, asset)?.id)
 }
 
-export async function publishCookedMeshes(inputs, { records, decoder, output, workspace, resolve, store, signal }) {
+export async function publishCookedMeshes(inputs, { records, decoder, output, workspace, resolve, store, signal, skeletons }) {
   const summary = { meshes: 0, gltf: 0, texturedGltf: 0, missingLods: 0, skipped: 0, failed: 0 }
   const models = []
   const resultStage = { models, summary, store }
   const scratch = join(workspace, format)
   try {
     const collision = { assets: 0, shapes: 0, glb: 0, incomplete: 0 }
-    const found = await candidates(inputs, { output, scratch: join(scratch, 'collision'), store, summary: collision, signal })
+    const found = await candidates(inputs, { output, scratch: join(scratch, 'collision'), store, summary: collision, signal, skeletons })
     if (Object.values(collision).some(Boolean)) summary.collision = collision
     if (!found.length) return summary.collision ? resultStage : null
     if (!decoder) {

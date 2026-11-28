@@ -6,6 +6,7 @@ import { exportRecipe, verifyExports } from '../../../conversion/cache.mjs'
 import { collisionTotalsMatch } from '../../../conversion/unreal/collision/cache.mjs'
 import { cookedMaterialRevision } from '../../../conversion/unreal/cooked-material/publish.mjs'
 import { publishLooseCooked } from '../../../conversion/unreal/loose-cooked/publish.mjs'
+import { createSkeletonPublisher } from '../../../conversion/unreal/skeleton/publish.mjs'
 import { publishSourceSoundCues } from '../../../conversion/unreal/source-audio/publish.mjs'
 import { prepareSourceMaterials, publishSourceMaterials } from '../../../conversion/unreal/source-material/publish.mjs'
 import { recoverUnrealMedia, sourceTextureRevision } from '../../../conversion/unreal/source-media/extract.mjs'
@@ -22,6 +23,7 @@ import { cookedAudioRevision } from '../../../engines/unreal/decoder/audio-proto
 import { looseTextureRevision } from '../../../engines/unreal/decoder/protocol.mjs'
 import { cue4parseVersion, locateUnrealDecoder } from '../../../engines/unreal/decoder/run.mjs'
 import { sourceSoundCueRevision } from '../../../engines/unreal/source-audio/cues.mjs'
+import { ue4SkeletonRevision } from '../../../engines/unreal/skeleton/ue4.mjs'
 import { sourceMeshRevision } from '../../../engines/unreal/source-mesh/run.mjs'
 import { sourceMaterialRevision } from '../../../engines/unreal/source-material/properties.mjs'
 import { locateUnrealViewer, unrealViewerRevision } from '../../../engines/unreal/viewer/run.mjs'
@@ -91,6 +93,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
   const engineRecipe = [editor, ['unreal-source-mesh', sourceMeshRevision], ['unreal-source-material', sourceMaterialRevision],
     ['unreal-source-texture', sourceTextureRevision],
     ['unreal-sound-cue', sourceSoundCueRevision],
+    ['unreal-ue4-reference-skeleton', ue4SkeletonRevision],
     ['unreal-cooked-material', cookedMaterialRevision],
     ['unreal-cooked-texture', looseTextureRevision, decoder ? cue4parseVersion : null],
     ['unreal-cooked-audio', cookedAudioRevision, decoder ? cue4parseVersion : null],
@@ -113,9 +116,11 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     await mkdir(join(output, 'Source', 'Content'), { recursive: true })
     const records = await readUnrealLoose(source, { output, signal, onProgress })
     if (records.hash !== sourceKey) throw unrealSourceChanged()
+    const skeletons = createSkeletonPublisher({ records, output, workspace, source, signal })
     const decoded = viewer && records.written ?
       await decodeLooseWithViewer({ viewer, records, output, workspace, source, signal }) : null
-    const sourceMeshes = records.written ? await publishSourceMeshes({ records, output, workspace, source, store: decoded?.store, signal }) : null
+    const sourceMeshes = records.written ? await publishSourceMeshes({ records, output, workspace, source,
+      store: decoded?.store, signal, skeletons }) : null
     const unrealSourceMeshes = sourceMeshes?.summary
     if (decoded) onProgress?.(65)
     const conversion = selection && records.written ?
@@ -123,7 +128,8 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
         onProgress: progress => onProgress?.((decoded ? 65 : 60) + Math.floor((progress - 60) * 0.4)) }) : null
     const media = await recoverUnrealMedia(records, { output, workspace, signal,
       onProgress: progress => onProgress?.(79 + Math.floor(progress * 0.04)) })
-    const cooked = await publishLooseCooked({ records, source, decoder, output, workspace, signal })
+    const cooked = await publishLooseCooked({ records, source, decoder, output, workspace, signal, skeletons })
+    const unrealSkeletons = skeletons.finish()
     const unrealCooked = cooked?.report
     const unrealViewer = decoded?.summary ??
       (exportFormats.length && !selection?.editor && !unrealSourceMeshes?.gltf && !unrealCooked?.meshes?.gltf ?
@@ -168,6 +174,8 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
       status: records.written ? 'completed' : 'no-compatible-inputs', counts, written: records.written, total: records.assets.length,
       engineVersion: source.association ?? null, ...conversion, converted: counts.converted ?? 0, media,
       ...(unrealViewer && { unrealViewer }),
+      ...((unrealSkeletons.skeletons || unrealSkeletons.meshReferencePoses || unrealSkeletons.incomplete || unrealSkeletons.issue) &&
+        { unrealSkeletons }),
       ...(unrealSourceMeshes && { unrealSourceMeshes }),
       ...(sourceMaterials && { unrealSourceMaterials: sourceMaterials.summary }),
       ...(unrealCooked && { unrealCooked }),

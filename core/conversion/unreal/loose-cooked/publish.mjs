@@ -9,7 +9,7 @@ import { publishLooseCookedAudio } from './audio.mjs'
 import { looseCookedInputs } from './inputs.mjs'
 import { publishLooseCookedTextures } from './textures.mjs'
 
-export async function publishLooseCooked({ records, source, decoder, output, workspace, signal }) {
+export async function publishLooseCooked({ records, source, decoder, output, workspace, signal, skeletons }) {
   const inputs = await looseCookedInputs(records.assets, output, signal)
   if (!inputs.length) return null
   const store = new ExportArtifacts(output, signal)
@@ -27,9 +27,9 @@ export async function publishLooseCooked({ records, source, decoder, output, wor
   await mkdir(scratch)
   const { materials, dependencies } = await publishCookedMaterials([...assets.values()], staged, scratch, store, resolveAsset, signal)
   for (const dependency of dependencies) records.dependencies.push(dependency)
-  const meshes = await publishCookedMeshes(inputs, { records, decoder, output, workspace, resolve, store, signal })
+  const meshes = await publishCookedMeshes(inputs, { records, decoder, output, workspace, resolve, store, signal, skeletons })
   for (const { asset } of inputs) {
-    if (asset.exports.some(item => item.status === 'converted')) asset.status = 'converted'
+    if (asset.exports.some(item => item.status === 'converted' && item.role !== 'skeleton-reference')) asset.status = 'converted'
   }
   const textureRetry = textures.issue && !['unreal-loose-textures-unavailable', 'unreal-loose-textures-budget'].includes(textures.issue)
   const audioRetry = audio?.issue && audio.issue !== 'unreal-loose-audio-budget' ||

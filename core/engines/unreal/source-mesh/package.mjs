@@ -6,9 +6,9 @@ const meshVersions = new Set([514, 522])
 
 export const supportsSourceMeshVersion = version => meshVersions.has(version)
 
-export function staticMeshPackage(bytes, version = 522) {
+export function staticMeshPackage(bytes, version = 522, tables) {
   if (!supportsSourceMeshVersion(version)) return null
-  const table = editorPackage(bytes, version)
+  const table = tables === undefined ? editorPackage(bytes, version) : tables
   const mesh = table?.topLevel(meshClass)
   return mesh && { ...table, ...mesh }
 }

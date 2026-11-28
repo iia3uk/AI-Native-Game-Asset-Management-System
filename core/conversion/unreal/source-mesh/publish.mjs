@@ -1,6 +1,8 @@
 import { mkdir } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import { unrealGameAssetResolver } from '../../../engines/unreal/editor-package/game-path.mjs'
+import { editorPackage } from '../../../engines/unreal/editor-package/tables.mjs'
+import { extractEditorSkeleton, ue4EditorSkeletonVersions } from '../../../engines/unreal/skeleton/ue4.mjs'
 import { staticMeshPackage, supportsSourceMeshVersion } from '../../../engines/unreal/source-mesh/package.mjs'
 import { decodeSourceMesh, sourceMeshFileLimit, sourceMeshRevision } from '../../../engines/unreal/source-mesh/run.mjs'
 import { fileInfo } from '../../../files/asset-files.mjs'
@@ -19,7 +21,8 @@ async function publishModel({ asset, scratch, store, lod, document, buffer, stem
   return publishUnrealGeometry({ asset, scratch, store, stem, document, buffer, folder: 'unreal-source', identity, issues, signal })
 }
 
-export async function publishSourceMeshes({ records, output, workspace, source, signal, store = new ExportArtifacts(output, signal) }) {
+export async function publishSourceMeshes({ records, output, workspace, source, signal, skeletons,
+  store = new ExportArtifacts(output, signal) }) {
   const scratch = join(workspace, 'unreal-source-mesh')
   await mkdir(scratch)
   const resolveMaterial = unrealGameAssetResolver(records.assets, source.root)
@@ -30,7 +33,9 @@ export async function publishSourceMeshes({ records, output, workspace, source, 
   for (const asset of records.assets) {
     signal?.throwIfAborted()
     if (!asset.output || asset.issue || asset.type !== 'uasset' || asset.storage !== 'editor' ||
-        asset.layout !== -7 || !supportsSourceMeshVersion(asset.ue4) || asset.ue5 !== 0 || asset.size > sourceMeshFileLimit) continue
+        asset.layout !== -7 || asset.ue5 !== 0 || asset.size > sourceMeshFileLimit) continue
+    const canReadSkeleton = skeletons && ue4EditorSkeletonVersions.has(asset.ue4)
+    if (!canReadSkeleton && !supportsSourceMeshVersion(asset.ue4)) continue
     if (Date.now() >= deadline) {
       summary.issue = 'unreal-source-mesh-time-budget'
       break
@@ -40,11 +45,17 @@ export async function publishSourceMeshes({ records, output, workspace, source, 
     if (!file || file.info.size !== asset.size) throw changed()
     const { prefix, hash } = await readVerifiedFile(output, file, { capture: asset.size, changed, signal })
     if (hash !== asset.hash) throw changed()
+    let table, staticMesh
     try {
-      if (!staticMeshPackage(prefix, asset.ue4)) continue
+      table = editorPackage(prefix, asset.ue4)
+      staticMesh = staticMeshPackage(prefix, asset.ue4, table)
     } catch (error) {
       if (error instanceof RangeError) continue
       throw error
+    }
+    if (!staticMesh) {
+      if (canReadSkeleton && table) await skeletons.publish(asset, extractEditorSkeleton(prefix, asset.ue4, table))
+      continue
     }
     const stem = posix.basename(asset.sourcePath).slice(0, -7).replace(/[#%]/g, '_')
     const render = !asset.exports.some(item => item.path && item.role === 'model' && item.format === 'gltf' && item.lod === 0)

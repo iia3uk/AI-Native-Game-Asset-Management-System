@@ -35,5 +35,6 @@ export function cookedPackage(bytes) {
     importOffset + importCount * importStride === exportOffset && exportOffset + exportCount * unrealExportStride <= totalHeaderSize &&
     (dependsOffset === 0 || (dependsOffset >= exportOffset + exportCount * unrealExportStride && dependsOffset <= totalHeaderSize)))
   const layout = { fileVersionUE4: 522, totalHeaderSize, nameOffset, nameCount, exportOffset, exportCount }
-  return unrealObjectTables(bytes, { layout, importOffset, importCount, importStride, exportDataEnd: totalHeaderSize + maxFile })
+  return { ...unrealObjectTables(bytes, { layout, importOffset, importCount, importStride, exportDataEnd: totalHeaderSize + maxFile }),
+    summaryBytes: bytes.subarray(0, summary) }
 }
