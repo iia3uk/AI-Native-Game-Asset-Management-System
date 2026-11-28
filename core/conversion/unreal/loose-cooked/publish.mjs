@@ -1,0 +1,32 @@
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
+import { unrealGameAssetResolver } from '../../../engines/unreal/editor-package/game-path.mjs'
+import { ExportArtifacts } from '../../artifacts.mjs'
+import { publishCookedMaterials } from '../cooked-material/publish.mjs'
+import { readCookedMaterials } from '../cooked-material/read.mjs'
+import { looseCookedInputs } from './inputs.mjs'
+import { publishLooseCookedTextures } from './textures.mjs'
+
+export async function publishLooseCooked({ records, source, decoder, output, workspace, signal }) {
+  const inputs = await looseCookedInputs(records.assets, output, signal)
+  if (!inputs.length) return null
+  const store = new ExportArtifacts(output, signal)
+  const textures = await publishLooseCookedTextures(inputs, { decoder, output, workspace, store, signal })
+  const staged = await readCookedMaterials(inputs, output, signal)
+  const assets = new Map(records.assets.filter(asset => asset.output).map(asset => [asset.id, {
+    id: asset.id, path: asset.sourcePath, format: asset.type, artifact: { path: asset.output, sha256: asset.hash }, exports: asset.exports,
+  }]))
+  const fromPath = new Map(inputs.map(({ path, asset }) => [path, asset]))
+  const resolve = unrealGameAssetResolver(records.assets, source.root)
+  const resolveAsset = (from, path) => assets.get(resolve(path, fromPath.get(from))?.id) ?? null
+  const scratch = join(workspace, 'loose-materials')
+  await mkdir(scratch)
+  const { materials, dependencies } = await publishCookedMaterials([...assets.values()], staged, scratch, store, resolveAsset, signal)
+  for (const { asset } of inputs) {
+    if (asset.exports.some(item => item.status === 'converted')) asset.status = 'converted'
+  }
+  for (const dependency of dependencies) records.dependencies.push(dependency)
+  const textureRetry = textures.issue && !['unreal-loose-textures-unavailable', 'unreal-loose-textures-budget'].includes(textures.issue)
+  const partial = Boolean(textureRetry || textures.failed || materials.failed || materials.issue)
+  return { textures, materials, partial }
+}

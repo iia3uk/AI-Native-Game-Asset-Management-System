@@ -2,7 +2,6 @@ import { writeFile } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import { describeUnrealMaterial } from '../../../materials/unreal/describe.mjs'
 import { sourceMaterialParameters } from '../../../materials/unreal/source-parameters.mjs'
-import { pakMaterialResolver } from './pak-inputs.mjs'
 
 export const cookedMaterialRevision = 1
 const method = 'unreal-cooked-material-properties'
@@ -27,11 +26,10 @@ function materialLinks(asset, description, resolve) {
   return records
 }
 
-export async function publishPakMaterials(assets, { results, incomplete }, workspace, store, signal) {
+export async function publishCookedMaterials(assets, { results, incomplete }, workspace, store, resolveAsset, signal) {
   const dependencies = []
   const materials = { converted: 0, skipped: 0, failed: 0,
     ...(incomplete && { issue: 'unreal-cooked-material-budget' }) }
-  const resolveAsset = pakMaterialResolver(assets)
   const sidecars = new Map(assets.filter(asset => asset.format === 'uexp' && asset.artifact?.path)
     .map(asset => [asset.path.normalize('NFC').toLowerCase(), asset]))
   const parsed = new Map()

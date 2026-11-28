@@ -4,8 +4,8 @@ import { fileInfo } from '../../files/asset-files.mjs'
 import { inspectUnrealFile } from '../../packages/unreal/inspect.mjs'
 import { containerFileFolders, validateContainerFile } from './container-files.mjs'
 import { publishContainerTexture } from './container-texture.mjs'
-import { readPakMaterials } from './cooked-material/pak-inputs.mjs'
-import { publishPakMaterials } from './cooked-material/publish.mjs'
+import { pakMaterialResolver, readPakMaterials } from './cooked-material/pak-inputs.mjs'
+import { publishCookedMaterials } from './cooked-material/publish.mjs'
 
 const companions = new Set(['uexp', 'ubulk', 'uptnl'])
 
@@ -62,6 +62,6 @@ export async function publishPakEntries(entries, root, store, backendVersion, si
         converterVersion: backendVersion, outputIssue: 'unreal-cooked-texture-output' }, signal)] : undefined
     published.push({ ...entry, id, status: artifact.status, artifact, ...(exports && { exports }) })
   }
-  const materials = await publishPakMaterials(published, cooked, root, store, signal)
+  const materials = await publishCookedMaterials(published, cooked, root, store, pakMaterialResolver(published), signal)
   return { entries: published, ...materials }
 }

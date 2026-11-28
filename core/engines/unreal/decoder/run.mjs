@@ -16,7 +16,7 @@ export async function stagePak(source, workspace, inspectOnly, signal) {
     files: [{ file: source.file, stageName: 'input.pak' }] }, 'pak', workspace, inspectOnly, signal)
 }
 
-export async function stageUnrealInputs({ root, size, files }, format, workspace, inspectOnly, signal) {
+export async function stageUnrealInputs({ root, size, files, count }, format, workspace, inspectOnly, signal) {
   const space = await statfs(workspace, { bigint: true })
   const available = space.bavail * space.bsize - BigInt(size + 160 * MiB)
   if (available < 0n || (!inspectOnly && available === 0n)) return 'unreal-' + format + '-space-limit'
@@ -32,7 +32,7 @@ export async function stageUnrealInputs({ root, size, files }, format, workspace
     if (!after || !sameFile(before.info, after.info)) return 'unreal-' + format + '-changed'
   }
   await mkdir(join(workspace, 'output'))
-  await writeFile(join(workspace, 'request.json'), JSON.stringify({ protocol: 1, format, inspectOnly, maxOutputBytes }),
+  await writeFile(join(workspace, 'request.json'), JSON.stringify({ protocol: 1, format, inspectOnly, maxOutputBytes, count }),
     { flag: 'wx', signal })
   return null
 }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AssetViewer.UnrealDecode.IoStore;
+using AssetViewer.UnrealDecode.Loose;
 using AssetViewer.UnrealDecode.Pak;
 
 namespace AssetViewer.UnrealDecode;
@@ -14,7 +15,8 @@ internal static class Program
     {
         if (args is ["--probe"])
         {
-            Write(new { protocol = 1, backend = Backend, backendVersion = BackendVersion, modes = new[] { "pak", "iostore" } });
+            Write(new { protocol = 1, backend = Backend, backendVersion = BackendVersion,
+                modes = new[] { "pak", "iostore", "loose-textures" } });
             return 0;
         }
         if (args is not ["--decode"]) return 2;
@@ -25,10 +27,11 @@ internal static class Program
             using var stream = File.OpenRead("request.json");
             if (stream.Length > 4096) throw new InputException("unreal-worker-request");
             var request = JsonSerializer.Deserialize<Request>(stream, Json);
-            if (request is not { Protocol: 1, Format: "pak" or "iostore", MaxOutputBytes: >= 0 and <= 1L << 30 })
+            if (request is not { Protocol: 1, Format: "pak" or "iostore" or "loose-textures", MaxOutputBytes: >= 0 and <= 1L << 30 })
                 throw new InputException("unreal-worker-request");
             format = request.Format;
-            if (format == "iostore") Write(IoStoreDecoder.Read(request));
+            if (format == "loose-textures") Write(LooseTextures.Read(request));
+            else if (format == "iostore") Write(IoStoreDecoder.Read(request));
             else Write(PakDecoder.Read(request));
             return 0;
         }
@@ -40,7 +43,12 @@ internal static class Program
         catch (Exception error) when (error is not OutOfMemoryException)
         {
             Write(new { protocol = 1, status = "failed",
-                issue = format == "iostore" ? "unreal-iostore-decode-failed" : "unreal-pak-decode-failed" });
+                issue = format switch
+                {
+                    "loose-textures" => "unreal-loose-textures-decode-failed",
+                    "iostore" => "unreal-iostore-decode-failed",
+                    _ => "unreal-pak-decode-failed"
+                } });
             return 1;
         }
     }
@@ -48,7 +56,7 @@ internal static class Program
     private static void Write<T>(T response) => Console.WriteLine(JsonSerializer.Serialize(response, Json));
 }
 
-internal sealed record Request(int Protocol, string Format, bool InspectOnly, long MaxOutputBytes);
+internal sealed record Request(int Protocol, string Format, bool InspectOnly, long MaxOutputBytes, int Count = 0);
 internal sealed record TextureExport(int Width, int Height, int Mip, string PixelFormat, bool Srgb, long Size = 0);
 internal sealed record Entry(string Path, long Size, string Status, string? Issue, int? Output,
     TextureExport? Texture = null, string? TextureIssue = null);

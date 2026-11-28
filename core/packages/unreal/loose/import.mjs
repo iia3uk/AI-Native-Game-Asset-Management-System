@@ -1,8 +1,10 @@
 import { lstat, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { renameSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { exportRecipe, verifyExports } from '../../../conversion/cache.mjs'
+import { cookedMaterialRevision } from '../../../conversion/unreal/cooked-material/publish.mjs'
+import { publishLooseCooked } from '../../../conversion/unreal/loose-cooked/publish.mjs'
 import { publishSourceSoundCues } from '../../../conversion/unreal/source-audio/publish.mjs'
 import { prepareSourceMaterials, publishSourceMaterials } from '../../../conversion/unreal/source-material/publish.mjs'
 import { recoverUnrealMedia } from '../../../conversion/unreal/source-media/extract.mjs'
@@ -13,11 +15,13 @@ import { createViewerDerivatives } from '../../../conversion/unreal/viewer/deriv
 import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
 import { unrealBridgeVersion } from '../../../engines/unreal/bridge/project.mjs'
 import { locateUnrealBridge } from '../../../engines/unreal/bridge/selection.mjs'
+import { looseTextureRevision } from '../../../engines/unreal/decoder/protocol.mjs'
+import { cue4parseVersion, locateUnrealDecoder } from '../../../engines/unreal/decoder/run.mjs'
 import { sourceSoundCueRevision } from '../../../engines/unreal/source-audio/cues.mjs'
 import { sourceMeshRevision } from '../../../engines/unreal/source-mesh/run.mjs'
 import { sourceMaterialRevision } from '../../../engines/unreal/source-material/properties.mjs'
 import { locateUnrealViewer, unrealViewerRevision } from '../../../engines/unreal/viewer/run.mjs'
-import { checkedPath, fileInfo } from '../../../files/asset-files.mjs'
+import { checkedPath, readBoundedText } from '../../../files/asset-files.mjs'
 import { IndexInputError } from '../../../index/index-errors.mjs'
 import { readPackageDocument } from '../../manifest-page.mjs'
 import { availablePackageAssets } from '../../cleanup/retired.mjs'
@@ -29,6 +33,7 @@ import { decodeLooseWithViewer, recoverLooseViewerMaterials } from './viewer.mjs
 
 const method = 'unreal-loose-direct'
 const version = 2
+const sha256 = text => createHash('sha256').update(text).digest('hex')
 
 async function cachedResult(root, name, hash, source, recipe, signal) {
   const directory = join(root, name)
@@ -42,11 +47,12 @@ async function cachedResult(root, name, hash, source, recipe, signal) {
     const [manifest, summary, links] = await Promise.all([
       readPackageDocument(directory, 'manifest'),
       readPackageDocument(directory, 'conversion-report'),
-      fileInfo(directory, 'dependencies.json'),
+      readBoundedText(directory, 'dependencies.json', 32 * 1024 ** 2),
     ])
     const report = summary?.data
     const data = manifest?.data
-    if (!links || data?.version !== version || data.source?.format !== source.format || data.source.sha256 !== hash ||
+    if (!links || sha256(links) !== data?.dependenciesSha256 ||
+        data?.version !== version || data.source?.format !== source.format || data.source.sha256 !== hash ||
         data.recipe !== recipe || report?.method !== method || report.version !== version ||
         !Number.isSafeInteger(report.written) ||
         !await verifyExports(directory, await availablePackageAssets(directory, data.assets, signal), signal)) {
@@ -69,14 +75,17 @@ async function editorRecipe(selection, mode, preferred) {
 export async function stageUnrealLoose(directory, source, job, { signal, onProgress, publish }) {
   const { engineMode = 'engineless', editorVersion, exportFormats = [], sourceKey } = job
   if (!packageHashPattern.test(sourceKey)) throw new IndexInputError('Некорректный SHA-256 ресурсов Unreal.')
-  const [selection, viewer] = await Promise.all([
+  const [selection, viewer, decoder] = await Promise.all([
     engineMode === 'engineless' ? null : locateUnrealBridge(source, editorVersion || undefined),
     locateUnrealViewer(),
+    locateUnrealDecoder(),
   ])
   const blender = exportFormats.length ? await locateBatchBlender() : null
   const editor = await editorRecipe(selection, engineMode, editorVersion)
   const engineRecipe = [editor, ['unreal-source-mesh', sourceMeshRevision], ['unreal-source-material', sourceMaterialRevision],
     ['unreal-sound-cue', sourceSoundCueRevision],
+    ['unreal-cooked-material', cookedMaterialRevision],
+    ['unreal-cooked-texture', looseTextureRevision, decoder ? cue4parseVersion : null],
     viewer && ['ue-viewer', unrealViewerRevision, ...viewer.identity]]
   const recipe = exportRecipe(exportFormats, blender, engineRecipe)
   const root = await packageWorkspaceRoot(directory, 'unreal-loose-v' + version, { sourceRoot: source.protectedRoot })
@@ -106,6 +115,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
         onProgress: progress => onProgress?.((decoded ? 65 : 60) + Math.floor((progress - 60) * 0.4)) }) : null
     const media = await recoverUnrealMedia(records, { output, workspace, signal,
       onProgress: progress => onProgress?.(79 + Math.floor(progress * 0.04)) })
+    const unrealCooked = await publishLooseCooked({ records, source, decoder, output, workspace, signal })
     const soundCues = await publishSourceSoundCues({ records, output, workspace, source, signal })
     const packedMapCache = new Map()
     const sourceMaterialInput = sourceMeshes && await prepareSourceMaterials({ records, output, workspace, signal,
@@ -137,20 +147,23 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     for (const asset of records.assets) counts[asset.status] = (counts[asset.status] ?? 0) + 1
     const metadata = { format: source.format, sha256: sourceKey, size: records.size, association: source.association ?? null,
       ...(source.descriptorVersion && { descriptorVersion: source.descriptorVersion }) }
-    const manifest = { version, source: metadata, recipe, assets: records.assets }
+    const dependencies = JSON.stringify({ version, dependencies: records.dependencies }, null, 2) + '\n'
+    const manifest = { version, source: metadata, recipe, assets: records.assets, dependenciesSha256: sha256(dependencies) }
     const report = { version, method, mode: engineMode, packageFormat: source.format,
       status: records.written ? 'completed' : 'no-compatible-inputs', counts, written: records.written, total: records.assets.length,
       engineVersion: source.association ?? null, ...conversion, converted: counts.converted ?? 0, media,
       ...(unrealViewer && { unrealViewer }),
       ...(unrealSourceMeshes && { unrealSourceMeshes }),
       ...(sourceMaterials && { unrealSourceMaterials: sourceMaterials.summary }),
+      ...(unrealCooked && { unrealCooked }),
       ...(soundCues.graphs || soundCues.incomplete || soundCues.issue ? { soundCues } : {}),
-      limitations: ['unsupported-cooked-unreal-objects-preserved-as-source', 'dependency-resolution-requires-asset-registry',
+      limitations: ['unsupported-cooked-unreal-objects-preserved-as-source', 'unreal-dependency-coverage-is-partial',
         'material-graphs-not-converted', 'source-collision-limited-to-supported-simple-ue4-shapes'] }
-    await Promise.all(Object.entries({ manifest, dependencies: { version, dependencies: records.dependencies },
-      'conversion-report': report }).map(([key, value]) =>
-      writeFile(join(output, key + '.json'), JSON.stringify(value, null, 2) + '\n', { flag: 'wx', signal })))
-    const partial = unrealViewer?.status === 'partial' || unrealSourceMeshes?.issue || sourceMaterials?.summary.issue || soundCues.issue
+    await Promise.all(Object.entries({ manifest: JSON.stringify(manifest, null, 2) + '\n', dependencies,
+      'conversion-report': JSON.stringify(report, null, 2) + '\n' }).map(([key, value]) =>
+      writeFile(join(output, key + '.json'), value, { flag: 'wx', signal })))
+    const partial = unrealViewer?.status === 'partial' || unrealSourceMeshes?.issue || sourceMaterials?.summary.issue ||
+      soundCues.issue || unrealCooked?.partial
     const destination = join(root, partial ? name + '-' + randomUUID() : name)
     signal?.throwIfAborted()
     onProgress?.(95)

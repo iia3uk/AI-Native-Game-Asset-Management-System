@@ -7,6 +7,7 @@ const textureFormats = new Set(['PF_B8G8R8A8', 'PF_R8G8B8A8', 'PF_G8', 'PF_DXT1'
 export const pakTextureRevision = 1
 export const ioStoreTextureRevision = 1
 export const ioStoreAudioRevision = 1
+export const looseTextureRevision = 1
 export const decoderFormats = new Set(['uasset', 'umap', 'uexp', 'ubulk', 'uptnl', 'png', 'wav', 'fbx', 'glb'])
 
 function validPath(path) {
@@ -32,6 +33,39 @@ export function ioStoreResult(raw, { inspectOnly, version, chunks, partitions })
       raw.entries?.length > chunks || raw.textureDecoder !== ioStoreTextureRevision ||
       raw.audioDecoder !== ioStoreAudioRevision)) return null
   return archiveResult(raw, { inspectOnly, version, ioStore: true })
+}
+
+function textureProduct(value, file) {
+  const { width, height, size, mip, pixelFormat, srgb } = value
+  if (![width, height].every(side => Number.isInteger(side) && side >= 1 && side <= 4096) ||
+      !Number.isInteger(mip) || mip < 0 || mip > 30 || !textureFormats.has(pixelFormat) || typeof srgb !== 'boolean' ||
+      !Number.isSafeInteger(size) || size < 45 || size > width * height * 4 + height + 65536) return null
+  return { width, height, size, mip, pixelFormat, srgb, file }
+}
+
+export function looseTextureResult(raw, count) {
+  if (raw?.protocol !== 1) return null
+  if (raw.status === 'failed' && issueCode(raw.issue)) return { status: 'failed', issue: raw.issue }
+  if (raw.status !== 'completed' || raw.textureDecoder !== looseTextureRevision ||
+      !Array.isArray(raw.entries) || raw.entries.length !== count) return null
+  let bytes = 0
+  const entries = []
+  for (const [index, row] of raw.entries.entries()) {
+    if (row?.index !== index) return null
+    if (row.texture != null) {
+      const texture = textureProduct(row.texture, String(index).padStart(5, '0') + '.png')
+      if (row.textureIssue != null || !texture) return null
+      bytes += texture.size
+      if (bytes > 256 * 1024 ** 2) return null
+      entries.push({ texture })
+    } else if (row.textureIssue != null) {
+      if (!issueCode(row.textureIssue) || !row.textureIssue.startsWith('unreal-cooked-texture-')) return null
+      entries.push({ textureIssue: row.textureIssue })
+    } else {
+      entries.push(null)
+    }
+  }
+  return { status: 'completed', entries }
 }
 
 function archiveResult(raw, { inspectOnly, version, ioStore = false }) {
@@ -87,12 +121,10 @@ function archiveResult(raw, { inspectOnly, version, ioStore = false }) {
       if (inspectOnly || raw.textureDecoder !== revision || format !== 'uasset' || !entry.file ||
           (ioStore && (entry.kind !== 'package' || version < 5))) return null
       if (row.texture != null) {
-        const { width, height, size, mip, pixelFormat, srgb } = row.texture
-        if (row.textureIssue != null || ![width, height].every(side => Number.isInteger(side) && side >= 1 && side <= 4096) ||
-            !Number.isInteger(mip) || mip < 0 || mip > 30 || !textureFormats.has(pixelFormat) || typeof srgb !== 'boolean' ||
-            !Number.isSafeInteger(size) || size < 45 || size > width * height * 4 + height + 65536) return null
-        derivativeBytes += size
-        entry.texture = { width, height, size, mip, pixelFormat, srgb, file: entry.file.replace(/\.bin$/, '.png') }
+        const texture = textureProduct(row.texture, entry.file.replace(/\.bin$/, '.png'))
+        if (row.textureIssue != null || !texture) return null
+        derivativeBytes += texture.size
+        entry.texture = texture
       } else {
         const prefix = ioStore ? 'unreal-iostore-texture-' : 'unreal-cooked-texture-'
         if (!issueCode(row.textureIssue) || !row.textureIssue.startsWith(prefix)) return null

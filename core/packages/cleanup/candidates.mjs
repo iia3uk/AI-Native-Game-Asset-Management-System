@@ -62,7 +62,7 @@ export async function* cleanupCandidates(format, source, manifest, assets, selec
       const path = asset.sourcePath
       if (!relativeSourcePath(path) || !asset.output) continue
       const type = unrealFileType(path)
-      if (unreal ? type !== 'uasset' : !unityDataFormats.has(type)) continue
+      if (unreal ? type !== 'uasset' || asset.storage === 'cooked' : !unityDataFormats.has(type)) continue
       const exports = exportsOf(asset)
       const rendered = exports.filter(item => derivatives.has(item.format) && item.role !== 'collision-preview')
       if (unreal) rendered.push(...unrealModelBackups(exports))

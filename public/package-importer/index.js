@@ -139,7 +139,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
       }
       if (isUnrealLoose(record.result.report.packageFormat)) {
         const { packageFormat, engineVersion, unreal, media, soundCues, unrealViewer, unrealSourceMeshes,
-          unrealSourceMaterials } = record.result.report
+          unrealSourceMaterials, unrealCooked } = record.result.report
         const gltf = (unrealViewer?.gltf ?? 0) + (unrealSourceMeshes?.gltf ?? 0)
         const textured = (unrealViewer?.materials?.texturedGltf ?? 0) + (unrealSourceMeshes?.texturedGltf ?? 0)
         const materials = (unrealViewer?.materials?.materialJson ?? 0) + (unrealSourceMaterials?.materialJson ?? 0)
@@ -168,6 +168,16 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
           soundCues?.issue && describeIssue(soundCues.issue),
           unrealViewer?.issue && describeIssue(unrealViewer.issue),
           unreal?.issue && describeIssue(unreal.issue)].filter(Boolean).join(' · ')))
+        if (unrealCooked) {
+          const { textures, materials } = unrealCooked
+          details.append(element('p', ['Cooked UE4.27',
+            textures.converted && 'Текстуры · ' + textures.converted + ' PNG',
+            materials.converted && 'Описания материалов · ' + materials.converted,
+            (textures.skipped + materials.skipped) || (textures.failed + materials.failed) ?
+              'Пропущено ' + (textures.skipped + materials.skipped) + ', ошибок ' + (textures.failed + materials.failed) : '',
+            textures.issue && describeIssue(textures.issue),
+            materials.issue && describeIssue(materials.issue)].filter(Boolean).join(' · ')))
+        }
       }
       if (record.result.report.packageFormat === 'unreal-pak') {
         const { containerVersion, extracted, textures, materials, total } = record.result.report
