@@ -4,7 +4,8 @@ import { formatLabel, isUnityBinary, isUnityFolder, isUnrealLoose } from './form
 import { appendManifest, assetLabel, describeIssue } from './report.js'
 import { mountImportOptions } from './import-options.js'
 import { mountPackageExport } from './export.js'
-import { importFolderForCleanup, requestPackageCleanup } from './cleanup.js'
+import { requestPackageCleanup } from './cleanup.js'
+import { mountFolderProcessing } from './folder-processing.js'
 
 const $ = name => document.getElementById('package-' + name)
 const jobsRoute = '/api/index/jobs'
@@ -304,37 +305,13 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
       } catch (error) { showError(error) }
     })
   }
-  if (bridge?.cleanupSource && bridge.chooseFolder) {
-    $('source-cleanup').hidden = false
-    const process = $('process-cleanup')
-    process.addEventListener('click', async () => {
+  mountFolderProcessing({ get: $, bridge, json, post, enqueue: queuePlan, refresh,
+    async runLocked(action) {
       if (busy) return
-      busy = process.disabled = true
-      cleanupStatus.textContent = ''
-      try {
-        const path = pathInput.value.trim() || await bridge.chooseFolder()
-        if (!path) return
-        pathInput.value = path
-        cleanupStatus.textContent = 'Анализ выбранной папки…'
-        const { completed, failed, cancelled } = await importFolderForCleanup({ path, json, post, enqueue: queuePlan, refresh,
-          setStatus: message => { cleanupStatus.textContent = message } })
-        if (cancelled) cleanupStatus.textContent = 'Обработка папки отменена. Исходники оставлены.'
-        else if (completed.length) await requestPackageCleanup(bridge, completed, cleanupStatus)
-        else cleanupStatus.textContent = 'Нет завершённых импортов для очистки.'
-        if (failed) cleanupStatus.textContent += ' · Ошибок импорта ' + failed
-      } catch (error) {
-        cleanupStatus.textContent = error.message
-      } finally {
-        busy = process.disabled = false
-      }
-    })
-    $('restore-confirmation').addEventListener('click', async () => {
-      try {
-        const enabled = await bridge.restoreCleanupConfirmation()
-        cleanupStatus.textContent = enabled ? 'Подтверждения Unity и Unreal включены.' : 'Не удалось включить подтверждения.'
-      } catch (error) { cleanupStatus.textContent = error.message }
-    })
-  }
+      busy = true
+      try { await action() }
+      finally { busy = false }
+    } })
   section.addEventListener('toggle', () => void refresh())
   dialog.addEventListener('close', () => {
     if (!dialog.open) void refresh()

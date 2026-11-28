@@ -7,6 +7,7 @@ import { readPackageDocument, readPackageResult } from '../manifest-page.mjs'
 import { packageHashPattern, validPackageSegment } from '../source.mjs'
 import { isUnrealLoose } from '../unreal/loose/source.mjs'
 import { selectPackageAssets } from './dependencies.mjs'
+import { processedAssets } from './processed.mjs'
 
 const exportLimit = 9 * 1024 ** 3
 const spaceReserve = 64 * 1024 ** 2
@@ -89,6 +90,10 @@ export async function preparePackageExport(importDirectory, protectedRoots, job,
   const managed = await readPackageResult(importDirectory, job)
   if (!managed) return null
   const ordinal = input?.asset
+  const processedOnly = input?.processedOnly ?? false
+  if (typeof processedOnly !== 'boolean' || processedOnly && ordinal !== undefined) {
+    throw new IndexInputError('Экспорт обработанных файлов доступен для всего пакета.')
+  }
   if (ordinal !== undefined && (!Number.isSafeInteger(ordinal) || ordinal < 0 || ordinal >= managed.assets.length)) {
     throw new IndexInputError('Выберите ресурс из отчёта импорта.')
   }
@@ -101,9 +106,13 @@ export async function preparePackageExport(importDirectory, protectedRoots, job,
   if (selected && !assetFiles(selected).length) throw new IndexInputError('Для ресурса нет файлов для экспорта.')
   const selection = selected && await selectPackageAssets(managed, dependencies.data, selected, signal)
   const byteLimit = isUnrealLoose(conversion.data.packageFormat) ? 20 * 1024 ** 3 + spaceReserve : exportLimit
-  const { files, bytes: assetBytes } = await collectFiles(managed.directory, selection?.assets ?? managed.assets, byteLimit, signal)
+  const assets = selection?.assets ?? (processedOnly ? processedAssets(managed.assets) : managed.assets)
+  const { files, bytes: assetBytes } = await collectFiles(managed.directory, assets, byteLimit, signal)
+  if (processedOnly && !files.length) throw new IndexConflictError('Нет готовых файлов для экспорта.')
   const reports = selection ? selectDocuments(managed, selection, dependencies, conversion, files) :
-    { manifest: managed.manifest.text, dependencies: dependencies.text, 'conversion-report': conversion.text }
+    { manifest: processedOnly ? json({ ...managed.manifest.data, [managed.pak ? 'entries' : 'assets']: assets,
+      export: { processedOnly, jobId: job.id } }) : managed.manifest.text,
+    dependencies: dependencies.text, 'conversion-report': conversion.text }
   const bytes = assetBytes + Object.values(reports).reduce((total, report) => total + Buffer.byteLength(report), 0)
   if (bytes > byteLimit) throw new IndexInputError('Превышен лимит размера экспорта.')
   await verifyExportDestination(destination)
@@ -116,7 +125,7 @@ export async function preparePackageExport(importDirectory, protectedRoots, job,
   const packageName = job.packageName.replace(/\.[^.]+$/, '').replace(/[^\p{L}\p{N}_-]+/gu, '-').slice(0, 56)
   const prefix = 'AssetViewer-' + (packageName || 'Package')
   const plan = { key: hash.digest('hex'), destination: destination.path, prefix, scope: selected ? 'asset' : 'package',
-    assets: selection?.assets.length ?? managed.assets.length, files: files.length + documents.length, bytes,
+    ...(processedOnly && { processedOnly }), assets: assets.length, files: files.length + documents.length, bytes,
     unresolved: selection?.unresolved ?? null, dependencyStatus: dependencies.data.status,
     paths: [...documents.map(name => name + '.json'), ...files.slice(0, 100 - documents.length).map(file => file.path)] }
   return { plan, destination, source: managed.directory, reports, files }

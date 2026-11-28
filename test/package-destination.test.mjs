@@ -77,6 +77,21 @@ test('completed package exports preserve reports and selected dependencies in un
     assert.equal(await readFile(join(destination, 'manifest.json'), 'utf8'), 'existing file')
     assert.deepEqual(await readFile(source), bytes)
 
+    const processedPlan = await request(route + '/export-plan', { destination, processedOnly: true }, 200)
+    assert.equal(processedPlan.processedOnly, true)
+    assert.notEqual(processedPlan.key, plan.key)
+    await request(route + '/export', { destination, key: processedPlan.key }, 409)
+    const processed = await request(route + '/export', { destination, processedOnly: true, key: processedPlan.key }, 201)
+    const filtered = await readJSON(join(processed.directory, 'manifest.json'))
+    assert.deepEqual(filtered.export, { processedOnly: true, jobId: job.id })
+    assert.equal(filtered.assets[ordinal].output, null)
+    assert.equal(filtered.assets[ordinal].metadata, null)
+    assert.equal(filtered.assets[ordinal].sourcePath, manifest.assets[ordinal].sourcePath)
+    assert.deepEqual(await readFile(join(processed.directory, 'Source/Assets/Imported/albedo.png')), fixtureTexture)
+    assert.equal(await readFile(join(processed.directory, 'Source/Assets/Imported/linked.mtl'), 'utf8'),
+      'newmtl Test\nmap_Kd albedo.png\n')
+    await assert.rejects(readFile(join(processed.directory, ...manifest.assets[ordinal].output.split('/'))), { code: 'ENOENT' })
+
     const asset = await request(route + '/export-plan', { destination, asset: ordinal }, 200)
     assert.equal(asset.scope, 'asset')
     assert.equal(asset.assets, 4)

@@ -56,6 +56,8 @@ Loose Unreal imports accept `exportFormats` containing `fbx` and `glb` in `engin
 
 Failed scans preserve the last committed index. Disconnection and removal of original files retain history. Search excludes disconnected and missing assets.
 
+Whole-package export plans accept `processedOnly: true` to copy derived artifacts and portable originals while omitting native Unity and Unreal source files. Send the same flag with the plan key to publish the result. Its manifest records `export.processedOnly`, the original job ID and source provenance.
+
 Automatic scans use the same queue. An explicit scan request promotes the active automatic job to a manual job if the job is still available. Turning off folder watching and all automatic import formats cancels queued automatic scans and requests cancellation for a running automatic scan.
 
 Automatic archive imports have `type: "package-import"` and `trigger: "watch"`. An identical explicit import promotes the active job to manual priority. Turning off a format cancels queued automatic imports and requests cancellation of a running automatic import for that format in the source library. An unchanged failed or cancelled archive remains in job history for an explicit retry.

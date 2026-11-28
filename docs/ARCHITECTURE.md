@@ -75,6 +75,8 @@ The CLI and stdio MCP interfaces call `AssetIndex` directly. The MCP connector o
 
 The Electron main process launches the loopback server in a UtilityProcess and injects an ephemeral authorization header in its dedicated browser session. The isolated renderer can choose a folder or resolve the path of a file selected or dropped in the importer. The desktop app prefers port 8178, permits a configured port, and can fall back to an ephemeral port. Indexed user metadata stays independent of the browser port.
 
+`public/package-importer/folder-processing.js` submits imports through the shared queue, waits for indexing and can publish processed results to a common destination. It passes successful job IDs to the desktop cleanup action. `core/packages/export/processed.mjs` filters the export manifest, preserving usable source media, derived artifacts and provenance. The existing publisher verifies and copies these files using the same destination and plan checks as a full export.
+
 `npm run desktop` opens an interactive window. `npm run test:desktop` uses the same bootstrap with a hidden window and automatically creates an isolated data directory when no override is set. Set `ASSET_VIEWER_SMOKE_SCREENSHOT` to save a capture of the demo during the test.
 
 `desktop/window/startup.mjs` waits for the viewer script and the first paint before showing the interactive window. Startup timeouts and renderer exits write `desktop-error.log` in the application log directory and show a native error.
