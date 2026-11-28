@@ -38,7 +38,7 @@ function button(text, action) {
   return node
 }
 
-export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatchedLibraries }) {
+export function mountPackageImporter({ dialog, json, post, openIndex, openLibrary, hasWatchedLibraries }) {
   mountEngineStatus({ json })
   const importOptions = mountImportOptions($)
   const section = $('importer')
@@ -333,7 +333,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
       } catch (error) { showError(error) }
     })
   }
-  mountFolderProcessing({ get: $, bridge, json, post, importOptions, refresh,
+  mountFolderProcessing({ get: $, bridge, json, post, importOptions, refresh, openIndex,
     async runLocked(action) {
       if (busy) return
       busy = true

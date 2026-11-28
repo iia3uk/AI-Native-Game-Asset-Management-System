@@ -79,14 +79,48 @@ export async function verifyPackageCleanup(webContents, waitFor) {
     assert.equal(await webContents.executeJavaScript("document.querySelector('#package-source-cleanup').hidden"), false)
     const unauthorized = await webContents.executeJavaScript("window.assetViewerDesktop.cleanupSource('C:/Outside.uasset')")
     assert.equal(unauthorized.status, 'unavailable')
-    const first = await launch('Unreal Cleanup One')
+    const quickButton = "document.querySelector('#package-process-folder-quick')"
+    const indexDialog = "document.querySelector('#index-dialog')"
+    await webContents.executeJavaScript(indexDialog + '.close()')
+    assert.equal(await webContents.executeJavaScript(quickButton + '.hidden'), false)
+    let picks = 0
+    dialog.showOpenDialog = async (_window, options) => {
+      assert.deepEqual(options.properties, ['openDirectory'])
+      picks++
+      return { canceled: true, filePaths: [] }
+    }
+    await webContents.executeJavaScript(quickButton + '.click()')
+    await waitFor('!' + quickButton + '.disabled')
+    assert.equal(picks, 1)
+    assert.equal(await webContents.executeJavaScript(indexDialog + '.open'), false)
+    assert.deepEqual(prompts, [])
+
+    const firstFolder = join(root, 'Unreal Cleanup One')
+    const first = join(firstFolder, 'Step.uasset')
+    await mkdir(firstFolder)
+    await writeFile(first, input)
+    dialog.showOpenDialog = async () => {
+      picks++
+      return { canceled: false, filePaths: [firstFolder] }
+    }
+    await webContents.executeJavaScript(quickButton + '.click()')
+    await waitFor(indexDialog + ".open && document.querySelector('#package-source-cleanup').open")
     await waitFor("document.querySelector('#package-cleanup-status').textContent === 'Исходники оставлены.'")
+    assert.equal(picks, 2)
     assert.deepEqual(await readFile(first), input)
     assert.equal(prompts.length, 1)
     assert.equal(prompts[0].defaultId, 0)
     assert.match(prompts[0].checkboxLabel, /Unreal/)
     assert.ok(prompts[0].detail.includes(first))
     assert.deepEqual(moved, [])
+    const quickIndex = await AssetIndex.open(join(process.env.ASSET_VIEWER_DATA_DIR, 'index.sqlite'))
+    try {
+      const run = quickIndex.folderRuns.get()
+      assert.equal(run.source.path, firstFolder)
+      assert.equal(run.destination, null)
+      assert.equal(run.options.mode, 'auto')
+      assert.deepEqual(run.options.formats, ['fbx', 'glb'])
+    } finally { await quickIndex.close() }
 
     confirm = true
     await webContents.executeJavaScript(`{
@@ -115,6 +149,7 @@ export async function verifyPackageCleanup(webContents, waitFor) {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [exportRoot] })
     await webContents.executeJavaScript("document.querySelector('#package-process-destination-pick').click()")
     await waitFor("document.querySelector('#package-process-destination').value === " + JSON.stringify(exportRoot))
+    assert.equal(await webContents.executeJavaScript("document.querySelector('#package-process-shared').checked"), true)
     const third = await launch('Unreal Cleanup Three', exportRoot, async folder => {
       const source = await importSource(folder)
       const report = await inspectPackage(source)
@@ -136,10 +171,9 @@ export async function verifyPackageCleanup(webContents, waitFor) {
     const reloaded = once(webContents, 'did-finish-load')
     webContents.reload()
     await reloaded
-    await webContents.executeJavaScript(`{
-      document.querySelector('#index-mode').click()
-      document.querySelector('#package-importer').open = true
-    }`)
+    await waitFor(quickButton + ".textContent === 'Ход импорта UE / Unity'")
+    await webContents.executeJavaScript(quickButton + '.click()')
+    await waitFor(indexDialog + '.open')
     await waitFor("document.querySelector('#package-cleanup-status').textContent.includes('Обработка папки на паузе')")
     assert.equal(await webContents.executeJavaScript("document.querySelector('#package-process-destination').value"), exportRoot)
     await waitFor("Array.from(document.querySelectorAll('#package-jobs button')).some(button => button.textContent === 'Продолжить')")

@@ -1,6 +1,7 @@
 import { cleanupMessage } from './cleanup.js'
 
 const route = '/api/index/folder-run'
+const isActive = run => ['running', 'cleanup', 'reviewing'].includes(run?.phase)
 
 function statusMessage(run) {
   if (run.phase === 'cancelled') return 'Обработка папки отменена. Исходники оставлены.'
@@ -15,7 +16,7 @@ function statusMessage(run) {
   return action + ' · ' + (run.position + 1) + ' из ' + run.total
 }
 
-export function mountFolderProcessing({ get, bridge, json, post, importOptions, refresh, runLocked }) {
+export function mountFolderProcessing({ get, bridge, json, post, importOptions, refresh, openIndex, runLocked }) {
   if (!bridge?.cleanupFolderRun || !bridge.chooseFolder) return
   const section = get('source-cleanup')
   const source = get('process-source')
@@ -25,6 +26,7 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
   const sourcePick = get('process-source-pick')
   const destinationPick = get('process-destination-pick')
   const process = get('process-cleanup')
+  const quick = get('process-folder-quick')
   const restore = get('restore-confirmation')
   const review = get('review-folder-cleanup')
   const leave = get('leave-folder-cleanup')
@@ -40,21 +42,27 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
   let submission = 0
   let timer
   let lastUpdate
-  section.hidden = false
+  section.hidden = quick.hidden = false
+
+  function updateControls(next = run) {
+    const active = isActive(next)
+    quick.disabled = submitting
+    quick.textContent = active ? 'Ход импорта UE / Unity' : 'Импорт UE / Unity…'
+    for (const control of controls) control.disabled = active || submitting
+    for (const option of destinationOptions) option.disabled = active || submitting || !destination.value.trim()
+  }
 
   function display(next) {
-    const active = next && ['running', 'cleanup', 'reviewing'].includes(next.phase)
-    controls.forEach(control => { control.disabled = Boolean(active || submitting) })
-    review.hidden = leave.hidden = busy || next?.phase !== 'reviewing'
-    if (!next) return
-    if (next.id !== run?.id) {
+    if (next && next.id !== run?.id) {
       source.value = next.source
       destination.value = next.destination ?? ''
       shared.checked = next.shared
       compact.checked = next.compact
-      if (active) section.open = true
     }
-    destinationOptions.forEach(control => { control.disabled = Boolean(active || submitting || !destination.value.trim()) })
+    if (isActive(next)) section.open = true
+    updateControls(next)
+    review.hidden = leave.hidden = busy || next?.phase !== 'reviewing'
+    if (!next) return
     run = next
     const label = next.shared ? 'Библиотека' : 'Экспорт'
     output.textContent = next.exported > 1 ? (next.shared ? 'Библиотека · Пакетов: ' : 'Экспортировано пакетов · ') +
@@ -114,6 +122,7 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
       try {
         const folder = await bridge.chooseFolder()
         if (folder) {
+          if (input === destination) shared.checked = true
           input.value = folder
           input.dispatchEvent(new Event('input'))
         }
@@ -122,40 +131,59 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
   }
 
   destination.addEventListener('input', () => {
-    destinationOptions.forEach(control => { control.disabled = !destination.value.trim() })
+    if (!isActive(run) && !submitting && destination.value.trim() && shared.disabled) shared.checked = true
+    updateControls()
   })
 
-  get('process-folder-form').addEventListener('submit', event => {
-    event.preventDefault()
-    if (process.disabled) return
+  function showProgress() {
+    section.open = true
+    get('importer').open = true
+    openIndex()
+    section.querySelector('summary').focus()
+  }
+
+  function start(quickImport) {
     void runLocked(async () => {
+      if (isActive(run)) {
+        if (quickImport) showProgress()
+        return
+      }
       submitting = true
       submission++
-      for (const control of [...controls, ...destinationOptions]) control.disabled = true
-      output.textContent = ''
-      setStatus('Выбор папки для обработки…')
+      updateControls()
       let started
       try {
-        const path = source.value.trim() || await bridge.chooseFolder()
+        const path = (!quickImport && source.value.trim()) || await bridge.chooseFolder()
         if (!path) return
+        if (quickImport) showProgress()
         source.value = path
-        const { mode, formats, editorVersion: unityVersion } = importOptions('unitypackage')
-        const { editorVersion: unrealVersion } = importOptions('unreal-content')
-        const target = destination.value.trim()
+        output.textContent = ''
+        setStatus('Запуск обработки папки…')
+        const { mode, formats, editorVersion: unityVersion } = quickImport
+          ? { mode: 'auto', formats: ['fbx', 'glb'] }
+          : importOptions('unitypackage')
+        const unrealVersion = quickImport ? undefined : importOptions('unreal-content').editorVersion
+        const target = quickImport ? '' : destination.value.trim()
         const response = await json(route, post({ path, destination: target, compact: Boolean(target && compact.checked),
           shared: Boolean(target && shared.checked),
           mode, formats, unityVersion, unrealVersion }))
         started = response.run
-      } catch (error) { setStatus(error.message) }
+      } catch (error) {
+        if (quickImport) showProgress()
+        setStatus(error.message)
+      }
       finally {
         submitting = false
         if (started) { display(started); void poll() }
-        else {
-          controls.forEach(control => { control.disabled = false })
-          destinationOptions.forEach(control => { control.disabled = !destination.value.trim() })
-        }
+        else updateControls()
       }
     })
+  }
+
+  quick.addEventListener('click', () => start(true))
+  get('process-folder-form').addEventListener('submit', event => {
+    event.preventDefault()
+    if (!process.disabled) start(false)
   })
 
   for (const [button, action] of [[review, 'review'], [leave, 'leave']]) {

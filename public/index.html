@@ -19,6 +19,7 @@
       <button id="fab-mode" class="tab-button" aria-pressed="true">Fab</button>
       <button id="open-folder" class="tab-button" aria-pressed="false">Локальные папки</button>
       <button id="index-mode" class="tab-button" aria-haspopup="dialog">Индекс</button>
+      <button id="package-process-folder-quick" type="button" class="tab-button" aria-haspopup="dialog" hidden>Импорт UE / Unity…</button>
       <button id="demo-mode" class="tab-button" aria-pressed="false">Демобиблиотека</button>
     </nav>
     <div id="library-stats" class="top-stats" aria-live="polite">Проверка каталога…</div>
@@ -174,6 +175,31 @@
         <button class="control primary-control">Подключить и сканировать</button>
       </div>
     </form>
+    <details id="package-source-cleanup" class="index-analysis" hidden>
+      <summary>Обработка папки UE / Unity</summary>
+      <form id="package-process-folder-form">
+        <label for="package-process-source">Папка исходников</label>
+        <div class="folder-path-row">
+          <input id="package-process-source" maxlength="4096" autocomplete="off" spellcheck="false">
+          <button id="package-process-source-pick" type="button" class="control">Обзор…</button>
+        </div>
+        <label for="package-process-destination">Общая папка для результатов (необязательно)</label>
+        <div class="folder-path-row">
+          <input id="package-process-destination" maxlength="4096" autocomplete="off" spellcheck="false">
+          <button id="package-process-destination-pick" type="button" class="control">Обзор…</button>
+        </div>
+        <label><input id="package-process-shared" type="checkbox" disabled> Хранить файлы библиотеки в общей папке</label>
+        <label><input id="package-process-compact" type="checkbox" disabled> Удалять служебные копии после переноса оригиналов в корзину</label>
+        <div class="index-toolbar">
+          <button id="package-process-cleanup" class="control primary-control">Обработать папку и предложить очистку</button>
+          <button id="package-restore-confirmation" type="button" class="control">Включить подтверждения очистки</button>
+          <button id="package-review-folder-cleanup" type="button" class="control" hidden>Проверить очистку</button>
+          <button id="package-leave-folder-cleanup" type="button" class="control" hidden>Оставить исходники</button>
+        </div>
+      </form>
+      <p id="package-process-output" class="notice" role="status"></p>
+    </details>
+    <p id="package-cleanup-status" class="notice" role="status"></p>
     <details id="package-importer" class="index-analysis">
       <summary>Импорт пакетов Unity и Unreal</summary>
       <form id="package-form">
@@ -187,31 +213,6 @@
         <input id="package-files" type="file" multiple hidden>
       </form>
       <p id="package-drop" class="notice" hidden>Перетащите файл пакета Unity или Unreal, ресурс Unreal или .uproject.</p>
-      <details id="package-source-cleanup" class="index-analysis" hidden>
-        <summary>Обработка папки UE / Unity</summary>
-        <form id="package-process-folder-form">
-          <label for="package-process-source">Папка исходников</label>
-          <div class="folder-path-row">
-            <input id="package-process-source" maxlength="4096" autocomplete="off" spellcheck="false">
-            <button id="package-process-source-pick" type="button" class="control">Обзор…</button>
-          </div>
-          <label for="package-process-destination">Общая папка для результатов (необязательно)</label>
-          <div class="folder-path-row">
-            <input id="package-process-destination" maxlength="4096" autocomplete="off" spellcheck="false">
-            <button id="package-process-destination-pick" type="button" class="control">Обзор…</button>
-          </div>
-          <label><input id="package-process-shared" type="checkbox" disabled> Хранить файлы библиотеки в общей папке</label>
-          <label><input id="package-process-compact" type="checkbox" disabled> Удалять служебные копии после переноса оригиналов в корзину</label>
-          <div class="index-toolbar">
-            <button id="package-process-cleanup" class="control primary-control">Обработать папку и предложить очистку</button>
-            <button id="package-restore-confirmation" type="button" class="control">Включить подтверждения очистки</button>
-            <button id="package-review-folder-cleanup" type="button" class="control" hidden>Проверить очистку</button>
-            <button id="package-leave-folder-cleanup" type="button" class="control" hidden>Оставить исходники</button>
-          </div>
-        </form>
-        <p id="package-process-output" class="notice" role="status"></p>
-      </details>
-      <p id="package-cleanup-status" class="notice" role="status"></p>
       <details class="index-analysis">
         <summary>Найти пакеты в папке</summary>
         <form id="package-folder-form">

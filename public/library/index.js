@@ -97,7 +97,7 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
   let pollTimer
   const quality = mountQualityProfile({ json, post, run, currentAsset: () => asset?.id })
   const thumbnail = mountIndexThumbnail({ json, post })
-  const packages = mountPackageImporter({ dialog, json, post,
+  const packages = mountPackageImporter({ dialog, json, post, openIndex,
     hasWatchedLibraries: () => libraries.some(library => library.packageWatchFormats.length),
     openLibrary: id => run(async () => {
       await refreshLibraries(id)
@@ -284,13 +284,15 @@ export function mountIndex({ json, post, openPreview, currentFolder }) {
     showJob(jobs[0])
   }
 
-  $('mode').addEventListener('click', () => {
+  function openIndex() {
+    if (dialog.open) return
     const root = currentFolder()
     if (root && !$('root').value) $('root').value = root
     dialog.showModal()
     void packages.refresh()
     void run(async () => { await refreshLibraries(); await search(); await refreshJob() })
-  })
+  }
+  $('mode').addEventListener('click', openIndex)
   $('close').addEventListener('click', () => dialog.close())
   dialog.addEventListener('close', () => {
     if (dialog.open) return
