@@ -1,13 +1,13 @@
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 
 export async function testDirectory(t) {
-  const path = await mkdtemp(join(tmpdir(), 'asset-viewer-test-'))
+  const path = await mkdtemp(join(await realpath(tmpdir()), 'asset-viewer-test-'))
   t.after(() => rm(path, { recursive: true, force: true, maxRetries: 8, retryDelay: 300 }))
   return path
 }
