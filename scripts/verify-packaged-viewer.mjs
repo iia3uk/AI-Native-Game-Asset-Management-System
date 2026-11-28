@@ -16,6 +16,9 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
   for (const path of [
     'desktop/window/startup.mjs',
     'desktop/window/failure.mjs',
+    'desktop/package-cleanup/ipc.mjs',
+    'core/packages/cleanup/plan.mjs',
+    'public/package-importer/cleanup.js',
     'public/app.js',
     'public/catalog/classification.js',
     'public/catalog/pack-list.js',

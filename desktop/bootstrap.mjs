@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { setTimeout } from 'node:timers/promises'
 import { app, BrowserWindow, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
 import { dataPaths } from '../core/config/data-paths.mjs'
+import { bindPackageCleanup } from './package-cleanup/ipc.mjs'
 import { showDesktopFailure } from './window/failure.mjs'
 import { loadViewerWindow, rendererFailure } from './window/startup.mjs'
 
@@ -114,6 +115,7 @@ export async function startDesktop(applicationRoot = app.getAppPath(), { showWin
     if (!event.url?.startsWith(origin + '/')) event.preventDefault()
   })
   window.webContents.on('will-attach-webview', event => event.preventDefault())
+  bindPackageCleanup({ window, origin, paths, preferencesDirectory: electronData })
   ipcMain.handle('asset-viewer:choose-folder', async event => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame ||
         !event.senderFrame?.url.startsWith(origin + '/')) return null

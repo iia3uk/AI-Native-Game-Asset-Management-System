@@ -187,6 +187,11 @@
         <input id="package-files" type="file" multiple hidden>
       </form>
       <p id="package-drop" class="notice" hidden>Перетащите файл пакета Unity или Unreal, ресурс Unreal или .uproject.</p>
+      <div id="package-source-cleanup" class="index-toolbar" hidden>
+        <button id="package-process-cleanup" type="button" class="control">Обработать папку и предложить очистку</button>
+        <button id="package-restore-confirmation" type="button" class="control">Включить подтверждения очистки</button>
+      </div>
+      <p id="package-cleanup-status" class="notice" role="status"></p>
       <details class="index-analysis">
         <summary>Найти пакеты в папке</summary>
         <form id="package-folder-form">

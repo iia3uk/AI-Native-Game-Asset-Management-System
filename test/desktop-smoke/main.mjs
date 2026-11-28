@@ -7,6 +7,7 @@ import { app } from 'electron'
 import { startDesktop } from '../../desktop/bootstrap.mjs'
 import { generateFixtures } from '../../scripts/generate-fixtures.mjs'
 import { verifyPackageExport } from './package-export.mjs'
+import { verifyPackageCleanup } from './package-cleanup.mjs'
 import { verifyPackageFolder } from './package-folder.mjs'
 import { verifyPackageWatch } from './package-watch.mjs'
 import { verifyStartupWithoutInterface } from './startup.mjs'
@@ -168,6 +169,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   await verifyPackageFolder(webContents, waitFor, join(process.env.ASSET_VIEWER_DATA_DIR, 'incoming-packages'))
   await verifyUnityFolder(webContents, waitFor, join(process.env.ASSET_VIEWER_DATA_DIR, 'unity-folder-fixture'))
   await verifyUnrealLoose(webContents, waitFor, join(process.env.ASSET_VIEWER_DATA_DIR, 'unreal-loose-fixture'))
+  await verifyPackageCleanup(webContents, waitFor)
   const bundle = process.env.ASSET_VIEWER_SMOKE_BUNDLE
   const sprites = process.env.ASSET_VIEWER_SMOKE_SPRITES
   const audio = process.env.ASSET_VIEWER_SMOKE_AUDIO

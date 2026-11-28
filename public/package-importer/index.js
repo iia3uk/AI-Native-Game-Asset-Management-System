@@ -4,6 +4,7 @@ import { formatLabel, isUnityBinary, isUnityFolder, isUnrealLoose } from './form
 import { appendManifest, assetLabel, describeIssue } from './report.js'
 import { mountImportOptions } from './import-options.js'
 import { mountPackageExport } from './export.js'
+import { importFolderForCleanup, requestPackageCleanup } from './cleanup.js'
 
 const $ = name => document.getElementById('package-' + name)
 const jobsRoute = '/api/index/jobs'
@@ -43,6 +44,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
   const plans = $('plans')
   const jobs = $('jobs')
   const status = $('status')
+  const cleanupStatus = $('cleanup-status')
   const pathInput = $('path')
   const fileInput = $('files')
   const startAll = $('start-all')
@@ -144,6 +146,15 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
       const exporter = (!scan || !active(scan)) && mountPackageExport({ record, json, post,
         chooseFolder: bridge?.chooseFolder, element, button })
       if (exporter) details.append(exporter.panel)
+      if (bridge?.cleanupSource && scan?.status === 'completed') {
+        const cleanup = button('Исходники в корзину…', async () => {
+          if (busy) return
+          busy = cleanup.disabled = true
+          try { await requestPackageCleanup(bridge, record.id, cleanupStatus) }
+          finally { busy = cleanup.disabled = false }
+        })
+        details.append(cleanup)
+      }
       appendManifest({ details, record, json, element, button, assetStatus, selectAsset: exporter?.selectAsset })
       row.append(details)
     }
@@ -167,11 +178,12 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     if (plan.format === 'unreal-asset' || (isUnrealLoose(plan.format) && options.mode === 'engineless')) {
       options = { mode: 'engineless' }
     }
-    await json(packagesRoute + '/import', post({ ...target, hash: plan.hash, ...options }))
+    const queued = await json(packagesRoute + '/import', post({ ...target, hash: plan.hash, ...options }))
     const key = selectionKey(target)
     queuedPlans.get(key)?.row.remove()
     queuedPlans.delete(key)
     startAll.hidden = queuedPlans.size < 2
+    return queued
   }
 
   startAll.addEventListener('click', async () => {
@@ -283,6 +295,37 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
           await inspect([{ path }])
         }
       } catch (error) { showError(error) }
+    })
+  }
+  if (bridge?.cleanupSource && bridge.chooseFolder) {
+    $('source-cleanup').hidden = false
+    const process = $('process-cleanup')
+    process.addEventListener('click', async () => {
+      if (busy) return
+      busy = process.disabled = true
+      cleanupStatus.textContent = ''
+      try {
+        const path = pathInput.value.trim() || await bridge.chooseFolder()
+        if (!path) return
+        pathInput.value = path
+        cleanupStatus.textContent = 'Анализ выбранной папки…'
+        const { completed, failed, cancelled } = await importFolderForCleanup({ path, json, post, enqueue: queuePlan, refresh,
+          setStatus: message => { cleanupStatus.textContent = message } })
+        if (cancelled) cleanupStatus.textContent = 'Обработка папки отменена. Исходники оставлены.'
+        else if (completed.length) await requestPackageCleanup(bridge, completed, cleanupStatus)
+        else cleanupStatus.textContent = 'Нет завершённых импортов для очистки.'
+        if (failed) cleanupStatus.textContent += ' · Ошибок импорта ' + failed
+      } catch (error) {
+        cleanupStatus.textContent = error.message
+      } finally {
+        busy = process.disabled = false
+      }
+    })
+    $('restore-confirmation').addEventListener('click', async () => {
+      try {
+        const enabled = await bridge.restoreCleanupConfirmation()
+        cleanupStatus.textContent = enabled ? 'Подтверждения Unity и Unreal включены.' : 'Не удалось включить подтверждения.'
+      } catch (error) { cleanupStatus.textContent = error.message }
     })
   }
   section.addEventListener('toggle', () => void refresh())
