@@ -62,7 +62,7 @@ test('The packaged Windows importer verifies and indexes a multi-partition Unrea
   assert.deepEqual(await readFile(join(directory, sound.artifact.path)), payloads.audio)
   const asset = entries.find(row => row.kind === 'package')
   assertZenPng(await readFile(join(directory, asset.exports[0].path)), false)
-  const cached = await cli('package-import', partitionPaths[1])
+  const cached = await cli('package-import', partitionPaths[1], '--export', 'fbx,glb')
   assert.equal(cached.job.status, 'completed', cached.job.error)
   assert.equal(cached.scan.status, 'completed', cached.scan.error)
   assert.equal(cached.job.result.reused, true)
@@ -78,4 +78,15 @@ test('The packaged Windows importer verifies and indexes a multi-partition Unrea
   const [vorbis] = manifest.entries.find(row => row.kind === 'package').exports
   assert.equal(vorbis.format, 'ogg')
   assert.deepEqual(await readFile(join(audioDirectory, vorbis.path)), audioFixture.payloads.soundWave)
+
+  const meshFixture = await writeIoStoreFixture(root, 'PackagedMesh', { staticMesh: 'ue54' })
+  const { job: meshJob, scan: meshScan } = await cli('package-import', meshFixture.path)
+  assert.equal(meshJob.status, 'completed', meshJob.error)
+  assert.equal(meshScan.status, 'completed', meshScan.error)
+  assert.deepEqual(meshJob.result.report.meshes.derivatives, { fbx: 0, glb: 2 })
+  const meshDirectory = meshJob.result.directory
+  const meshManifest = JSON.parse(await readFile(join(meshDirectory, 'manifest.json'), 'utf8'))
+  const previews = meshManifest.entries.find(row => row.kind === 'package').exports.filter(row => row.format === 'glb')
+  assert.deepEqual(previews.map(row => row.lod), [0, 1])
+  for (const preview of previews) assert.equal((await readFile(join(meshDirectory, preview.path))).toString('ascii', 0, 4), 'glTF')
 })

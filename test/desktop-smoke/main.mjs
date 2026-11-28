@@ -201,7 +201,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   if (player) console.log('Unity Player companion inspection, queued texture and audio import and WAV playback passed.')
   if (watchPlayer) console.log('Unity Player watched-folder opt-in, import and indexing passed.')
   if (pak) console.log('Unreal Pak folder watching, inspection, queued texture and material import, artifact report and indexed GLB preview passed.')
-  if (ioStore) console.log('Unreal IoStore inspection, queued extraction, indexed WAV and Zen Vorbis playback and PNG preview passed.')
+  if (ioStore) console.log('Unreal IoStore inspection, queued extraction, indexed WAV and Zen Vorbis playback, PNG and static mesh GLB previews passed.')
   app.quit()
 }).catch(error => {
   console.error(error)

@@ -192,7 +192,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
         if (meshes) details.append(element('p', cookedMeshSummary(meshes)))
       }
       if (record.result.report.packageFormat === 'unreal-iostore') {
-        const { containerVersion, extracted, extractedTypes, textures, audio, total } = record.result.report
+        const { containerVersion, extracted, extractedTypes, textures, audio, meshes, total } = record.result.report
         details.append(element('p', 'Unreal IoStore ' + containerVersion + ' · Извлечено ' + extracted + ' из ' + total))
         if (extractedTypes) details.append(element('p', [
           'Готовых файлов · ' + extractedTypes.file,
@@ -203,6 +203,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
           details.append(element('p', ['Аудио из Zen-пакетов', audio.converted && 'Готово ' + audio.converted,
             audio.skipped && 'Пропущено ' + audio.skipped, audio.failed && 'Ошибок ' + audio.failed].filter(Boolean).join(' · ')))
         }
+        if (meshes) details.append(element('p', cookedMeshSummary(meshes, 'UE 5.3–5.4')))
       }
       if (record.result.report.export) {
         details.append(element('p', 'Моделей сконвертировано · ' + record.result.report.converted))
@@ -242,7 +243,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
   async function queuePlan(target, plan, options = importOptions(plan.format)) {
     if (isUnityBinary(plan.format)) options = { mode: 'engineless', formats: options.formats }
     if (isUnrealArchive(plan.format)) {
-      options = { mode: 'engineless', ...(plan.format === 'unreal-pak' && { formats: options.formats }) }
+      options = { mode: 'engineless', formats: options.formats }
     }
     if (plan.format === 'unreal-asset' || (isUnrealLoose(plan.format) && options.mode === 'engineless')) {
       options = { mode: 'engineless', formats: options.formats }

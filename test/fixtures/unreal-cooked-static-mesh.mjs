@@ -14,7 +14,7 @@ const floats = (...values) => Buffer.concat(values.map(float))
 const bulk = (stride, items) => Buffer.concat([ints(stride, items.length / stride), items])
 const string = name => Buffer.concat([int(Buffer.byteLength(name) + 1), Buffer.from(name + '\0')])
 
-function lod(vertices, indices, sections, { wide = false, invalidIndex = false, external = false } = {}) {
+export function cookedMeshLod(vertices, indices, sections, { wide = false, invalidIndex = false, external = false, zen = false } = {}) {
   const xyz = floats(...vertices.flatMap(row => row.slice(0, 3)))
   const texture = floats(...vertices.flatMap(row => row.slice(3)))
   const normals = Buffer.concat(vertices.map(() => Buffer.from([127, 0, 0, 0, 0, 0, 127, 127])))
@@ -35,13 +35,16 @@ function lod(vertices, indices, sections, { wide = false, invalidIndex = false, 
   ])
   const exportData = Buffer.concat([
     Buffer.from([1, 0]), int(sections.length),
-    ...sections.map(([slot, start, triangles]) => ints(slot, start, triangles, 0, vertices.length - 1, 1, 1, 0, 1)),
+    ...sections.map(([slot, start, triangles]) => ints(slot, start, triangles, 0, vertices.length - 1, 1, 1, 0, 1, ...(zen ? [1] : []))),
     float(0), ints(0, Number(!external)),
-    ...(external ? [ints(0x101, buffers.length, buffers.length, 0, 0), Buffer.alloc(88)] : [buffers]),
+    ...(external ? [zen ? int(0) : ints(0x101, buffers.length, buffers.length, 0, 0), Buffer.alloc(zen ? 80 : 88)] : [buffers]),
     ints(buffers.length, 0, 0),
   ])
   return { exportData, ...(external && { bulkData: buffers }) }
 }
+
+export const meshPoints = [[0, 0, 0, 0, 0, 0.25, 0.75], [0, 100, 0, 0, 1, 0.5, 1],
+  [200, 0, 0, 1, 0, 1, 0], [200, 100, 0, 1, 1, 0.75, 0.25]]
 
 export function cookedStaticMesh({ name, split = true, rootClass = '/Script/Engine', invalidIndex = false, external = false }) {
   const names = new Map()
@@ -49,10 +52,8 @@ export function cookedStaticMesh({ name, split = true, rootClass = '/Script/Engi
     if (!names.has(name)) names.set(name, names.size)
     return ints(names.get(name), 0)
   }
-  const points = [[0, 0, 0, 0, 0, 0.25, 0.75], [0, 100, 0, 0, 1, 0.5, 1],
-    [200, 0, 0, 1, 0, 1, 0], [200, 100, 0, 1, 1, 0.75, 0.25]]
-  const primary = lod(points, [0, 1, 2, 2, 1, 3], [[1, 0, 1], [0, 3, 1]], { invalidIndex })
-  const secondary = lod(points.slice(0, 3), [0, 1, 2], [[0, 0, 1]], { wide: true, external })
+  const primary = cookedMeshLod(meshPoints, [0, 1, 2, 2, 1, 3], [[1, 0, 1], [0, 3, 1]], { invalidIndex })
+  const secondary = cookedMeshLod(meshPoints.slice(0, 3), [0, 1, 2], [[0, 0, 1]], { wide: true, external })
   const exportData = Buffer.concat([
     fname('None'), int(0), Buffer.from([1, 0]), ints(1, 0, 0), Buffer.alloc(16), int(0),
     int(2), primary.exportData, secondary.exportData,

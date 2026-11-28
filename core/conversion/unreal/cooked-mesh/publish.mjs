@@ -1,17 +1,14 @@
 import { mkdir, rm } from 'node:fs/promises'
-import { join, posix } from 'node:path'
+import { join } from 'node:path'
 import { readCookedTables } from '../../../engines/unreal/cooked-package/file.mjs'
 import { boundedCookedBatch } from '../../../engines/unreal/decoder/budget.mjs'
 import { looseMeshResult, looseMeshRevision } from '../../../engines/unreal/decoder/mesh-protocol.mjs'
 import { cue4parseVersion, runUnrealDecoder, stageUnrealInputs } from '../../../engines/unreal/decoder/run.mjs'
-import { fileInfo, readBoundedText } from '../../../files/asset-files.mjs'
-import { readVerifiedFile } from '../../../files/read-verified.mjs'
-import { publishUnrealGeometry } from '../mesh-artifact.mjs'
+import { readBoundedText } from '../../../files/asset-files.mjs'
 import { publishTexturedViewerModels } from '../viewer/bind-materials.mjs'
-import { encodeCookedMesh } from './mesh-data.mjs'
+import { cookedMeshMethod, publishCookedLod } from './geometry.mjs'
 
 const format = 'loose-meshes'
-const method = 'cue4parse-cooked-static-mesh'
 const converterVersion = cue4parseVersion + '-mesh-' + looseMeshRevision
 const classes = new Set(['StaticMesh'])
 const modelMethod = 'unreal-cooked-mesh-material-binding'
@@ -31,32 +28,9 @@ async function candidates(inputs, output, signal) {
   return found
 }
 
-async function publishLod(asset, product, scratch, store, signal) {
-  const output = join(scratch, 'output')
-  const file = await fileInfo(output, product.file)
-  const invalid = 'unreal-cooked-mesh-output'
-  if (file?.info.size !== product.size) return { issue: invalid }
-  const changed = () => new Error('Staged cooked mesh changed during publication')
-  const { prefix } = await readVerifiedFile(output, file, { capture: product.size, changed, signal })
-  const stem = posix.basename(asset.sourcePath).slice(0, -7).replace(/[#%]/g, '_') + (product.lod ? '_Lod' + product.lod : '')
-  let geometry
-  try { geometry = encodeCookedMesh(prefix, product, stem) } catch (error) {
-    if (!(error instanceof RangeError)) throw error
-    return { issue: invalid }
-  }
-  if (!geometry) return { issue: invalid }
-  const { document, buffer, materialPaths } = geometry
-  const identity = { status: 'converted', converterVersion, method, from: asset.output, lod: product.lod }
-  const issues = ['unreal-cooked-mesh-render-data-only']
-  if (product.tangentsQuantized) issues.push('unreal-cooked-mesh-tangent-quantized')
-  const saved = await publishUnrealGeometry({ asset, scratch, store, stem, document, buffer, folder: 'unreal-cooked',
-    identity, issues, signal })
-  return { ...saved, materialPaths }
-}
-
 function recordSkip(asset, issue, summary) {
   asset.issues.push(issue)
-  asset.exports.push({ method, converterVersion, from: asset.output, role: 'model', format: 'gltf', status: 'skipped', issue })
+  asset.exports.push({ method: cookedMeshMethod, converterVersion, from: asset.output, role: 'model', format: 'gltf', status: 'skipped', issue })
   summary.skipped++
 }
 
@@ -104,11 +78,14 @@ export async function publishCookedMeshes(inputs, { records, decoder, output, wo
         recordSkip(asset, row.issue ?? 'unreal-cooked-mesh-layout', summary)
         continue
       }
+      if (row.limited) summary.issue = 'unreal-cooked-mesh-limit'
       summary.missingLods += row.missing.length
       if (row.missing.length) asset.issues.push('unreal-cooked-mesh-lods-incomplete')
       const prior = models.length
       for (const product of row.lods) {
-        const { artifact, issue, materialPaths } = await publishLod(asset, product, scratch, store, signal)
+        const { artifact, issue, materialPaths } = await publishCookedLod(asset, product, {
+          root: join(scratch, 'output'), scratch, store, folder: 'unreal-cooked', converterVersion, signal,
+        })
         if (!artifact?.path) {
           asset.issues.push(issue ?? artifact.issue)
           summary.failed++

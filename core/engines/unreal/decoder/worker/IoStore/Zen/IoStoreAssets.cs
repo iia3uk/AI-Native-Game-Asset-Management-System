@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using AssetViewer.UnrealDecode.Formats;
 using AssetViewer.UnrealDecode.IoStore.Zen.Audio;
+using AssetViewer.UnrealDecode.IoStore.Zen.Mesh;
 
 namespace AssetViewer.UnrealDecode.IoStore.Zen;
 
@@ -44,6 +45,12 @@ internal static class IoStoreAssets
                     entries[i] = entry with { Audio = new(format, audio.Length) };
                     remaining -= audio.Length;
                 }
+                else if (kind == ZenExportKind.StaticMesh)
+                {
+                    var mesh = ZenStaticMesh.Read(bytes, package, companions, output.ToString("D5"), remaining);
+                    entries[i] = entry with { Mesh = mesh };
+                    remaining -= mesh.Lods.Sum(lod => lod.Size);
+                }
                 else
                 {
                     var (pixels, metadata) = ZenTexture.Read(bytes, package, companions, remaining);
@@ -77,6 +84,7 @@ internal static class IoStoreAssets
     {
         ZenExportKind.Texture => entry with { TextureIssue = "unreal-iostore-texture-" + code },
         ZenExportKind.SoundWave => entry with { AudioIssue = "unreal-iostore-audio-" + code },
+        ZenExportKind.StaticMesh => entry with { MeshIssue = "unreal-iostore-mesh-" + code.Replace("unreal-cooked-mesh-", "") },
         _ => entry,
     };
 }

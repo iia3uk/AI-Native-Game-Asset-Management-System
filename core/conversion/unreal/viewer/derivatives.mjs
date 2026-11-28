@@ -3,6 +3,7 @@ import { basename, join, posix } from 'node:path'
 import { analyzeAsset } from '../../../analysis/asset-analysis.mjs'
 import { convertBatchModel } from '../../../engines/blender/batch.mjs'
 import { modelArtifact } from '../../artifacts.mjs'
+import { cookedMeshMethod } from '../cooked-mesh/geometry.mjs'
 import { publishDirectMeshPreview } from '../source-mesh/preview.mjs'
 import { animationBindingMethod } from './actorx/publish.mjs'
 
@@ -29,7 +30,7 @@ export async function createViewerDerivatives({ models, store, blender, output, 
       item.sourceModel === artifact.path && item.format === 'gltf')
     let input = animated ?? asset.exports.find(item => item.path && materialMethods.has(item.method) &&
       item.from === artifact.path) ?? artifact
-    const directPreview = artifact.sourceFormat === 'FRawMesh' || artifact.method === 'cue4parse-cooked-static-mesh'
+    const directPreview = artifact.sourceFormat === 'FRawMesh' || artifact.method === cookedMeshMethod
     if (requested.includes('glb') && directPreview && Date.now() < deadline) {
       const preview = { asset, artifact, output, workspace, store, signal }
       let direct = await publishDirectMeshPreview({ ...preview, input })

@@ -79,6 +79,15 @@ const packageIssues = {
   'unreal-iostore-audio-limit': 'Достигнут лимит экспорта SoundWave',
   'unreal-iostore-audio-io': 'Ошибка чтения или записи SoundWave',
   'unreal-iostore-audio-output': 'Аудиофайл из SoundWave не прошёл проверку',
+  'unreal-iostore-mesh-ambiguous': 'В Zen-пакете несколько корневых ресурсов',
+  'unreal-iostore-mesh-unversioned': 'Для свойств модели нужна схема соответствующей версии Unreal',
+  'unreal-iostore-mesh-property-layout': 'Сериализация свойств модели Zen пока не поддерживается',
+  'unreal-iostore-mesh-layout': 'Структура статической модели Zen не прошла проверку',
+  'unreal-iostore-mesh-bulk-layout': 'Внешние данные модели Zen выходят за пределы поддерживаемого формата',
+  'unreal-iostore-mesh-buffers': 'Не найдено доступной геометрии LOD',
+  'unreal-iostore-mesh-limit': 'Достигнут лимит экспорта геометрии Zen',
+  'unreal-iostore-mesh-io': 'Ошибка чтения или записи геометрии Zen',
+  'unreal-cooked-mesh-limit': 'Достигнут лимит экспорта геометрии',
   'unreal-cooked-material-layout': 'Структура cooked-материала не прошла проверку',
   'unreal-cooked-material-export-missing': 'Отсутствует связанный файл .uexp материала',
   'unreal-cooked-material-size': 'Блок свойств материала превышает лимит чтения',
@@ -185,8 +194,8 @@ const artifactRoles = {
 
 export const describeIssue = issue => packageIssues[issue] ?? issue
 
-export function cookedMeshSummary(meshes) {
-  return ['Статические модели cooked UE4.27',
+export function cookedMeshSummary(meshes, version = 'UE4.27') {
+  return ['Статические модели cooked ' + version,
     meshes.meshes && 'Моделей · ' + meshes.meshes,
     meshes.gltf && 'LOD · ' + meshes.gltf,
     meshes.texturedGltf && 'С текстурами · ' + meshes.texturedGltf,
@@ -224,6 +233,9 @@ export function appendManifest({ details, record, json, element, button, assetSt
         if (asset.sourceRetired) row.append(element('p', 'Служебная копия исходника удалена.'))
         const issues = [...new Set([asset.issue, ...(asset.issues ?? [])])].filter(issue => /^(unity|unreal)-/.test(issue))
         if (issues.length) row.append(element('p', issues.map(describeIssue).join(' · ')))
+        if (Array.isArray(asset.missingLods) && asset.missingLods.length) {
+          row.append(element('p', 'Недоступные LOD · ' + asset.missingLods.join(', ')))
+        }
         if (asset.materialDescription) {
           const { path, shader } = asset.materialDescription
           row.append(element('p', ['Привязки материала', shader, path].filter(Boolean).join(' · ')))

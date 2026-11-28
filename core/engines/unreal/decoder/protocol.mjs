@@ -1,4 +1,5 @@
 import { posix } from 'node:path'
+import { ioStoreMeshRevision, meshProduct } from './mesh-protocol.mjs'
 
 const invalidChars = /[<>:"\\|?*\x00-\x1f\x7f-\x9f]/u
 const deviceName = /^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])$/i
@@ -31,7 +32,7 @@ const ioStoreKinds = {
 export function ioStoreResult(raw, { inspectOnly, version, chunks, partitions }) {
   if (raw?.status === 'completed' && (raw.chunks !== chunks || raw.partitions !== partitions ||
       raw.entries?.length > chunks || raw.textureDecoder !== ioStoreTextureRevision ||
-      raw.audioDecoder !== ioStoreAudioRevision)) return null
+      raw.audioDecoder !== ioStoreAudioRevision || raw.meshDecoder !== ioStoreMeshRevision)) return null
   return archiveResult(raw, { inspectOnly, version, ioStore: true })
 }
 
@@ -145,10 +146,23 @@ function archiveResult(raw, { inspectOnly, version, ioStore = false }) {
         entry.audioIssue = row.audioIssue
       }
     }
+    if (row.mesh != null || row.meshIssue != null) {
+      if (!ioStore || inspectOnly || format !== 'uasset' || !entry.file || entry.kind !== 'package' || version < 5 ||
+          row.audio != null || row.audioIssue != null || row.texture != null || row.textureIssue != null) return null
+      if (row.mesh != null) {
+        const mesh = meshProduct(row.mesh, entry.file.slice(0, -4))
+        if (row.meshIssue != null || !mesh || mesh.lods.some(lod => lod.sections.some(section => section.material !== null))) return null
+        derivativeBytes += mesh.lods.reduce((sum, lod) => sum + lod.size, 0)
+        entry.mesh = mesh
+      } else {
+        if (!issueCode(row.meshIssue) || !row.meshIssue.startsWith('unreal-iostore-mesh-')) return null
+        entry.meshIssue = row.meshIssue
+      }
+    }
     if (derivativeBytes > 256 * 1024 ** 2) return null
     entries.push(entry)
   }
   if (bytes + derivativeBytes > 1024 ** 3) return null
   return { status: 'completed', version, entries, textureDecoder: raw.textureDecoder,
-    ...(ioStore && { audioDecoder: raw.audioDecoder }) }
+    ...(ioStore && { audioDecoder: raw.audioDecoder, meshDecoder: raw.meshDecoder }) }
 }

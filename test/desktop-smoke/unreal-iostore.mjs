@@ -15,6 +15,12 @@ export async function verifyUnrealIoStore(webContents, waitFor, fixtures) {
   await showIoStoreLibrary(webContents, waitFor, audio.path, 'SmokeZenAudio', 'Аудио из Zen-пакетов · Готово 1')
   // Chromium can include a Vorbis block of decoder padding in the reported duration.
   await playIndexedAudio(webContents, waitFor, 'Sample.ogg', 0.5, 0.024)
+
+  const mesh = await writeIoStoreFixture(dirname(fixtures), 'SmokeZenMesh', { staticMesh: 'ue54' })
+  await showIoStoreLibrary(webContents, waitFor, mesh.path, 'SmokeZenMesh',
+    'Статические модели cooked UE 5.3–5.4 · Моделей · 1 · LOD · 2 · 2 GLB')
+  await openIndexedAsset(webContents, waitFor, 'Sample_Lod1.glb')
+  await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('1 треугольник')")
 }
 
 async function showIoStoreLibrary(webContents, waitFor, path, name, details) {

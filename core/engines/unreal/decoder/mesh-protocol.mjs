@@ -1,4 +1,5 @@
 export const looseMeshRevision = 1
+export const ioStoreMeshRevision = 1
 const MiB = 1024 ** 2
 const issueCode = value => typeof value === 'string' && /^unreal-[a-z0-9-]{1,70}$/.test(value)
 const natural = (value, min, max) => Number.isInteger(value) && value >= min && value <= max
@@ -29,6 +30,24 @@ function meshLod(row, prefix) {
   return { lod, vertices, indices, uvs, colors, size, tangentsQuantized, sections, file: prefix + '-' + lod + '.mesh' }
 }
 
+export function meshProduct(value, prefix) {
+  const { lods, missing, limited = false } = value ?? {}
+  if (!Array.isArray(lods) || !Array.isArray(missing) || !natural(lods.length, 1, 8) ||
+      lods.length + missing.length > 8 || !missing.every(lodIndex) ||
+      typeof limited !== 'boolean' || (limited && !missing.length)) return null
+  const levels = new Set(missing)
+  if (levels.size !== missing.length) return null
+  const products = []
+  for (const lod of lods) {
+    const product = meshLod(lod, prefix)
+    if (!product || levels.has(product.lod)) return null
+    levels.add(product.lod)
+    products.push(product)
+  }
+  if ([...levels].some(level => level >= levels.size)) return null
+  return { lods: products, missing, ...(limited && { limited }) }
+}
+
 export function looseMeshResult(raw, count) {
   if (raw?.protocol !== 1) return null
   if (raw.status === 'failed' && issueCode(raw.issue)) return { status: 'failed', issue: raw.issue }
@@ -42,22 +61,11 @@ export function looseMeshResult(raw, count) {
       entries.push({ issue: row.issue })
       continue
     }
-    const { lods, missing } = row.mesh ?? {}
-    if (row.issue || !Array.isArray(lods) || !Array.isArray(missing) || !natural(lods.length, 1, 8) ||
-        lods.length + missing.length > 8 || !missing.every(lodIndex)) return null
-    const levels = new Set(missing)
-    if (levels.size !== missing.length) return null
-    const products = []
-    for (const lod of lods) {
-      const product = meshLod(lod, String(index).padStart(5, '0'))
-      if (!product || levels.has(product.lod)) return null
-      levels.add(product.lod)
-      bytes += product.size
-      if (bytes > 256 * MiB) return null
-      products.push(product)
-    }
-    if ([...levels].some(level => level >= levels.size)) return null
-    entries.push({ lods: products, missing })
+    const mesh = meshProduct(row.mesh, String(index).padStart(5, '0'))
+    if (row.issue || !mesh) return null
+    bytes += mesh.lods.reduce((sum, lod) => sum + lod.size, 0)
+    if (bytes > 256 * MiB) return null
+    entries.push(mesh)
   }
   return { status: 'completed', entries }
 }

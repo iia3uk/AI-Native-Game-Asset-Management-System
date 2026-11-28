@@ -86,6 +86,7 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'core/conversion/unreal/cooked-mesh/publish.mjs',
     'core/conversion/unreal/cooked-mesh/mesh-data.mjs',
     'core/conversion/unreal/cooked-mesh/pak.mjs',
+    'core/conversion/unreal/cooked-mesh/iostore.mjs',
     'core/engines/unreal/decoder/budget.mjs',
     'core/conversion/unreal/mesh-artifact.mjs',
     'core/engines/unreal/decoder/mesh-protocol.mjs',

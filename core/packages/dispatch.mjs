@@ -98,10 +98,10 @@ export function packageOptions(format, input) {
   }
   const options = unityImportOptions(input?.mode, input?.editorVersion)
   if (isUnrealArchive(format)) {
-    if (options.mode === 'engine-assisted' || options.editorVersion || (format === 'unreal-iostore' && formats)) {
+    if (options.mode === 'engine-assisted' || options.editorVersion) {
       throw new IndexInputError('Для контейнера Unreal выберите независимое извлечение.')
     }
-    return { mode: 'engineless', formats: format === 'unreal-pak' ? (formats.includes('fbx') ? 'fbx,glb' : 'glb') : '' }
+    return { mode: 'engineless', formats: formats.includes('fbx') ? 'fbx,glb' : 'glb' }
   }
   if (format === 'unityfs' || format === 'unity-serialized') {
     if (options.mode === 'engine-assisted' || options.editorVersion) {

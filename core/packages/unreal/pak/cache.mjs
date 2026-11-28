@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { cookedMaterialRevision } from '../../../conversion/unreal/cooked-material/publish.mjs'
+import { meshTotalsMatch, validModelStatus } from '../../../conversion/unreal/cooked-mesh/cache.mjs'
 import { exportRecipe, verifyExports } from '../../../conversion/cache.mjs'
 import { cue4parseVersion } from '../../../engines/unreal/decoder/run.mjs'
 import { looseMeshRevision } from '../../../engines/unreal/decoder/mesh-protocol.mjs'
@@ -12,20 +13,6 @@ import { IndexInputError } from '../../../index/index-errors.mjs'
 export const pakRecipe = (formats, blender) => exportRecipe(formats, blender,
   [2, cue4parseVersion, pakTextureRevision, cookedMaterialRevision, looseMeshRevision])
 export const pakMethod = 'cue4parse-pak'
-
-function meshTotalsMatch(entries, derivatives, summary) {
-  const geometry = file => file.role === 'model' && file.format === 'gltf' && file.method === 'cue4parse-cooked-static-mesh'
-  const tally = (format, type, status = 'converted') =>
-    derivatives.filter(file => file.format === format && file.role === type && file.status === status).length
-  const rawModels = derivatives.filter(file => geometry(file) && file.status === 'converted').length
-  const models = entries.filter(entry => entry.exports?.some(file => geometry(file) && file.status === 'converted')).length
-  return models === (summary?.meshes ?? 0) && rawModels === (summary?.gltf ?? 0) &&
-    tally('bin', 'model-buffer') === rawModels &&
-    tally('gltf', 'model') === rawModels + (summary?.texturedGltf ?? 0) &&
-    tally('gltf', 'model', 'skipped') === (summary?.skipped ?? 0) &&
-    tally('glb', 'model') === (summary?.derivatives?.glb ?? 0) &&
-    tally('fbx', 'model') === (summary?.derivatives?.fbx ?? 0)
-}
 
 export async function readPakCache(root, hash, recipe, sourceName, signal) {
   const output = join(root, hash + '-' + recipe)
@@ -61,8 +48,7 @@ export async function readPakCache(root, hash, recipe, sourceName, signal) {
         !totalsMatch('texture', report.textures) || !totalsMatch('material', report.materials) ||
         !meshTotalsMatch(extracted, derivatives, report.meshes) ||
         derivatives.some(file => !['texture', 'material', 'model', 'model-buffer'].includes(file.role) ||
-          (!['converted', 'skipped'].includes(file.status) &&
-            !(file.role === 'model' && file.format === 'fbx' && file.status === 'requires-tool' && file.issue === 'blender-unavailable')) ||
+          !validModelStatus(file) ||
           (file.status === 'converted' && !file.path)) ||
         !await verifyExports(output, extracted.map(entry => ({ exports: [entry.artifact, ...(entry.exports ?? [])] })), signal)) {
       throw new Error('Invalid cached exports')

@@ -12,7 +12,7 @@ export async function publishIoStoreEntries(entries, root, store, version, signa
   const results = []
   for (const row of entries) {
     signal?.throwIfAborted()
-    const { file: input, texture, textureIssue, audio, audioIssue, ...entry } = row
+    const { file: input, texture, textureIssue, audio, audioIssue, mesh, meshIssue, ...entry } = row
     if (!input) {
       results.push(entry)
       continue

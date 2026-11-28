@@ -53,7 +53,7 @@ async function saveOutputs(workspace, source, result, hash, { recipe, decoder, b
   const cacheable = !failed && !materials.issue && !meshes?.failed &&
     (!meshes?.issue || meshes.issue === 'unreal-loose-meshes-budget') &&
     !entries.some(entry => entry.exports?.some(file => file.status === 'failed' ||
-      ['unreal-cooked-texture-limit', 'unreal-cooked-texture-io', 'unreal-cooked-material-read'].includes(file.issue))) &&
+      ['unreal-cooked-texture-limit', 'unreal-cooked-texture-io', 'unreal-cooked-material-read', 'unreal-cooked-mesh-limit'].includes(file.issue))) &&
     (result.textureDecoder || !entries.some(entry => entry.status === 'extracted' && entry.format === 'uasset'))
   return { output, cacheable, report: { ...summary, ...(!extracted && { entries: entries.slice(0, 500) }) } }
 }

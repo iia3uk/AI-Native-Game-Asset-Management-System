@@ -1,14 +1,16 @@
 using Blake3;
 using AssetViewer.UnrealDecode.IoStore.Zen;
 using AssetViewer.UnrealDecode.IoStore.Zen.Audio;
+using AssetViewer.UnrealDecode.Objects;
 
 namespace AssetViewer.UnrealDecode.IoStore;
 
 internal sealed record IoStoreEntry(string Path, long Size, string Status, string? Issue, int? Output, string ChunkId,
     string? Kind = null, TextureExport? Texture = null, string? TextureIssue = null,
-    AudioExport? Audio = null, string? AudioIssue = null);
+    AudioExport? Audio = null, string? AudioIssue = null,
+    MeshExport? Mesh = null, string? MeshIssue = null);
 internal sealed record IoStoreReport(int Protocol, string Status, int ContainerVersion, int Chunks, int Partitions,
-    IReadOnlyList<IoStoreEntry> Entries, int TextureDecoder, int AudioDecoder);
+    IReadOnlyList<IoStoreEntry> Entries, int TextureDecoder, int AudioDecoder, int MeshDecoder);
 
 internal static class IoStoreDecoder
 {
@@ -52,7 +54,7 @@ internal static class IoStoreDecoder
             unpacked += size;
         }
         if (!request.InspectOnly && version >= 5) IoStoreAssets.Decode(entries, request.MaxOutputBytes - unpacked);
-        return new(1, "completed", version, resource.ChunkIds.Length, (int)resource.Header.PartitionCount, entries, 1, 1);
+        return new(1, "completed", version, resource.ChunkIds.Length, (int)resource.Header.PartitionCount, entries, 1, 1, 1);
     }
 
     internal static string OutputPath(int index, string extension) => Path.Combine("output", index.ToString("D5") + "." + extension);

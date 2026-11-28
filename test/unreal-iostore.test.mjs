@@ -8,7 +8,9 @@ import { test } from 'node:test'
 import { promisify } from 'node:util'
 import { scanPackageFolder } from '../core/packages/folder.mjs'
 import { ioStoreResult } from '../core/engines/unreal/decoder/protocol.mjs'
+import { locateUnrealDecoder, runUnrealDecoder } from '../core/engines/unreal/decoder/run.mjs'
 import { processIoStore } from '../core/packages/unreal/iostore/import.mjs'
+import { readFbxGeometry } from './fixtures/blender-model.mjs'
 import { makeIoStore, writeIoStoreFixture } from './fixtures/unreal-iostore.mjs'
 import { assertZenPng } from './fixtures/unreal-zen-texture.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
@@ -182,11 +184,110 @@ test('IoStore worker results only allow numbered texture outputs on extracted Ze
     chunkId: '9d2fbb016ac3df0c00000001', kind: 'package',
     texture: { width: 2, height: 2, size: 94, mip: 0, pixelFormat: 'PF_B8G8R8A8', srgb: true } }
   const result = { protocol: 1, status: 'completed', containerVersion: 8, chunks: 1, partitions: 2,
-    textureDecoder: 1, audioDecoder: 1, entries: [entry] }
+    textureDecoder: 1, audioDecoder: 1, meshDecoder: 1, entries: [entry] }
   assert.equal(ioStoreResult(result, options).entries[0].texture.file, '00000.png')
   assert.equal(ioStoreResult({ ...result, textureDecoder: undefined }, options), null)
   assert.equal(ioStoreResult({ ...result, entries: [{ ...entry, path: 'Sample.umap' }] }, options), null)
   assert.equal(ioStoreResult({ ...result, entries: [{ ...entry, textureIssue: 'unreal-iostore-texture-limit' }] }, options), null)
+})
+
+test('IoStore mesh output uses numbered files and cannot claim a material or another derivative', () => {
+  const section = { slot: 0, firstIndex: 0, triangles: 1, name: 'Paint', material: null, collision: true }
+  const lod = { lod: 0, vertices: 3, indices: 3, uvs: 1, colors: false, size: 156,
+    tangentsQuantized: false, sections: [section], file: '../outside.mesh' }
+  const mesh = { lods: [lod], missing: [1] }
+  const entry = { path: 'Sample.uasset', size: 440, status: 'extracted', issue: null, output: 0,
+    chunkId: '9d2fbb016ac3df0c00000001', kind: 'package', mesh }
+  const options = { inspectOnly: false, version: 8, chunks: 1, partitions: 2 }
+  const check = (value, settings = options) => ioStoreResult({ protocol: 1, status: 'completed', containerVersion: 8,
+    chunks: 1, partitions: 2, textureDecoder: 1, audioDecoder: 1, meshDecoder: 1, entries: [value] }, settings)
+  assert.equal(check(entry).entries[0].mesh.lods[0].file, '00000-0.mesh')
+  assert.equal(check({ ...entry, audioIssue: 'unreal-iostore-audio-layout' }), null)
+  assert.equal(check({ ...entry, mesh: { ...mesh, missing: [0] } }), null)
+  const foreign = { ...lod, sections: [{ ...section, material: '/Game/Foreign' }] }
+  assert.equal(check({ ...entry, mesh: { ...mesh, lods: [foreign] } }), null)
+  assert.equal(check({ ...entry, output: null, status: 'available' }, { ...options, inspectOnly: true }), null)
+})
+
+test('versioned UE 5.3 and 5.4 static mesh LODs enter the IoStore library with exact bulk pairing and verified exports',
+  { ...withDecoder, timeout: 60_000 }, async t => {
+    const root = await testDirectory(t)
+    const destination = join(root, 'export')
+    await mkdir(destination)
+    const server = await startServer(root)
+    try {
+      for (const [name, mode, bulkName] of [['UE53', 'ue53'], ['UE54', 'ue54'],
+        ['Broken', 'broken'], ['ForeignStem', 'ue54', 'Other.ubulk']]) {
+        const fixture = await writeIoStoreFixture(root, name, { staticMesh: mode, bulkName })
+        const partial = name === 'Broken' || name === 'ForeignStem'
+        const lods = partial ? 1 : 2
+        const withFbx = name === 'UE54' && process.env.ASSET_VIEWER_TEST_NATIVE_BLENDER === '1'
+        const inspected = await server.post('/api/index/packages/inspect', { path: fixture.path })
+        assert.equal(inspected.status, 200)
+        const { package: { hash } } = await inspected.json()
+        const queue = async () => {
+          const response = await server.post('/api/index/packages/import', {
+            path: fixture.path, hash, formats: withFbx ? ['fbx', 'glb'] : ['glb'],
+          })
+          const body = await response.json()
+          assert.equal(response.status, 202, JSON.stringify(body))
+          return waitForJob(server, body.job.id)
+        }
+        const job = await queue()
+        assert.equal(job.status, 'completed', job.error)
+        const { directory, library, scanJobId, report } = job.result
+        assert.deepEqual(report.meshes, { meshes: 1, gltf: lods, missingLods: Number(partial), skipped: 0, failed: 0,
+          derivatives: { fbx: withFbx ? lods : 0, glb: lods } })
+        assert.equal((await waitForJob(server, scanJobId)).status, 'completed')
+        const route = '/api/index/jobs/' + job.id
+        const { assets: entries } = await (await server.request(route + '/manifest')).json()
+        const asset = entries.find(row => row.kind === 'package')
+        const bulk = entries.find(row => row.kind === 'bulk')
+        assert.equal(asset.missingLods?.[0], partial ? 1 : undefined)
+        const previews = asset.exports.filter(product => product.format === 'glb')
+        assert.deepEqual(previews.map(product => [product.lod, product.metrics.triangles]),
+          partial ? [[0, 2]] : [[0, 2], [1, 1]])
+        const model = await readFile(join(directory, previews[0].path))
+        assert.equal(model.toString('ascii', 0, 4), 'glTF')
+        const json = JSON.parse(model.toString('utf8', 20, 20 + model.readUInt32LE(12)))
+        assert.deepEqual(json.materials.map(item => [item.name, item.extras.unrealMaterialSlot]), [['Trim', 1], ['Paint', 0]])
+        const [primitive] = json.meshes[0].primitives
+        assert.ok(['TEXCOORD_1', 'COLOR_0', 'TANGENT', 'NORMAL'].every(field => Number.isInteger(primitive.attributes[field])))
+        const { assets: indexed } = await (await server.request('/api/index/search?kind=model&library=' + library.id)).json()
+        assert.ok(previews.every(product => indexed.some(row => row.path === product.path)))
+        if (withFbx) {
+          const paths = asset.exports.filter(product => product.format === 'fbx').map(product => join(directory, product.path))
+          assert.deepEqual(await readFbxGeometry(paths), [[2, 2, 1, 2], [1, 2, 1, 1]])
+        }
+        assert.equal((await queue()).result.reused, true)
+        if (name !== 'UE54') continue
+        const ordinal = entries.indexOf(asset)
+        const plan = await (await server.post(route + '/export-plan', { destination, asset: ordinal })).json()
+        const publication = await server.post(route + '/export', { destination, asset: ordinal, key: plan.key })
+        assert.equal(publication.status, 201)
+        const delivery = (await publication.json()).directory
+        assert.deepEqual(await readFile(join(delivery, previews[0].path)), model)
+        assert.deepEqual(await readFile(join(delivery, bulk.artifact.path)), fixture.payloads.bulk)
+        const buffer = asset.exports.find(product => product.role === 'model-buffer')
+        await writeFile(join(directory, buffer.path), Buffer.alloc(buffer.size))
+        assert.match((await queue()).error, /Кеш импорта Unreal IoStore повреждён/)
+        assert.deepEqual(await readFile(fixture.path), fixture.toc)
+      }
+    } finally { await server.close() }
+  })
+
+test('IoStore reports a space-limited static mesh separately from permanently missing geometry', withDecoder, async t => {
+  const root = await testDirectory(t)
+  const fixture = await writeIoStoreFixture(root, 'input', { staticMesh: 'ue54' })
+  const rawBytes = Object.values(fixture.payloads).reduce((size, bytes) => size + bytes.length, 0)
+  await mkdir(join(root, 'output'))
+  await writeFile(join(root, 'request.json'), JSON.stringify({ protocol: 1, format: 'iostore', inspectOnly: false,
+    maxOutputBytes: rawBytes + 264 }))
+  const result = await runUnrealDecoder(await locateUnrealDecoder(), root)
+  const mesh = ioStoreResult(result, { inspectOnly: false, version: 8, chunks: 3, partitions: 2 }).entries[1].mesh
+  assert.equal(mesh.limited, true)
+  assert.deepEqual(mesh.lods.map(lod => lod.lod), [0])
+  assert.deepEqual(mesh.missing, [1])
 })
 
 test('IoStore rejects invalid directory links and bad chunk hashes and reports unsupported codecs', withDecoder, async t => {

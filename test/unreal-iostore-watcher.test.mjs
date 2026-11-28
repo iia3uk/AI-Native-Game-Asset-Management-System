@@ -46,7 +46,7 @@ test('IoStore autoimport waits for companion files and queues the complete set b
     assert.equal(index.jobs.refillWatchedImports([]), 1)
     const [first] = index.jobs.list({ type: 'package-import' })
     assert.equal(first.sourceKey, expected(data[1]))
-    assert.equal(first.exportFormats, undefined)
+    assert.deepEqual(first.exportFormats, ['fbx', 'glb'])
     const source = index.jobs.watchedImportSource(first.id)
     assert.equal(source.path, 'nested/Watch.utoc')
     assert.equal(source.format, 'unreal-iostore')

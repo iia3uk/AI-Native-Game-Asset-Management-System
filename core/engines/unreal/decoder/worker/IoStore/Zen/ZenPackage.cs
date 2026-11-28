@@ -3,6 +3,7 @@ using CUE4Parse.UE4.Assets;
 using CUE4Parse.UE4.Assets.Exports;
 using CUE4Parse.UE4.Assets.Objects;
 using CUE4Parse.UE4.IO.Objects;
+using CUE4Parse.UE4.Objects.Core.Serialization;
 using CUE4Parse.UE4.Objects.UObject;
 using CUE4Parse.UE4.Readers;
 using CUE4Parse.UE4.Versions;
@@ -14,6 +15,7 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
 {
     private static readonly ulong TextureClass = ScriptClass("texture2d");
     private static readonly ulong SoundWaveClass = ScriptClass("soundwave");
+    private static readonly ulong StaticMeshClass = ScriptClass("staticmesh");
     private const int HeaderLimit = 16 * 1024 * 1024;
 
     public override FPackageFileSummary Summary { get; } = new() { PackageFlags = flags };
@@ -68,7 +70,8 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
             if (!entry.OuterIndex.IsNull ||
                 entry.ObjectFlags.HasFlag(EObjectFlags.RF_ClassDefaultObject)) continue;
             var exportKind = entry.ClassIndex.TypeAndId == TextureClass ? ZenExportKind.Texture :
-                entry.ClassIndex.TypeAndId == SoundWaveClass ? ZenExportKind.SoundWave : ZenExportKind.None;
+                entry.ClassIndex.TypeAndId == SoundWaveClass ? ZenExportKind.SoundWave :
+                entry.ClassIndex.TypeAndId == StaticMeshClass ? ZenExportKind.StaticMesh : ZenExportKind.None;
             if (exportKind == ZenExportKind.None) continue;
             if (selected >= 0) throw new InputException("ambiguous");
             kind = exportKind;
@@ -96,6 +99,9 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
         }
         if (commands != 3) throw Invalid();
 
+        archive.Position = 68;
+        version.CustomVersions = new FCustomVersionContainer(archive);
+        if (archive.Position != namesAt) throw Invalid();
         var names = ReadNames(archive, bytes, (int)namesAt, header.ImportedPublicExportHashesOffset);
         if (header.Name.IsGlobal || header.Name.ExtraIndex != 0 || header.Name.NameIndex >= names.Length ||
             target.ObjectName.IsGlobal || target.ObjectName.NameIndex >= names.Length ||
@@ -147,4 +153,4 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
     internal static InputException Invalid() => new("layout");
 }
 
-internal enum ZenExportKind { None, Texture, SoundWave }
+internal enum ZenExportKind { None, Texture, SoundWave, StaticMesh }

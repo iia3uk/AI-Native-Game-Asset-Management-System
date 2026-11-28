@@ -234,12 +234,9 @@ async function main([command, ...args]) {
     exportUnrealWithEditor(input, { ...options, unrealVersion: values['unreal-version'] })), values.json)
   if (command === 'unreal-extract') return print(await runPackageOperation(paths, 'Unreal', async options => {
     const source = await importSource(input)
-    const settings = { ...options, inspectOnly: values.inspect }
-    if (!source.directory && isIoStorePath(source.path)) {
-      if (values.fbx) throw new IndexInputError('Экспорт FBX через unreal-extract доступен для Pak.')
-      return processIoStore(source, settings)
-    }
-    return extractUnrealPak(input, { ...settings, withFbx: values.fbx })
+    const settings = { ...options, inspectOnly: values.inspect, withFbx: values.fbx }
+    if (!source.directory && isIoStorePath(source.path)) return processIoStore(source, settings)
+    return extractUnrealPak(input, settings)
   }), values.json)
   if (command === 'package-folder') {
     const report = await runPackageFolder(input, paths, values, waitForImport)

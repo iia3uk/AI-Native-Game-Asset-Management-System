@@ -4,7 +4,7 @@ namespace AssetViewer.UnrealDecode.Objects;
 
 internal static class MeshBuffers
 {
-    public static MeshLod? Describe(FStaticMeshLODResources lod, int level, long remaining, Func<int, (string?, string?)> material)
+    public static MeshLod? Describe(FStaticMeshLODResources lod, int level, Func<int, (string?, string?)> material)
     {
         if (lod.SkipLod || lod.PositionVertexBuffer?.Verts is not { Length: >= 3 and <= 1_000_000 } positions ||
             lod.VertexBuffer is not { NumTexCoords: >= 1 and <= 8 } vertex || vertex.UV.Length != positions.Length ||
@@ -15,7 +15,7 @@ internal static class MeshBuffers
         if (colors != 0 && colors != positions.Length) return null;
         var bytesPerVertex = 40 + 8 * vertex.NumTexCoords + (colors == 0 ? 0 : 4);
         var size = (long)positions.Length * bytesPerVertex + (long)indices.Length * 4;
-        if (size > remaining || size > 96 * 1024 * 1024) return null;
+        if (size > 96 * 1024 * 1024) return null;
 
         if (indices.Any(index => index >= positions.Length) || positions.Any(point =>
             !float.IsFinite(point.X) || !float.IsFinite(point.Y) || !float.IsFinite(point.Z)) ||

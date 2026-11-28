@@ -123,7 +123,7 @@ Open **Индекс**, connect the incoming folder, select it under **Библи
 - **UnityFS** watches `.bundle` and `.unity3d`, decodes supported textures, sprites, static meshes and audio, and requests FBX where Blender is available.
 - **Бинарные Unity** watches `.asset`, `.assets` and `.sharedAssets` with a supported binary header. Keep the primary file and its matching `.resS` and `.resource` files together. A new or changed companion queues a new import, even when the primary file stays the same. The switch applies to binary files and leaves Unity YAML assets out of the queue.
 - **Unreal Pak** watches `.pak`, extracts supported original files and reads supported cooked UE4.27 textures and material bindings without Unreal Editor.
-- **Unreal IoStore** watches `.utoc` and its matching `.ucas` partitions. Keep them in the same directory. The app waits until the files contain all stored blocks and queues a new import when the TOC or a partition changes. It indexes supported embedded files and versioned UE5 Zen textures, and preserves all source partitions.
+- **Unreal IoStore** watches `.utoc` and its matching `.ucas` partitions. Keep them in the same directory. The app waits until the files contain all stored blocks and queues a new import when the TOC or a partition changes. It indexes supported embedded files and versioned UE5 Zen textures, sounds and static models. The watcher requests GLB and FBX for supported models.
 
 Turning off a format cancels its active automatic imports for that folder. The settings and SHA-256 history survive restarts. Use **Повторить** in a job row to retry a failed, interrupted or cancelled import. For a renamed archive, use manual inspection to detect the format by contents.
 
@@ -217,14 +217,17 @@ Select a `.utoc` or one of its `.ucas` files in **Импорт пакетов Un
 
 Supported embedded WAV, PNG, FBX and GLB files keep their bytes and enter the normal library. Named cooked packages, bulk data and embedded AssetRegistry files are retained in `Source/` as raw IoStore chunks. The manifest records their chunk IDs, paths and hashes.
 
-Stock UE5.3 and 5.4 Zen `Texture2D` packages with versioned properties can also produce indexed PNGs. The worker reads BGRA8, RGBA8, G8, DXT1 and DXT5 pixels from the package or its matching bulk chunk in the same container. It exports the first readable mip within 4,096 pixels per side and records its level, dimensions and color space. The job report shows how many PNGs were converted and why recognized textures were skipped. Use **Показать в индексе** to open the exported PNG. Selective package export includes the PNG and its native inputs. The source set stays in place. Unversioned properties, virtual textures, models and dependencies spanning multiple containers remain pending.
+Stock UE5.3 and 5.4 Zen `Texture2D` packages with versioned properties can also produce indexed PNGs. The worker reads BGRA8, RGBA8, G8, DXT1 and DXT5 pixels from the package or its matching bulk chunk in the same container. It exports the first readable mip within 4,096 pixels per side and records its level, dimensions and color space. The job report shows how many PNGs were converted and why recognized textures were skipped. Use **Показать в индексе** to open the exported PNG. Selective package export includes the PNG and its native inputs. Unversioned properties and virtual textures remain pending.
 
 Stock UE5.3 and 5.4 Zen `SoundWave` packages with versioned properties can publish PCM WAV and Vorbis Ogg. The worker reads nonstreaming payloads and reassembles streaming audio from inline data and verified companion chunks in the same container. Published audio keeps its encoded bytes and can play from **Показать в индексе**. The manifest records channels, sample rate, frame count and the source package. Selective export includes usable audio and its native inputs. Unsupported codecs, nonempty UE5.4 cue points and missing bulk data are reported separately.
+
+Stock UE5.3 and 5.4 Zen `StaticMesh` packages with versioned properties can produce a glTF/BIN pair and a GLB preview for each available render LOD. The models retain UV sets, vertex colors, normals and material slot names. Select **FBX** or pass `--fbx` to `unreal-extract` to also convert through installed Blender. Use **Показать в индексе** to open a GLB. The job report lists missing LODs. Material graph reconstruction, Nanite cluster geometry, collision meshes and skeletal assets still require separate decoding. The source TOC and partitions stay in place.
 
 ```sh
 npm run cli -- package-inspect "/absolute/path/example.utoc" --json
 npm run cli -- package-import "/absolute/path/example.utoc" --json
 npm run cli -- unreal-extract "/absolute/path/example.utoc" --inspect --json
+npm run cli -- unreal-extract "/absolute/path/example.utoc" --fbx --json
 ```
 
 Set `ASSET_VIEWER_UNITY` or `ASSET_VIEWER_BLENDER` to an absolute executable path. Set `ASSET_VIEWER_UNITY_ROOTS` or `ASSET_VIEWER_UNREAL_ROOTS` to absolute installation directories using the operating system's PATH separator. Start or restart the app with those settings.
