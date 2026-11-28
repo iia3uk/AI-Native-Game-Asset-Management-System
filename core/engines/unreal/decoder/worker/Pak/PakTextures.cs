@@ -7,11 +7,12 @@ internal static class PakTextures
 {
     private const long MaxDecodedBytes = 256L * 1024 * 1024;
 
-    public static void Decode(List<Entry> entries, long space)
+    public static long Decode(List<Entry> entries, long space)
     {
         var sources = entries.Where(entry => entry.Output.HasValue)
             .ToDictionary(entry => entry.Path.Normalize(), StringComparer.OrdinalIgnoreCase);
-        var remaining = Math.Min(space, MaxDecodedBytes);
+        var budget = Math.Min(space, MaxDecodedBytes);
+        var remaining = budget;
         for (var i = 0; i < entries.Count; i++)
         {
             var entry = entries[i];
@@ -41,6 +42,7 @@ internal static class PakTextures
                 entries[i] = entry with { TextureIssue = "unreal-cooked-texture-io" };
             }
         }
+        return budget - remaining;
     }
 
     private static CookedInput? Input(Entry? entry) => entry?.Output is int index

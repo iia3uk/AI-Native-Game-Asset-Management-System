@@ -30,7 +30,7 @@ internal static class ZenStaticMesh
 
         using var source = new FByteArchive("ZenStaticMesh", bytes, package.Version);
         using var archive = new FAssetArchive(source, package);
-        ZenProperties.Read(archive, _ => { });
+        TaggedProperties.Read(archive, _ => { });
         archive.Position = 0;
         BulkMap(archive) = package.Bulk;
 

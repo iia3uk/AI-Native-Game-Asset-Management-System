@@ -1,9 +1,9 @@
 using Blake3;
 using AssetViewer.UnrealDecode.IoStore.Zen;
-using AssetViewer.UnrealDecode.IoStore.Zen.Audio;
 using AssetViewer.UnrealDecode.IoStore.Zen.Materials;
 using AssetViewer.UnrealDecode.IoStore.Zen.Mesh;
 using AssetViewer.UnrealDecode.Objects;
+using AssetViewer.UnrealDecode.Objects.Audio;
 
 namespace AssetViewer.UnrealDecode.IoStore;
 

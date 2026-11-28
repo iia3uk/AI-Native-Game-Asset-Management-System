@@ -28,8 +28,10 @@ async function saveOutputs(workspace, source, result, hash, { recipe, decoder, b
   const skipped = entries.length - extracted
   const failed = entries.filter(entry => entry.status === 'failed').length
   const textures = { converted: 0, skipped: 0, failed: 0 }
+  const audio = { converted: 0, skipped: 0, failed: 0 }
   for (const entry of entries) for (const file of entry.exports ?? []) {
     if (file.role === 'texture') textures[file.status]++
+    if (file.role === 'audio') audio[file.status]++
   }
   const hasMaterials = Object.values(materials).some(Boolean)
   const dependencyStatus = dependencies.length || hasMaterials || meshes ? 'partial' : 'unavailable'
@@ -38,6 +40,7 @@ async function saveOutputs(workspace, source, result, hash, { recipe, decoder, b
     converterVersion: cue4parseVersion, containerVersion: result.version, extracted, skipped, total: entries.length,
     counts: { extracted, skipped: skipped - failed, ...(failed && { failed }) },
     ...(result.textureDecoder && { textureDecoder: result.textureDecoder, textures }),
+    ...(result.audioDecoder && { audioDecoder: result.audioDecoder, ...(Object.values(audio).some(Boolean) && { audio }) }),
     ...(hasMaterials && { materials }), ...(meshes && { meshes }),
     limits: ['unreal-pak-cooked-decoding-limited-to-stock-ue4', 'unreal-pak-archive-dependencies-incomplete'] }
   const reportText = JSON.stringify(summary, null, 2) + '\n'
@@ -53,8 +56,9 @@ async function saveOutputs(workspace, source, result, hash, { recipe, decoder, b
   const cacheable = !failed && !materials.issue && !meshes?.failed &&
     (!meshes?.issue || meshes.issue === 'unreal-loose-meshes-budget') &&
     !entries.some(entry => entry.exports?.some(file => file.status === 'failed' ||
-      ['unreal-cooked-texture-limit', 'unreal-cooked-texture-io', 'unreal-cooked-material-read', 'unreal-cooked-mesh-limit'].includes(file.issue))) &&
-    (result.textureDecoder || !entries.some(entry => entry.status === 'extracted' && entry.format === 'uasset'))
+      ['unreal-cooked-texture-limit', 'unreal-cooked-texture-io', 'unreal-cooked-material-read', 'unreal-cooked-mesh-limit',
+        'unreal-cooked-audio-limit', 'unreal-cooked-audio-io'].includes(file.issue))) &&
+    ((result.textureDecoder && result.audioDecoder) || !entries.some(entry => entry.status === 'extracted' && entry.format === 'uasset'))
   return { output, cacheable, report: { ...summary, ...(!extracted && { entries: entries.slice(0, 500) }) } }
 }
 

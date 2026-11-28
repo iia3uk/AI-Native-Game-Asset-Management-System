@@ -1,7 +1,7 @@
 import { mountEngineStatus } from './engine-status.js'
 import { mountPackageFolder } from './folder.js'
 import { formatLabel, isUnityBinary, isUnityFolder, isUnrealArchive, isUnrealLoose } from './formats.js'
-import { appendManifest, assetLabel, cookedMeshSummary, describeIssue } from './report.js'
+import { appendManifest, assetLabel, cookedMeshSummary, describeIssue, soundWaveSummary } from './report.js'
 import { mountImportOptions } from './import-options.js'
 import { mountPackageExport } from './export.js'
 import { requestPackageCleanup } from './cleanup.js'
@@ -169,7 +169,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
           unrealViewer?.issue && describeIssue(unrealViewer.issue),
           unreal?.issue && describeIssue(unreal.issue)].filter(Boolean).join(' · ')))
         if (unrealCooked) {
-          const { textures, materials, meshes } = unrealCooked
+          const { textures, materials, meshes, audio } = unrealCooked
           details.append(element('p', ['Cooked UE4.27',
             textures.converted && 'Текстуры · ' + textures.converted + ' PNG',
             materials.converted && 'Описания материалов · ' + materials.converted,
@@ -178,10 +178,11 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
             textures.issue && describeIssue(textures.issue),
             materials.issue && describeIssue(materials.issue)].filter(Boolean).join(' · ')))
           if (meshes) details.append(element('p', cookedMeshSummary(meshes)))
+          if (audio) details.append(element('p', soundWaveSummary(audio, 'Аудио из cooked-ресурсов')))
         }
       }
       if (record.result.report.packageFormat === 'unreal-pak') {
-        const { containerVersion, extracted, textures, materials, meshes, total } = record.result.report
+        const { containerVersion, extracted, textures, materials, meshes, audio, total } = record.result.report
         details.append(element('p', 'Unreal Pak ' + containerVersion + ' · Извлечено ' + extracted + ' из ' + total))
         if (textures?.converted) details.append(element('p', 'Текстур из cooked-ресурсов · ' + textures.converted + ' PNG'))
         if (materials) {
@@ -190,6 +191,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
             materials.issue && describeIssue(materials.issue)].filter(Boolean).join(' · ')))
         }
         if (meshes) details.append(element('p', cookedMeshSummary(meshes)))
+        if (audio) details.append(element('p', soundWaveSummary(audio, 'Аудио из cooked-ресурсов')))
       }
       if (record.result.report.packageFormat === 'unreal-iostore') {
         const { containerVersion, extracted, extractedTypes, textures, audio, meshes, materials, total } = record.result.report
@@ -200,8 +202,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
         ].join(' · ')))
         if (textures?.converted) details.append(element('p', 'Текстур из Zen-пакетов · ' + textures.converted + ' PNG'))
         if (audio?.converted || audio?.skipped || audio?.failed) {
-          details.append(element('p', ['Аудио из Zen-пакетов', audio.converted && 'Готово ' + audio.converted,
-            audio.skipped && 'Пропущено ' + audio.skipped, audio.failed && 'Ошибок ' + audio.failed].filter(Boolean).join(' · ')))
+          details.append(element('p', soundWaveSummary(audio, 'Аудио из Zen-пакетов')))
         }
         if (materials) {
           details.append(element('p', ['Материалы из Zen-пакетов', materials.converted && 'Готово ' + materials.converted,

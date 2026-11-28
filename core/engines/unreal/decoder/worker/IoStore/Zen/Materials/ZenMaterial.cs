@@ -1,3 +1,4 @@
+using AssetViewer.UnrealDecode.Objects;
 using CUE4Parse.UE4.Assets.Objects;
 using CUE4Parse.UE4.Assets.Readers;
 using CUE4Parse.UE4.Readers;
@@ -20,7 +21,7 @@ internal static class ZenMaterial
         ZenParameter[] textures = [], scalars = [], vectors = [];
         ZenStreamingTexture[] streaming = [];
         var seen = new HashSet<string>();
-        ZenProperties.Read(archive, tag =>
+        TaggedProperties.Read(archive, tag =>
         {
             var name = tag.Name.Text;
             if (name is not ("Parent" or "TextureParameterValues" or "ScalarParameterValues" or
@@ -33,19 +34,19 @@ internal static class ZenMaterial
                     parent = package.Reference(archive.Read<int>());
                     break;
                 case "TextureParameterValues":
-                    textures = ZenProperties.StructArray(archive, tag, "TextureParameterValue",
+                    textures = TaggedProperties.StructArray(archive, tag, "TextureParameterValue",
                         end => ReadParameter(archive, end, package, "Texture"));
                     break;
                 case "ScalarParameterValues":
-                    scalars = ZenProperties.StructArray(archive, tag, "ScalarParameterValue",
+                    scalars = TaggedProperties.StructArray(archive, tag, "ScalarParameterValue",
                         end => ReadParameter(archive, end, package, "Scalar"));
                     break;
                 case "VectorParameterValues":
-                    vectors = ZenProperties.StructArray(archive, tag, "VectorParameterValue",
+                    vectors = TaggedProperties.StructArray(archive, tag, "VectorParameterValue",
                         end => ReadParameter(archive, end, package, "Vector"));
                     break;
                 case "TextureStreamingData":
-                    streaming = ZenProperties.StructArray(archive, tag, "MaterialTextureInfo",
+                    streaming = TaggedProperties.StructArray(archive, tag, "MaterialTextureInfo",
                         end => ReadStreaming(archive, end));
                     break;
             }
@@ -61,7 +62,7 @@ internal static class ZenMaterial
         string? status = null;
         object? value = null;
         var hasValue = false;
-        ZenProperties.ReadTags(archive, end, tag =>
+        TaggedProperties.ReadTags(archive, end, tag =>
         {
             if (tag.Name.Text == "ParameterInfo")
             {
@@ -100,7 +101,7 @@ internal static class ZenMaterial
     {
         string? name = null, association = null;
         int? index = null;
-        ZenProperties.ReadTags(archive, end, tag =>
+        TaggedProperties.ReadTags(archive, end, tag =>
         {
             switch (tag.Name.Text)
             {
@@ -132,7 +133,7 @@ internal static class ZenMaterial
         int? uv = null;
         float? scale = null;
         var seen = new HashSet<string>();
-        ZenProperties.ReadTags(archive, end, tag =>
+        TaggedProperties.ReadTags(archive, end, tag =>
         {
             var field = tag.Name.Text;
             if (field is not ("TextureReference" or "TextureName" or "UVChannelIndex" or "SamplingScale")) return;

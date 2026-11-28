@@ -2,10 +2,11 @@ using CUE4Parse.UE4.Assets.Objects;
 using CUE4Parse.UE4.Assets.Readers;
 using CUE4Parse.UE4.Versions;
 
-namespace AssetViewer.UnrealDecode.IoStore.Zen;
+namespace AssetViewer.UnrealDecode.Objects;
 
-internal static class ZenProperties
+internal static class TaggedProperties
 {
+    private static InputException Invalid() => new("layout");
     public static void Read(FAssetArchive archive, Action<FPropertyTag> visit)
     {
         if (archive.Ver >= EUnrealEngineObjectUE5Version.PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION &&
@@ -18,14 +19,14 @@ internal static class ZenProperties
         for (var i = 0; i < 2048 && archive.Position + 8 <= boundary; i++)
         {
             var tag = ReadTag(archive);
-            if (archive.Position > boundary || tag.Size < 0 || tag.Size > boundary - archive.Position) throw ZenPackage.Invalid();
+            if (archive.Position > boundary || tag.Size < 0 || tag.Size > boundary - archive.Position) throw Invalid();
             if (tag.Name.IsNone) return;
             var end = archive.Position + tag.Size;
             visit(tag);
-            if (archive.Position > end) throw ZenPackage.Invalid();
+            if (archive.Position > end) throw Invalid();
             archive.Position = end;
         }
-        throw ZenPackage.Invalid();
+        throw Invalid();
     }
 
     private static FPropertyTag ReadTag(FAssetArchive archive)
@@ -38,25 +39,25 @@ internal static class ZenProperties
     public static T[] StructArray<T>(FAssetArchive archive, FPropertyTag tag, string type, Func<long, T> element)
     {
         if (tag.PropertyType.Text != "ArrayProperty" || tag.TagData?.InnerType != "StructProperty" ||
-            tag.ArrayIndex != 0 || tag.Size < 4) throw ZenPackage.Invalid();
+            tag.ArrayIndex != 0 || tag.Size < 4) throw Invalid();
         var boundary = archive.Position + tag.Size;
         var count = archive.Read<int>();
         if (count is < 0 or > 256) throw new InputException("property-count");
         if (count == 0 && archive.Position == boundary) return [];
         if (archive.Ver >= EUnrealEngineObjectUE5Version.PROPERTY_TAG_COMPLETE_TYPE_NAME)
         {
-            if (tag.TagData.InnerTypeData?.StructType != type) throw ZenPackage.Invalid();
+            if (tag.TagData.InnerTypeData?.StructType != type) throw Invalid();
         }
         else
         {
             var inner = ReadTag(archive);
             if (inner.Name.Text != tag.Name.Text || inner.PropertyType.Text != "StructProperty" || inner.TagData?.StructType != type ||
-                inner.Size != boundary - archive.Position) throw ZenPackage.Invalid();
+                inner.Size != boundary - archive.Position) throw Invalid();
         }
-        if (count * 8 > boundary - archive.Position) throw ZenPackage.Invalid();
+        if (count * 8 > boundary - archive.Position) throw Invalid();
         var result = new T[count];
         for (var i = 0; i < count; i++) result[i] = element(boundary);
-        if (archive.Position != boundary) throw ZenPackage.Invalid();
+        if (archive.Position != boundary) throw Invalid();
         return result;
     }
 
@@ -68,10 +69,10 @@ internal static class ZenProperties
             var pending = 1;
             for (var i = 0; pending > 0; i++)
             {
-                if (i >= 32) throw ZenPackage.Invalid();
+                if (i >= 32) throw Invalid();
                 _ = archive.ReadFName();
                 var children = archive.Read<int>();
-                if (children < 0 || children > 32 - i - pending) throw ZenPackage.Invalid();
+                if (children < 0 || children > 32 - i - pending) throw Invalid();
                 pending += children - 1;
             }
         }
@@ -81,12 +82,12 @@ internal static class ZenProperties
     public static bool TaggedBoolean(FPropertyTag tag) =>
         tag.PropertyType.Text == "BoolProperty" && tag.ArrayIndex == 0 && tag.Size == 0 &&
         tag.SerializeType == EPropertyTagSerializeType.Property && tag.TagData?.Bool is bool value
-            ? value : throw ZenPackage.Invalid();
+            ? value : throw Invalid();
 
     public static bool Boolean(FAssetArchive archive) => archive.Read<int>() switch
     {
         0 => false,
         1 => true,
-        _ => throw ZenPackage.Invalid(),
+        _ => throw Invalid(),
     };
 }

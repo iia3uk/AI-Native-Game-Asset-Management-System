@@ -50,7 +50,7 @@ async function openIndexedAsset(webContents, waitFor, name) {
   await webContents.executeJavaScript("document.querySelector('#index-preview').click()")
 }
 
-async function playIndexedAudio(webContents, waitFor, name, duration, tolerance = 0.001) {
+export async function playIndexedAudio(webContents, waitFor, name, duration, tolerance = 0.001) {
   await openIndexedAsset(webContents, waitFor, name)
   await waitFor(`(() => {
     const audio = document.querySelector('#stage-audio')

@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using CUE4Parse.UE4.Assets;
 using CUE4Parse.UE4.Assets.Exports;
+using CUE4Parse.UE4.Assets.Readers;
 using CUE4Parse.UE4.Readers;
 using CUE4Parse.UE4.Versions;
 
@@ -16,6 +17,25 @@ internal static class CookedPackage
     public static TResult? Read<TExport, TResult>(CookedInput? input, CookedInput? exports, CookedInput? bulk,
         CookedInput? optional, string className, string issuePrefix, Func<TExport, Package, TResult> decode)
         where TExport : UObject
+        => ReadCore(input, exports, bulk, optional, className, issuePrefix, (package, selected, _, _) =>
+            package.ExportsLazy[selected].Value is TExport asset
+                ? decode(asset, package) : throw new InputException(issuePrefix + "-layout"));
+
+    public static TResult? ReadRaw<TResult>(CookedInput? input, CookedInput? exports,
+        string className, string issuePrefix, Func<byte[], FAssetArchive, TResult> decode)
+        => ReadCore(input, exports, null, null, className, issuePrefix, (package, selected, header, data) =>
+        {
+            var export = package.ExportMap[selected];
+            var source = data ?? header;
+            source.Position = export.SerialOffset - (data == null ? 0 : package.Summary.TotalHeaderSize);
+            var bytes = source.ReadBytes((int)export.SerialSize);
+            using var buffer = new FByteArchive(className, bytes, source.Versions);
+            using var archive = new FAssetArchive(buffer, package, (int)export.SerialOffset);
+            return decode(bytes, archive);
+        });
+
+    private static TResult? ReadCore<TResult>(CookedInput? input, CookedInput? exports, CookedInput? bulk,
+        CookedInput? optional, string className, string issuePrefix, Func<Package, int, FByteArchive, FByteArchive?, TResult> decode)
     {
         if (input is not { Size: >= 64 and <= MaxFile } || !HasStockHeader(input)) return default;
         try
@@ -40,8 +60,7 @@ internal static class CookedPackage
                 selected = i;
             }
             if (selected < 0) return default;
-            if (package.ExportsLazy[selected].Value is not TExport asset) throw new InputException(issuePrefix + "-layout");
-            return decode(asset, package);
+            return decode(package, selected, header, data);
         }
         catch (Exception error) when (error is not InputException and not OutOfMemoryException and not IOException)
         {

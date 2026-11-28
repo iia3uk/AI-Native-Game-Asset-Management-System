@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileInfo } from '../../files/asset-files.mjs'
 import { inspectUnrealFile } from '../../packages/unreal/inspect.mjs'
+import { cookedAudioMethod, publishContainerAudio } from './container-audio.mjs'
 import { containerFileFolders, validateContainerFile } from './container-files.mjs'
 import { publishContainerTexture } from './container-texture.mjs'
 import { pakMaterialResolver, readPakMaterials } from './cooked-material/pak-inputs.mjs'
@@ -43,7 +44,7 @@ export async function publishPakEntries(entries, root, store, { backendVersion, 
   const published = []
   for (const row of entries) {
     signal?.throwIfAborted()
-    const { file: staged, texture, textureIssue, ...entry } = row
+    const { file: staged, texture, textureIssue, audio, audioIssue, ...entry } = row
     if (!staged) {
       published.push(entry)
       continue
@@ -62,10 +63,16 @@ export async function publishPakEntries(entries, root, store, { backendVersion, 
     const artifact = await store.save(destination, file, {
       status: 'extracted', format: entry.format, method: 'cue4parse-pak', converterVersion: backendVersion,
     })
-    const exports = artifact.path && (texture || textureIssue) ?
-      [await publishContainerTexture(root, store, row, artifact, id, { method: 'cue4parse-cooked-texture',
-        converterVersion: backendVersion, outputIssue: 'unreal-cooked-texture-output' }, signal)] : undefined
-    published.push({ ...entry, id, status: artifact.status, artifact, ...(exports && { exports }) })
+    const exports = []
+    if (artifact.path && (texture || textureIssue)) {
+      exports.push(await publishContainerTexture(root, store, row, artifact, id, { method: 'cue4parse-cooked-texture',
+        converterVersion: backendVersion, outputIssue: 'unreal-cooked-texture-output' }, signal))
+    }
+    if (artifact.path && (audio || audioIssue)) {
+      exports.push(await publishContainerAudio(root, store, row, artifact, id, { method: cookedAudioMethod,
+        converterVersion: backendVersion, outputIssue: 'unreal-cooked-audio-output' }, signal))
+    }
+    published.push({ ...entry, id, status: artifact.status, artifact, ...(exports.length && { exports }) })
   }
   const resolve = pakMaterialResolver(published)
   const { materials, dependencies } = await publishCookedMaterials(published, cooked, root, store, resolve, signal)

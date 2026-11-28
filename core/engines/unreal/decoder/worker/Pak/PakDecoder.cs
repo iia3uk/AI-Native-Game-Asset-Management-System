@@ -48,8 +48,13 @@ internal static class PakDecoder
             unpacked += payload.LongLength;
             products++;
         }
-        if (!request.InspectOnly) PakTextures.Decode(entries, request.MaxOutputBytes - unpacked);
-        return new Report(1, "completed", (int)info.Version, entries, 1);
+        if (!request.InspectOnly)
+        {
+            var remaining = request.MaxOutputBytes - unpacked;
+            var textures = PakTextures.Decode(entries, remaining);
+            PakAudio.Decode(entries, remaining - textures);
+        }
+        return new Report(1, "completed", (int)info.Version, entries, 1, 1);
     }
 
     internal static string OutputPath(int index, string extension) => Path.Combine("output", index.ToString("D5") + "." + extension);

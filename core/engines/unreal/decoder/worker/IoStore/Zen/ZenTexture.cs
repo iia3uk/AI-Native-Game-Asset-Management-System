@@ -2,7 +2,7 @@ using AssetViewer.UnrealDecode.Objects;
 using CUE4Parse.UE4.Assets.Readers;
 using CUE4Parse.UE4.Assets.Exports.Texture;
 using CUE4Parse.UE4.Readers;
-using static AssetViewer.UnrealDecode.IoStore.Zen.ZenProperties;
+using static AssetViewer.UnrealDecode.Objects.TaggedProperties;
 
 namespace AssetViewer.UnrealDecode.IoStore.Zen;
 
@@ -44,7 +44,7 @@ internal static class ZenTexture
     {
         var srgb = true;
         var seen = false;
-        ZenProperties.Read(archive, tag =>
+        TaggedProperties.Read(archive, tag =>
         {
             if (!tag.Name.Text.Equals("SRGB", StringComparison.OrdinalIgnoreCase)) return;
             if (seen) throw ZenPackage.Invalid();

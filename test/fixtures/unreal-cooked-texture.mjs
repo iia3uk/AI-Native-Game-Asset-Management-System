@@ -1,9 +1,9 @@
-const i32 = value => {
+export const i32 = value => {
   const result = Buffer.alloc(4)
   result.writeInt32LE(value)
   return result
 }
-const i64 = value => {
+export const i64 = value => {
   const result = Buffer.alloc(8)
   result.writeBigInt64LE(BigInt(value))
   return result
@@ -11,14 +11,14 @@ const i64 = value => {
 const FString = value => Buffer.concat([i32(Buffer.byteLength(value) + 1), Buffer.from(value + '\0')])
 const magic = Buffer.from('c1832a9e', 'hex')
 
-// A versioned, editor-stripped UE4.27 package with one native Texture2D export.
-export function cookedTexture({ name, format, width, height, pixels, external = false,
+// A versioned, editor-stripped UE4.27 package with one native export.
+export function cookedObject({ name, type, extraNames, serialize, sidecars = [],
   split = true, rootClass = '/Script/Engine' }) {
-  const names = ['None', 'Class', 'Package', '/Script/CoreUObject', rootClass, 'Texture2D', name, format]
+  const names = ['None', 'Class', 'Package', '/Script/CoreUObject', rootClass, type, name, ...extraNames]
   const fname = value => Buffer.concat([i32(names.indexOf(value)), i32(0)])
   const namesBytes = Buffer.concat(names.map(value => Buffer.concat([FString(value), Buffer.alloc(4)])))
   const imports = Buffer.concat([
-    fname('/Script/CoreUObject'), fname('Class'), i32(-2), fname('Texture2D'),
+    fname('/Script/CoreUObject'), fname('Class'), i32(-2), fname(type),
     fname('/Script/CoreUObject'), fname('Package'), i32(0), fname(rootClass),
   ])
   const object = Buffer.alloc(104)
@@ -44,13 +44,7 @@ export function cookedTexture({ name, format, width, height, pixels, external = 
   header.writeInt32LE(importAt, 64)
   header.writeInt32LE(dependsAt, 68)
 
-  const texture = Buffer.concat([
-    i32(width), i32(height), i32(1), FString(format), i32(0), i32(1),
-    i32(1), i32(external ? 0x101 : 0x40), i32(pixels.length), i32(pixels.length), i64(0),
-    ...(external ? [] : [pixels]), i32(width), i32(height), i32(1), i32(0),
-  ])
-  const start = Buffer.concat([fname('None'), i32(0), Buffer.from([1, 0, 1, 0]), i32(1), fname(format)])
-  const exportData = Buffer.concat([start, i64(headerSize + start.length + 8 + texture.length), texture, fname('None')])
+  const exportData = serialize(fname, headerSize)
   object.writeBigInt64LE(BigInt(exportData.length), 28)
   object.writeBigInt64LE(BigInt(headerSize), 36)
   header.writeBigInt64LE(BigInt(headerSize + exportData.length), 156)
@@ -59,6 +53,21 @@ export function cookedTexture({ name, format, width, height, pixels, external = 
   return [
     { path: name + '.uasset', content: Buffer.concat(split ? tables : [...tables, exportData, magic]) },
     ...(split ? [{ path: name + '.uexp', content: Buffer.concat([exportData, magic]) }] : []),
-    ...(external ? [{ path: name + '.ubulk', content: pixels }] : []),
+    ...sidecars,
   ]
+}
+
+export function cookedTexture({ name, format, width, height, pixels, external = false, ...options }) {
+  return cookedObject({ name, type: 'Texture2D', extraNames: [format], ...options,
+    sidecars: external ? [{ path: name + '.ubulk', content: pixels }] : [],
+    serialize(fname, headerSize) {
+      const texture = Buffer.concat([
+        i32(width), i32(height), i32(1), FString(format), i32(0), i32(1),
+        i32(1), i32(external ? 0x101 : 0x40), i32(pixels.length), i32(pixels.length), i64(0),
+        ...(external ? [] : [pixels]), i32(width), i32(height), i32(1), i32(0),
+      ])
+      const start = Buffer.concat([fname('None'), i32(0), Buffer.from([1, 0, 1, 0]), i32(1), fname(format)])
+      return Buffer.concat([start, i64(headerSize + start.length + 8 + texture.length), texture, fname('None')])
+    },
+  })
 }

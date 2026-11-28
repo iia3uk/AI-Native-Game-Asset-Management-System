@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto'
 import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { cookedAudioMethod } from '../../../conversion/unreal/container-audio.mjs'
 import { cookedMaterialRevision } from '../../../conversion/unreal/cooked-material/publish.mjs'
 import { meshTotalsMatch, validModelStatus } from '../../../conversion/unreal/cooked-mesh/cache.mjs'
 import { exportRecipe, verifyExports } from '../../../conversion/cache.mjs'
+import { cookedAudioRevision } from '../../../engines/unreal/decoder/audio-protocol.mjs'
 import { cue4parseVersion } from '../../../engines/unreal/decoder/run.mjs'
 import { looseMeshRevision } from '../../../engines/unreal/decoder/mesh-protocol.mjs'
 import { pakTextureRevision } from '../../../engines/unreal/decoder/protocol.mjs'
@@ -11,7 +13,7 @@ import { checkedPath, readBoundedText } from '../../../files/asset-files.mjs'
 import { IndexInputError } from '../../../index/index-errors.mjs'
 
 export const pakRecipe = (formats, blender) => exportRecipe(formats, blender,
-  [2, cue4parseVersion, pakTextureRevision, cookedMaterialRevision, looseMeshRevision])
+  [2, cue4parseVersion, pakTextureRevision, cookedMaterialRevision, looseMeshRevision, cookedAudioRevision])
 export const pakMethod = 'cue4parse-pak'
 
 export async function readPakCache(root, hash, recipe, sourceName, signal) {
@@ -44,11 +46,14 @@ export async function readPakCache(root, hash, recipe, sourceName, signal) {
         report.counts?.extracted !== report.extracted || report.counts?.skipped !== report.skipped ||
         report.status !== (extracted.length ? 'completed' : 'no-compatible-inputs') ||
         extracted.some(entry => !entry.artifact?.path) ||
-        (extracted.some(entry => entry.format === 'uasset') && report.textureDecoder !== pakTextureRevision) ||
-        !totalsMatch('texture', report.textures) || !totalsMatch('material', report.materials) ||
+        (extracted.some(entry => entry.format === 'uasset') &&
+          (report.textureDecoder !== pakTextureRevision || report.audioDecoder !== cookedAudioRevision)) ||
+        !totalsMatch('texture', report.textures) || !totalsMatch('material', report.materials) || !totalsMatch('audio', report.audio) ||
         !meshTotalsMatch(extracted, derivatives, report.meshes) ||
-        derivatives.some(file => !['texture', 'material', 'model', 'model-buffer'].includes(file.role) ||
+        derivatives.some(file => !['texture', 'material', 'model', 'model-buffer', 'audio'].includes(file.role) ||
           !validModelStatus(file) ||
+          (file.role === 'audio' && (file.method !== cookedAudioMethod ||
+            file.status === 'converted' && !['wav', 'ogg'].includes(file.format))) ||
           (file.status === 'converted' && !file.path)) ||
         !await verifyExports(output, extracted.map(entry => ({ exports: [entry.artifact, ...(entry.exports ?? [])] })), signal)) {
       throw new Error('Invalid cached exports')

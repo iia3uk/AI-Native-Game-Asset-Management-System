@@ -1,11 +1,14 @@
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { cookedMaterial } from '../fixtures/unreal-cooked-material.mjs'
+import { cookedSoundWave } from '../fixtures/unreal-cooked-soundwave.mjs'
 import { cookedStaticMesh } from '../fixtures/unreal-cooked-static-mesh.mjs'
 import { cookedTexture } from '../fixtures/unreal-cooked-texture.mjs'
 import { writeUnrealLooseFixture } from '../fixtures/unreal-loose.mjs'
 import { soundCueFixture } from '../fixtures/unreal-source-audio.mjs'
 import { sourceWave, ue4SourceFixture } from '../fixtures/unreal-source-media.mjs'
+import { zenOgg } from '../fixtures/unreal-zen-audio.mjs'
+import { playIndexedAudio } from './unreal-iostore.mjs'
 
 export async function verifyUnrealLoose(webContents, waitFor, root) {
   const { project, content } = await writeUnrealLooseFixture(root)
@@ -17,6 +20,7 @@ export async function verifyUnrealLoose(webContents, waitFor, root) {
       ...cookedTexture({ name: 'CookedTint', format: 'PF_G8', width: 1, height: 1, pixels: Buffer.from([49]), external: true }),
       ...cookedMaterial({ name: 'CookedPaint', textures: [{ parameter: 'BaseColor', value: '/Game/Props/CookedTint' }] }),
       ...cookedStaticMesh({ name: 'CookedModel', external: true }),
+      ...cookedSoundWave({ name: 'CookedTone', streaming: true, format: 'OGG', payload: zenOgg }),
     ]
     await Promise.all(fixtures.map(file => writeFile(join(content, 'Props', file.path), file.content)))
   }
@@ -48,6 +52,7 @@ export async function verifyUnrealLoose(webContents, waitFor, root) {
       row.textContent.includes('Описания материалов · 1'))`)
     await waitFor(`Array.from(document.querySelectorAll('#package-jobs li p')).some(row =>
       row.textContent.includes('Статические модели cooked UE4.27') && row.textContent.includes('LOD · 2'))`)
+    await waitFor("document.querySelector('#package-jobs').textContent.includes('Аудио из cooked-ресурсов · Готово 1')")
   }
   await webContents.executeJavaScript(`{
     const job = Array.from(document.querySelectorAll('#package-jobs > li')).find(row => row.textContent.includes('Unreal Loose Fixture'))
@@ -61,6 +66,7 @@ export async function verifyUnrealLoose(webContents, waitFor, root) {
   const job = "Array.from(document.querySelectorAll('#package-jobs > li')).find(row => row.textContent.includes('Unreal Loose Fixture'))"
   await webContents.executeJavaScript(`Array.from((${job}).querySelectorAll('button'))
     .find(button => button.textContent === 'Показать в индексе').click()`)
+  await playIndexedAudio(webContents, waitFor, 'CookedTone.ogg', 0.5, 0.024)
   for (const [file, triangles] of [['CookedModel.glb', '2 треугольника'], ['CookedModel_Lod1.glb', '1 треугольник']]) {
     const name = JSON.stringify(file)
     const card = "Array.from(document.querySelectorAll('#index-results button')).find(button => button.textContent.startsWith(" + name + "))"

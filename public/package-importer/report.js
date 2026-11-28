@@ -109,6 +109,17 @@ const packageIssues = {
   'unreal-cooked-texture-limit': 'Достигнут лимит декодирования текстур',
   'unreal-cooked-texture-io': 'Не удалось прочитать или записать файл текстуры',
   'unreal-cooked-texture-output': 'Сохранённый PNG не прошёл проверку',
+  'unreal-cooked-audio-layout': 'Структура cooked SoundWave не прошла проверку',
+  'unreal-cooked-audio-ambiguous': 'В пакете несколько верхнеуровневых SoundWave',
+  'unreal-cooked-audio-platform': 'Сериализация SoundWave для этой платформы пока не поддерживается',
+  'unreal-cooked-audio-format': 'Кодек SoundWave пока не поддерживается',
+  'unreal-cooked-audio-bulk-layout': 'Формат блока SoundWave пока не поддерживается',
+  'unreal-cooked-audio-bulk-range': 'Диапазон аудио выходит за границы связанного файла',
+  'unreal-cooked-audio-bulk-unavailable': 'Отсутствует файл с данными SoundWave',
+  'unreal-cooked-audio-limit': 'Достигнут лимит декодирования SoundWave',
+  'unreal-cooked-audio-io': 'Не удалось прочитать или записать файл SoundWave',
+  'unreal-cooked-audio-output': 'Аудиофайл из SoundWave не прошёл проверку',
+  'unreal-loose-audio-budget': 'Достигнут лимит обработки cooked SoundWave',
   'unreal-loose-textures-unavailable': 'Декодер CUE4Parse недоступен для cooked-текстур',
   'unreal-loose-textures-budget': 'Достигнут лимит чтения отдельных cooked-пакетов',
   'unreal-loose-textures-space-limit': 'Недостаточно свободного места для декодирования cooked-текстур',
@@ -201,6 +212,12 @@ const artifactRoles = {
 }
 
 export const describeIssue = issue => packageIssues[issue] ?? issue
+
+export function soundWaveSummary(audio, label) {
+  return [label, audio.converted && 'Готово ' + audio.converted,
+    audio.skipped && 'Пропущено ' + audio.skipped, audio.failed && 'Ошибок ' + audio.failed,
+    audio.issue && describeIssue(audio.issue)].filter(Boolean).join(' · ')
+}
 
 export function cookedMeshSummary(meshes, version = 'UE4.27') {
   return ['Статические модели cooked ' + version,

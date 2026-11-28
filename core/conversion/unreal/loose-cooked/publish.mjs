@@ -5,6 +5,7 @@ import { ExportArtifacts } from '../../artifacts.mjs'
 import { publishCookedMeshes } from '../cooked-mesh/publish.mjs'
 import { publishCookedMaterials } from '../cooked-material/publish.mjs'
 import { readCookedMaterials } from '../cooked-material/read.mjs'
+import { publishLooseCookedAudio } from './audio.mjs'
 import { looseCookedInputs } from './inputs.mjs'
 import { publishLooseCookedTextures } from './textures.mjs'
 
@@ -12,7 +13,9 @@ export async function publishLooseCooked({ records, source, decoder, output, wor
   const inputs = await looseCookedInputs(records.assets, output, signal)
   if (!inputs.length) return null
   const store = new ExportArtifacts(output, signal)
-  const textures = await publishLooseCookedTextures(inputs, { decoder, output, workspace, store, signal })
+  const settings = { decoder, output, workspace, store, signal }
+  const textures = await publishLooseCookedTextures(inputs, settings)
+  const audio = decoder ? await publishLooseCookedAudio(inputs, settings) : null
   const staged = await readCookedMaterials(inputs, output, signal)
   const assets = new Map(records.assets.filter(asset => asset.output).map(asset => [asset.id, {
     id: asset.id, path: asset.sourcePath, format: asset.type, artifact: { path: asset.output, sha256: asset.hash }, exports: asset.exports,
@@ -29,7 +32,11 @@ export async function publishLooseCooked({ records, source, decoder, output, wor
     if (asset.exports.some(item => item.status === 'converted')) asset.status = 'converted'
   }
   const textureRetry = textures.issue && !['unreal-loose-textures-unavailable', 'unreal-loose-textures-budget'].includes(textures.issue)
+  const audioRetry = audio?.issue && audio.issue !== 'unreal-loose-audio-budget' ||
+    inputs.some(({ asset }) => asset.exports.some(product => ['unreal-cooked-audio-io', 'unreal-cooked-audio-limit'].includes(product.issue)))
   const meshRetry = meshes?.summary.issue && !['unreal-loose-meshes-unavailable', 'unreal-loose-meshes-budget'].includes(meshes.summary.issue)
-  const partial = Boolean(textureRetry || textures.failed || materials.failed || materials.issue || meshRetry || meshes?.summary.failed)
-  return { report: { textures, materials, partial, ...(meshes && { meshes: meshes.summary }) }, meshes }
+  const partial = Boolean(textureRetry || textures.failed || audioRetry || audio?.failed || materials.failed || materials.issue ||
+    meshRetry || meshes?.summary.failed)
+  return { report: { textures, materials, partial, ...(audio && Object.values(audio).some(Boolean) && { audio }),
+    ...(meshes && { meshes: meshes.summary }) }, meshes }
 }

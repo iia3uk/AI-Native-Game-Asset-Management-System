@@ -5,14 +5,16 @@ import { oggVorbis } from '../audio/ogg-vorbis.mjs'
 import { embeddedWave, waveMagic } from './source-media/wave.mjs'
 
 export const zenAudioMethod = 'cue4parse-iostore-zen-audio'
+export const cookedAudioMethod = 'cue4parse-cooked-audio'
 
-export async function publishContainerAudio(root, store, { audio, audioIssue, path }, artifact, id, version, signal) {
-  const details = { role: 'audio', method: zenAudioMethod, converterVersion: version, from: artifact.path }
+export async function publishContainerAudio(root, store, { audio, audioIssue, path }, artifact, id,
+  { method, converterVersion, outputIssue }, signal) {
+  const details = { role: 'audio', method, converterVersion, from: artifact.path }
   if (audioIssue) return { ...details, status: 'skipped', issue: audioIssue }
   const { file: input, size, format } = audio
   const file = await fileInfo(root, input)
   const metrics = file?.info.size === size ? await readAudio(file, format, signal) : null
-  if (!metrics) return { ...details, format, status: 'failed', issue: 'unreal-iostore-audio-output' }
+  if (!metrics) return { ...details, format, status: 'failed', issue: outputIssue }
   const destination = 'Audio/' + id + '/' + posix.basename(path).slice(0, -7) + '.' + format
   return store.save(destination, file, { ...details, ...metrics, format, status: 'converted' })
 }

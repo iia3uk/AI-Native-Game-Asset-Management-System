@@ -7,6 +7,9 @@ import { inflateSync } from 'node:zlib'
 import { cleanupCandidates } from '../core/packages/cleanup/candidates.mjs'
 import { cookedMaterial } from './fixtures/unreal-cooked-material.mjs'
 import { cookedTexture } from './fixtures/unreal-cooked-texture.mjs'
+import { cookedAudioFiles, cookedSoundWave } from './fixtures/unreal-cooked-soundwave.mjs'
+import { makePak, wavTone } from './fixtures/unreal-pak.mjs'
+import { zenOgg } from './fixtures/unreal-zen-audio.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 
 const jobs = '/api/index/jobs/'
@@ -34,6 +37,73 @@ async function importPath(server, path) {
   const { job } = await post(server, '/api/index/packages/import', { path, hash: source.hash }, 202)
   return finish(server, job.id)
 }
+
+test('versioned cooked SoundWave imports verified audio from a folder and a Pak',
+  { skip: process.env.ASSET_VIEWER_TEST_CUE4PARSE !== '1', timeout: 45_000 }, async t => {
+    const root = await testDirectory(t)
+    const content = join(root, 'Content')
+    const destination = join(root, 'Exports')
+    await Promise.all([mkdir(content), mkdir(destination)])
+    const files = cookedAudioFiles()
+    await Promise.all(files.map(file => writeFile(join(content, file.path), file.content)))
+    const pak = join(root, 'Audio.pak')
+    await writeFile(pak, makePak(files))
+    const server = await startServer(root)
+    try {
+      for (const path of [content, pak]) {
+        const job = await importPath(server, path)
+        assert.equal(job.status, 'completed', job.error)
+        const { directory, report, scanJobId } = job.result
+        assert.deepEqual(report.unrealCooked?.audio ?? report.audio, { converted: 2, skipped: 1, failed: 0 })
+        assert.equal((await finish(server, scanJobId)).status, 'completed')
+        const { assets } = await (await server.request(jobs + job.id + '/manifest')).json()
+        const sourcePath = item => item.sourcePath ?? item.path
+        const row = name => assets.find(item => sourcePath(item).split('/').at(-1) === name + '.uasset')
+        const wave = row('Inline').exports.find(item => item.role === 'audio')
+        const ogg = row('Streamed').exports.find(item => item.role === 'audio')
+        assert.equal(wave.format, 'wav')
+        assert.equal(ogg.format, 'ogg')
+        assert.deepEqual(await readFile(join(directory, wave.path)), wavTone())
+        assert.deepEqual(await readFile(join(directory, ogg.path)), zenOgg)
+        assert.equal(row('Opus').exports.find(item => item.role === 'audio')?.issue, 'unreal-cooked-audio-format')
+        assert.ok(!row('OtherClass').exports?.some(item => item.role === 'audio'))
+        const asset = assets.indexOf(row('Streamed'))
+        const route = jobs + job.id
+        const plan = await post(server, route + '/export-plan', { destination, asset })
+        const exported = await post(server, route + '/export', { destination, asset, key: plan.key }, 201)
+        assert.deepEqual(await readFile(join(exported.directory, ogg.path)), zenOgg)
+        const manifest = await readJSON(join(exported.directory, 'manifest.json'))
+        assert.ok((manifest.assets ?? manifest.entries).some(item => sourcePath(item).endsWith('Streamed.ubulk')))
+        assert.equal((await importPath(server, path)).result.reused, true)
+      }
+      for (const file of files) assert.deepEqual(await readFile(join(content, file.path)), file.content)
+    } finally { await server.close() }
+  })
+
+test('cooked SoundWave reports missing bulk, invalid ranges, and corrupt audio separately',
+  { skip: process.env.ASSET_VIEWER_TEST_CUE4PARSE !== '1', timeout: 30_000 }, async t => {
+    const root = await testDirectory(t)
+    const path = join(root, 'Damaged.pak')
+    const damaged = Buffer.from(zenOgg)
+    damaged[damaged.length - 1] ^= 1
+    const files = [
+      ...cookedSoundWave({ name: 'Missing', format: 'OGG', payload: zenOgg, streaming: true, companion: false }),
+      ...cookedSoundWave({ name: 'OutOfRange', format: 'OGG', payload: zenOgg, streaming: true, externalOffset: -1 }),
+      ...cookedSoundWave({ name: 'BadCRC', format: 'OGG', payload: damaged }),
+      { path: 'Unrelated.ubulk', content: zenOgg },
+    ]
+    await writeFile(path, makePak(files))
+    const server = await startServer(root)
+    try {
+      const job = await importPath(server, path)
+      assert.equal(job.status, 'completed', job.error)
+      assert.deepEqual(job.result.report.audio, { converted: 0, skipped: 2, failed: 1 })
+      const { assets } = await (await server.request(jobs + job.id + '/manifest')).json()
+      const issues = assets.flatMap(item => (item.exports ?? []).filter(x => x.role === 'audio').map(x => x.issue))
+      assert.deepEqual(issues.sort(), ['unreal-cooked-audio-bulk-range', 'unreal-cooked-audio-bulk-unavailable',
+        'unreal-cooked-audio-output'])
+    } finally { await server.close() }
+  })
 
 async function fixture(t) {
   const root = await testDirectory(t)

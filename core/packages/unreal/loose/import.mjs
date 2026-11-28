@@ -16,6 +16,7 @@ import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
 import { unrealBridgeVersion } from '../../../engines/unreal/bridge/project.mjs'
 import { locateUnrealBridge } from '../../../engines/unreal/bridge/selection.mjs'
 import { looseMeshRevision } from '../../../engines/unreal/decoder/mesh-protocol.mjs'
+import { cookedAudioRevision } from '../../../engines/unreal/decoder/audio-protocol.mjs'
 import { looseTextureRevision } from '../../../engines/unreal/decoder/protocol.mjs'
 import { cue4parseVersion, locateUnrealDecoder } from '../../../engines/unreal/decoder/run.mjs'
 import { sourceSoundCueRevision } from '../../../engines/unreal/source-audio/cues.mjs'
@@ -87,6 +88,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     ['unreal-sound-cue', sourceSoundCueRevision],
     ['unreal-cooked-material', cookedMaterialRevision],
     ['unreal-cooked-texture', looseTextureRevision, decoder ? cue4parseVersion : null],
+    ['unreal-cooked-audio', cookedAudioRevision, decoder ? cue4parseVersion : null],
     ['unreal-cooked-mesh', looseMeshRevision, decoder ? cue4parseVersion : null],
     viewer && ['ue-viewer', unrealViewerRevision, ...viewer.identity]]
   const recipe = exportRecipe(exportFormats, blender, engineRecipe)

@@ -1,4 +1,5 @@
 import { posix } from 'node:path'
+import { cookedAudioBatchBytes, cookedAudioIssue, cookedAudioRevision, ioStoreAudioRevision, numberedAudio } from './audio-protocol.mjs'
 import { ioStoreMaterialRevision, validZenIdentity, validZenMaterial, validZenSlots } from './iostore-material-protocol.mjs'
 import { ioStoreMeshRevision, meshProduct } from './mesh-protocol.mjs'
 
@@ -8,7 +9,7 @@ const issueCode = value => typeof value === 'string' && /^unreal-[a-z0-9-]{1,70}
 const textureFormats = new Set(['PF_B8G8R8A8', 'PF_R8G8B8A8', 'PF_G8', 'PF_DXT1', 'PF_DXT5'])
 export const pakTextureRevision = 1
 export const ioStoreTextureRevision = 1
-export const ioStoreAudioRevision = 1
+export { ioStoreAudioRevision }
 export const looseTextureRevision = 1
 export const decoderFormats = new Set(['uasset', 'umap', 'uexp', 'ubulk', 'uptnl', 'png', 'wav', 'fbx', 'glb'])
 
@@ -75,8 +76,10 @@ function archiveResult(raw, { inspectOnly, version, ioStore = false }) {
   if (raw?.protocol !== 1) return null
   if (raw.status === 'failed' && issueCode(raw.issue)) return { status: 'failed', issue: raw.issue }
   const revision = ioStore ? ioStoreTextureRevision : pakTextureRevision
+  const audioRevision = ioStore ? ioStoreAudioRevision : cookedAudioRevision
   if (raw.status !== 'completed' || raw.containerVersion !== version ||
       !Array.isArray(raw.entries) || raw.entries.length > 10_000 ||
+      (raw.audioDecoder !== undefined && raw.audioDecoder !== audioRevision) ||
       (raw.textureDecoder !== undefined && raw.textureDecoder !== revision)) return null
 
   const entries = []
@@ -85,6 +88,7 @@ function archiveResult(raw, { inspectOnly, version, ioStore = false }) {
   let outputs = 0
   let bytes = 0
   let derivativeBytes = 0
+  let audioBytes = 0
   let materialCost = 0
   let slots = 0
   for (const row of raw.entries) {
@@ -137,16 +141,19 @@ function archiveResult(raw, { inspectOnly, version, ioStore = false }) {
       }
     }
     if (row.audio != null || row.audioIssue != null) {
-      if (!ioStore || inspectOnly || format !== 'uasset' || !entry.file || entry.kind !== 'package' || version < 5 ||
+      if (raw.audioDecoder !== audioRevision || inspectOnly || format !== 'uasset' || !entry.file ||
+          (ioStore && (entry.kind !== 'package' || version < 5)) ||
           row.texture != null || row.textureIssue != null) return null
       if (row.audio != null) {
-        const { format, size } = row.audio
-        if (row.audioIssue != null || !['wav', 'ogg'].includes(format) ||
-            !Number.isSafeInteger(size) || size < 44 || size > 32 * 1024 ** 2) return null
-        derivativeBytes += size
-        entry.audio = { format, size, file: entry.file.replace(/\.bin$/, '.' + format) }
+        const audio = numberedAudio(row.audio, entry.file.slice(0, -4))
+        if (row.audioIssue != null || !audio) return null
+        audioBytes += audio.size
+        if (!ioStore && audioBytes > cookedAudioBatchBytes) return null
+        entry.audio = audio
       } else {
-        if (!issueCode(row.audioIssue) || !row.audioIssue.startsWith('unreal-iostore-audio-')) return null
+        const valid = ioStore ? issueCode(row.audioIssue) && row.audioIssue.startsWith('unreal-iostore-audio-') :
+          cookedAudioIssue(row.audioIssue)
+        if (!valid) return null
         entry.audioIssue = row.audioIssue
       }
     }
@@ -189,10 +196,10 @@ function archiveResult(raw, { inspectOnly, version, ioStore = false }) {
         }
       }
     }
-    if (derivativeBytes > 256 * 1024 ** 2) return null
+    if (derivativeBytes + (ioStore ? audioBytes : 0) > 256 * 1024 ** 2) return null
     entries.push(entry)
   }
-  if (bytes + derivativeBytes > 1024 ** 3) return null
+  if (bytes + derivativeBytes + audioBytes > 1024 ** 3) return null
   return { status: 'completed', version, entries, textureDecoder: raw.textureDecoder,
-    ...(ioStore && { audioDecoder: raw.audioDecoder, meshDecoder: raw.meshDecoder, materialDecoder: raw.materialDecoder }) }
+    audioDecoder: raw.audioDecoder, ...(ioStore && { meshDecoder: raw.meshDecoder, materialDecoder: raw.materialDecoder }) }
 }
