@@ -7,7 +7,8 @@ export const blenderModels = new Set(['blend', 'usd', 'usda', 'usdc', 'usdz', 'a
 export const modelFormats = new Set([...browserModels, ...blenderModels])
 export const browserImages = new Set(['png', 'apng', 'jpg', 'jpeg', 'jpe', 'jfif', 'webp', 'gif', 'bmp', 'avif', 'ico', 'svg'])
 export const imageFormats = new Set([...browserImages, 'tga', 'tif', 'tiff', 'exr', 'hdr', 'dds', 'ktx', 'ktx2', 'pvr', 'psd'])
-export const audioFormats = new Set(['wav', 'ogg', 'mp3', 'aif', 'aiff', 'flac'])
+export const browserAudio = new Set(['wav', 'ogg'])
+export const audioFormats = new Set([...browserAudio, 'mp3', 'aif', 'aiff', 'flac'])
 export const unityDataFormats = new Set(['asset', 'prefab', 'mat', 'unity', 'anim', 'controller', 'overridecontroller'])
 export const supportFiles = new Set(['bin', 'mtl', 'mat', 'meta', 'prefab', 'unity', 'uasset', 'umap', 'utoc', 'ucas', 'psa', 'max', 'c4d',
   'ma', 'mb', 'x3d', 'step', 'stp', 'iges', 'igs', 'mdd', 'dat', 'zip', 'rar', '7z', 'gz', 'tar',

@@ -39,7 +39,7 @@ const mime = {
   '.gltf': 'model/gltf+json', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
   '.webp': 'image/webp', '.bmp': 'image/bmp', '.avif': 'image/avif', '.wasm': 'application/wasm', '.ico': 'image/x-icon',
   '.apng': 'image/apng', '.jpe': 'image/jpeg', '.jfif': 'image/jpeg', '.svg': 'image/svg+xml',
-  '.wav': 'audio/wav',
+  '.wav': 'audio/wav', '.ogg': 'audio/ogg',
 }
 let reviewWrites = Promise.resolve()
 let viewFiles

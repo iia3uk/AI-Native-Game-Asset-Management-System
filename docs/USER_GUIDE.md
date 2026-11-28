@@ -208,6 +208,8 @@ Supported embedded WAV, PNG, FBX and GLB files keep their bytes and enter the no
 
 Stock UE5.3 and 5.4 Zen `Texture2D` packages with versioned properties can also produce indexed PNGs. The worker reads BGRA8, RGBA8, G8, DXT1 and DXT5 pixels from the package or its matching bulk chunk in the same container. It exports the first readable mip within 4,096 pixels per side and records its level, dimensions and color space. The job report shows how many PNGs were converted and why recognized textures were skipped. Use **Показать в индексе** to open the exported PNG. Selective package export includes the PNG and its native inputs. The source set stays in place. Unversioned properties, virtual textures, models and dependencies spanning multiple containers remain pending.
 
+Stock UE5.3 and 5.4 Zen `SoundWave` packages with versioned properties can publish PCM WAV and Vorbis Ogg. The worker reads nonstreaming payloads and reassembles streaming audio from inline data and verified companion chunks in the same container. Published audio keeps its encoded bytes and can play from **Показать в индексе**. The manifest records channels, sample rate, frame count and the source package. Selective export includes usable audio and its native inputs. Unsupported codecs, nonempty UE5.4 cue points and missing bulk data are reported separately.
+
 ```sh
 npm run cli -- package-inspect "/absolute/path/example.utoc" --json
 npm run cli -- package-import "/absolute/path/example.utoc" --json

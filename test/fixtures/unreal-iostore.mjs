@@ -2,7 +2,9 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import { wavTone } from './unreal-pak.mjs'
-import { zenFixtureId, zenTexturePackage } from './unreal-zen-texture.mjs'
+import { zenAudioPackage } from './unreal-zen-audio.mjs'
+import { zenFixtureId } from './unreal-zen-package.mjs'
+import { zenTexturePackage } from './unreal-zen-texture.mjs'
 
 const end = 0xffffffff
 const blockSize = 512
@@ -44,17 +46,27 @@ const textureDigests = {
   broken: '4217cdd0a155f69174b97efa3d34c67d2810b15c',
   bulk: '4a46cfa5f7fa028f90e6b62e4dc490525bd139a1',
 }
+const soundDigests = {
+  pcm: ['0b9d1b4c77794ed0e951fdad88be4c47f3bbc2f2', '9014e502e7a2068a54a944000cbb55eff5f50e0b'],
+  vorbis: ['8ee91c4de5d9a9488091b196a87018892388f27c', 'b3b9d92791a92ddafccb21b3db0448fbfb0729b5'],
+  corrupt: ['8ee91c4de5d9a9488091b196a87018892388f27c', '222f7a04926f370a1517e1de5805707a56df5a6a'],
+  unsupported: ['310352703387938d89cabb6d0219df8b219ffd09', 'b3b9d92791a92ddafccb21b3db0448fbfb0729b5'],
+}
 
 export function makeIoStore({ version = 8, flags = 9, soundName = 'IoStore-Tone.wav', cycle = false,
-  secondPartition = version >= 3, unsupportedCodec = false, audioOffset = 27, texture } = {}) {
+  secondPartition = version >= 3, unsupportedCodec = false, audioOffset = 27, texture, soundWave,
+  bulkName = 'Sample.ubulk' } = {}) {
   const { audio, ...original } = ioStorePayloads()
-  const { asset, bulk } = texture ? zenTexturePackage({ mode: texture }) : original
-  const packageId = texture ? zenFixtureId : 2n
+  const native = soundWave ? zenAudioPackage(soundWave) : texture ? zenTexturePackage({ mode: texture }) : original
+  const { asset, bulk } = native
+  const packageId = texture || soundWave ? zenFixtureId : 2n
+  const [assetDigest, bulkDigest] = soundWave ? soundDigests[soundWave] :
+    texture ? [textureDigests[texture], textureDigests.bulk] : [digests.asset, digests.bulk]
   const files = [
     { content: audio, digest: digests.audio, id: 1n, type: 7, offset: audioOffset, compressed: true },
-    { content: asset, digest: texture ? textureDigests[texture] : digests.asset, id: packageId,
+    { content: asset, digest: assetDigest, id: packageId,
       type: version >= 4 ? 1 : 2, offset: 5 * blockSize, compressed: false },
-    { content: bulk, digest: texture ? textureDigests.bulk : digests.bulk, id: packageId,
+    { content: bulk, digest: bulkDigest, id: packageId,
       type: version >= 4 ? 2 : 3, offset: (5 + Math.ceil(asset.length / blockSize)) * blockSize, compressed: true },
   ]
   const offsets = []
@@ -98,8 +110,8 @@ export function makeIoStore({ version = 8, flags = 9, soundName = 'IoStore-Tone.
     unrealString('../../../Fixture/Content/'), words(2),
     words(end, 1, end, 0), words(0, cycle ? 1 : end, end, 1),
     words(3), words(1, end, 0), words(2, 2, 1), words(3, end, 2),
-    words(4), unrealString(texture ? 'Verification' : 'Vérification', true), unrealString(soundName),
-    unrealString('Sample.uasset'), unrealString('Sample.ubulk'),
+    words(4), unrealString(texture || soundWave ? 'Verification' : 'Vérification', true), unrealString(soundName),
+    unrealString('Sample.uasset'), unrealString(bulkName),
   ])
   const header = Buffer.alloc(144)
   header.write('-==--==--==--==-')
@@ -112,7 +124,7 @@ export function makeIoStore({ version = 8, flags = 9, soundName = 'IoStore-Tone.
   return {
     toc: Buffer.concat([header, ...ids, ...offsets, ...table, codec, directory, ...metadata]),
     data: (secondPartition ? data : data.slice(0, 1)).map(parts => Buffer.concat(parts)),
-    payloads: { audio, asset, bulk },
+    payloads: { audio, asset, bulk, ...(soundWave && { soundWave: native.audio }) },
   }
 }
 

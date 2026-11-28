@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
-import { blenderModels, browserImages, browserModels, formatOrder, previewCandidates } from '../files/formats.mjs'
+import { blenderModels, browserAudio, browserImages, browserModels, formatOrder, previewCandidates } from '../files/formats.mjs'
 import { connectUnityMaterials } from '../materials/unity/folder-bindings.mjs'
 import { discoverAssets, folderPath, pathKey } from '../files/asset-files.mjs'
 
@@ -31,7 +31,7 @@ export async function scanFolder(path, { canonical = false } = {}) {
     const url = '/local-files/' + id + '/' + encodePath(path)
     const file = {
       id: hash(path), name: filename, path, displayPath: path, ext, kind, size, url,
-      preview: browserModels.has(ext) || browserImages.has(ext) || ext === 'wav' ? url : null,
+      preview: browserModels.has(ext) || browserImages.has(ext) || browserAudio.has(ext) ? url : null,
     }
     if (blenderModels.has(ext)) file.convertible = true
     files.set(path, file)

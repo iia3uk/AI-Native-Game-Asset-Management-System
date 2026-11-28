@@ -10,10 +10,10 @@ using CUE4Parse.UE4.Versions;
 namespace AssetViewer.UnrealDecode.IoStore.Zen;
 
 internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags flags, VersionContainer version,
-    FBulkDataMapEntry[] bulk, int offset, int size) : AbstractUePackage("Texture.uasset", null)
+    FBulkDataMapEntry[] bulk, int offset, int size) : AbstractUePackage("Zen.uasset", null)
 {
-    private static readonly ulong TextureClass = (1UL << FPackageObjectIndex.TypeShift) |
-        (FPackageId.FromName("/script/engine/texture2d").id & FPackageObjectIndex.IndexMask);
+    private static readonly ulong TextureClass = ScriptClass("texture2d");
+    private static readonly ulong SoundWaveClass = ScriptClass("soundwave");
     private const int HeaderLimit = 16 * 1024 * 1024;
 
     public override FPackageFileSummary Summary { get; } = new() { PackageFlags = flags };
@@ -27,8 +27,9 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
     public int Offset => offset;
     public int Size => size;
 
-    public static ZenPackage? Read(byte[] bytes, ulong packageId)
+    public static ZenPackage? Read(byte[] bytes, ulong packageId, out ZenExportKind kind)
     {
+        kind = ZenExportKind.None;
         if (bytes.Length < 72 || U32(bytes) != 1 || U32(bytes.AsSpan(52)) != 3 ||
             U32(bytes.AsSpan(56)) != 522 || U32(bytes.AsSpan(64)) != 0) return null;
         var game = U32(bytes.AsSpan(60)) switch
@@ -39,7 +40,7 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
         };
         if (game == null) return null;
         var version = new VersionContainer(game.Value);
-        using var archive = new FByteArchive("Texture.uasset", bytes, version);
+        using var archive = new FByteArchive("Zen.uasset", bytes, version);
         var header = new FZenPackageSummary(archive);
         const EPackageFlags cooked = EPackageFlags.PKG_Cooked | EPackageFlags.PKG_FilterEditorOnly;
         if ((header.PackageFlags & cooked) != cooked) return null;
@@ -57,22 +58,26 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
             header.DependencyBundleEntriesOffset > header.ImportedPackageNamesOffset ||
             header.ImportedPackageNamesOffset > header.HeaderSize) return null;
 
-        // Look only at top-level exports whose class is the native /Script/Engine/Texture2D.
+        // Only native top-level exports with a supported serialization are eligible.
         archive.Position = header.ExportMapOffset;
         int selected = -1;
         FExportMapEntry target = default;
         for (var i = 0; i < count; i++)
         {
             var entry = new FExportMapEntry(archive);
-            if (!entry.OuterIndex.IsNull || entry.ClassIndex.TypeAndId != TextureClass ||
+            if (!entry.OuterIndex.IsNull ||
                 entry.ObjectFlags.HasFlag(EObjectFlags.RF_ClassDefaultObject)) continue;
-            if (selected >= 0) throw new InputException("unreal-iostore-texture-ambiguous");
+            var exportKind = entry.ClassIndex.TypeAndId == TextureClass ? ZenExportKind.Texture :
+                entry.ClassIndex.TypeAndId == SoundWaveClass ? ZenExportKind.SoundWave : ZenExportKind.None;
+            if (exportKind == ZenExportKind.None) continue;
+            if (selected >= 0) throw new InputException("ambiguous");
+            kind = exportKind;
             selected = i;
             target = entry;
         }
         if (selected < 0) return null;
         if (header.PackageFlags.HasFlag(EPackageFlags.PKG_UnversionedProperties))
-            throw new InputException("unreal-iostore-texture-unversioned");
+            throw new InputException("unversioned");
         if (target.CookedSerialOffset > int.MaxValue || target.CookedSerialSize is 0 or > HeaderLimit ||
             header.HeaderSize + target.CookedSerialOffset + target.CookedSerialSize > (ulong)bytes.Length)
             throw Invalid();
@@ -137,5 +142,9 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
     }
 
     private static uint U32(ReadOnlySpan<byte> value) => BinaryPrimitives.ReadUInt32LittleEndian(value);
-    internal static InputException Invalid() => new("unreal-iostore-texture-layout");
+    private static ulong ScriptClass(string name) => (1UL << FPackageObjectIndex.TypeShift) |
+        (FPackageId.FromName("/script/engine/" + name).id & FPackageObjectIndex.IndexMask);
+    internal static InputException Invalid() => new("layout");
 }
+
+internal enum ZenExportKind { None, Texture, SoundWave }

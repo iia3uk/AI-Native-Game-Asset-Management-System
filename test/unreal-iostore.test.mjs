@@ -182,7 +182,7 @@ test('IoStore worker results only allow numbered texture outputs on extracted Ze
     chunkId: '9d2fbb016ac3df0c00000001', kind: 'package',
     texture: { width: 2, height: 2, size: 94, mip: 0, pixelFormat: 'PF_B8G8R8A8', srgb: true } }
   const result = { protocol: 1, status: 'completed', containerVersion: 8, chunks: 1, partitions: 2,
-    textureDecoder: 1, entries: [entry] }
+    textureDecoder: 1, audioDecoder: 1, entries: [entry] }
   assert.equal(ioStoreResult(result, options).entries[0].texture.file, '00000.png')
   assert.equal(ioStoreResult({ ...result, textureDecoder: undefined }, options), null)
   assert.equal(ioStoreResult({ ...result, entries: [{ ...entry, path: 'Sample.umap' }] }, options), null)

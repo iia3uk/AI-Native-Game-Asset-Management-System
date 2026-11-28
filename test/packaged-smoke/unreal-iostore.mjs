@@ -67,4 +67,15 @@ test('The packaged Windows importer verifies and indexes a multi-partition Unrea
   assert.equal(cached.scan.status, 'completed', cached.scan.error)
   assert.equal(cached.job.result.reused, true)
   assert.equal(cached.job.result.directory, directory)
+
+  const audioFixture = await writeIoStoreFixture(root, 'PackagedSoundWave', { soundWave: 'vorbis' })
+  const { job: audioJob, scan } = await cli('package-import', audioFixture.path)
+  assert.equal(audioJob.status, 'completed', audioJob.error)
+  assert.equal(scan.status, 'completed', scan.error)
+  assert.deepEqual(audioJob.result.report.audio, { converted: 1, skipped: 0, failed: 0 })
+  const audioDirectory = audioJob.result.directory
+  const manifest = JSON.parse(await readFile(join(audioDirectory, 'manifest.json'), 'utf8'))
+  const [vorbis] = manifest.entries.find(row => row.kind === 'package').exports
+  assert.equal(vorbis.format, 'ogg')
+  assert.deepEqual(await readFile(join(audioDirectory, vorbis.path)), audioFixture.payloads.soundWave)
 })

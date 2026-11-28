@@ -6,6 +6,7 @@ const issueCode = value => typeof value === 'string' && /^unreal-[a-z0-9-]{1,70}
 const textureFormats = new Set(['PF_B8G8R8A8', 'PF_R8G8B8A8', 'PF_G8', 'PF_DXT1', 'PF_DXT5'])
 export const pakTextureRevision = 1
 export const ioStoreTextureRevision = 1
+export const ioStoreAudioRevision = 1
 export const decoderFormats = new Set(['uasset', 'umap', 'uexp', 'ubulk', 'uptnl', 'png', 'wav', 'fbx', 'glb'])
 
 function validPath(path) {
@@ -28,7 +29,8 @@ const ioStoreKinds = {
 
 export function ioStoreResult(raw, { inspectOnly, version, chunks, partitions }) {
   if (raw?.status === 'completed' && (raw.chunks !== chunks || raw.partitions !== partitions ||
-      raw.entries?.length > chunks || raw.textureDecoder !== ioStoreTextureRevision)) return null
+      raw.entries?.length > chunks || raw.textureDecoder !== ioStoreTextureRevision ||
+      raw.audioDecoder !== ioStoreAudioRevision)) return null
   return archiveResult(raw, { inspectOnly, version, ioStore: true })
 }
 
@@ -45,7 +47,7 @@ function archiveResult(raw, { inspectOnly, version, ioStore = false }) {
   const chunkIds = ioStore ? new Set() : null
   let outputs = 0
   let bytes = 0
-  let textureBytes = 0
+  let derivativeBytes = 0
   for (const row of raw.entries) {
     if (!validPath(row?.path) || !Number.isSafeInteger(row.size) || row.size < 0) return null
     const parts = row.path.split('/')
@@ -89,8 +91,7 @@ function archiveResult(raw, { inspectOnly, version, ioStore = false }) {
         if (row.textureIssue != null || ![width, height].every(side => Number.isInteger(side) && side >= 1 && side <= 4096) ||
             !Number.isInteger(mip) || mip < 0 || mip > 30 || !textureFormats.has(pixelFormat) || typeof srgb !== 'boolean' ||
             !Number.isSafeInteger(size) || size < 45 || size > width * height * 4 + height + 65536) return null
-        textureBytes += size
-        if (textureBytes > 256 * 1024 ** 2) return null
+        derivativeBytes += size
         entry.texture = { width, height, size, mip, pixelFormat, srgb, file: entry.file.replace(/\.bin$/, '.png') }
       } else {
         const prefix = ioStore ? 'unreal-iostore-texture-' : 'unreal-cooked-texture-'
@@ -98,8 +99,24 @@ function archiveResult(raw, { inspectOnly, version, ioStore = false }) {
         entry.textureIssue = row.textureIssue
       }
     }
+    if (row.audio != null || row.audioIssue != null) {
+      if (!ioStore || inspectOnly || format !== 'uasset' || !entry.file || entry.kind !== 'package' || version < 5 ||
+          row.texture != null || row.textureIssue != null) return null
+      if (row.audio != null) {
+        const { format, size } = row.audio
+        if (row.audioIssue != null || !['wav', 'ogg'].includes(format) ||
+            !Number.isSafeInteger(size) || size < 44 || size > 32 * 1024 ** 2) return null
+        derivativeBytes += size
+        entry.audio = { format, size, file: entry.file.replace(/\.bin$/, '.' + format) }
+      } else {
+        if (!issueCode(row.audioIssue) || !row.audioIssue.startsWith('unreal-iostore-audio-')) return null
+        entry.audioIssue = row.audioIssue
+      }
+    }
+    if (derivativeBytes > 256 * 1024 ** 2) return null
     entries.push(entry)
   }
-  if (bytes + textureBytes > 1024 ** 3) return null
-  return { status: 'completed', version, entries, textureDecoder: raw.textureDecoder }
+  if (bytes + derivativeBytes > 1024 ** 3) return null
+  return { status: 'completed', version, entries, textureDecoder: raw.textureDecoder,
+    ...(ioStore && { audioDecoder: raw.audioDecoder }) }
 }

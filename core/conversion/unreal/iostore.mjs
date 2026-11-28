@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileInfo } from '../../files/asset-files.mjs'
+import { publishContainerAudio } from './container-audio.mjs'
 import { containerFileFolders, validateContainerFile } from './container-files.mjs'
 import { publishContainerTexture } from './container-texture.mjs'
 
@@ -11,7 +12,7 @@ export async function publishIoStoreEntries(entries, root, store, version, signa
   const results = []
   for (const row of entries) {
     signal?.throwIfAborted()
-    const { file: input, texture, textureIssue, ...entry } = row
+    const { file: input, texture, textureIssue, audio, audioIssue, ...entry } = row
     if (!input) {
       results.push(entry)
       continue
@@ -29,10 +30,15 @@ export async function publishIoStoreEntries(entries, root, store, version, signa
     const artifact = await store.save(destination, file, { status: 'extracted', format: entry.format,
       role: entry.kind === 'file' ? 'embedded-file' : 'iostore-' + entry.kind + '-chunk',
       method: ioStoreMethod, converterVersion: version })
-    const exports = artifact.path && (texture || textureIssue) ?
-      [await publishContainerTexture(root, store, row, artifact, id, { method: zenTextureMethod,
-        converterVersion: version, outputIssue: 'unreal-iostore-texture-output' }, signal)] : undefined
-    results.push({ ...entry, id, status: artifact.status, artifact, ...(exports && { exports }) })
+    const exports = []
+    if (artifact.path && (texture || textureIssue)) {
+      exports.push(await publishContainerTexture(root, store, row, artifact, id, { method: zenTextureMethod,
+        converterVersion: version, outputIssue: 'unreal-iostore-texture-output' }, signal))
+    }
+    if (artifact.path && (audio || audioIssue)) {
+      exports.push(await publishContainerAudio(root, store, row, artifact, id, version, signal))
+    }
+    results.push({ ...entry, id, status: artifact.status, artifact, ...(exports.length && { exports }) })
   }
   return results
 }

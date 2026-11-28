@@ -30,18 +30,19 @@ async function saveOutputs(workspace, source, files, result, hash, signal) {
   const entries = await publishIoStoreEntries(result.entries, join(workspace, 'output'), store, cue4parseVersion, signal)
   const counts = { extracted: 0, skipped: 0, failed: 0 }
   const extractedTypes = { package: 0, bulk: 0, file: 0, registry: 0 }
-  const textures = { converted: 0, skipped: 0, failed: 0 }
+  const derivatives = { texture: { converted: 0, skipped: 0, failed: 0 }, audio: { converted: 0, skipped: 0, failed: 0 } }
   for (const entry of entries) {
     counts[entry.status]++
     if (entry.status === 'extracted') extractedTypes[entry.kind]++
-    for (const texture of entry.exports ?? []) textures[texture.status]++
+    for (const product of entry.exports ?? []) derivatives[product.role][product.status]++
   }
   const { extracted, skipped, failed } = counts
   const summary = { status: extracted ? 'completed' : 'no-compatible-inputs', method: ioStoreMethod,
     converterVersion: cue4parseVersion, containerVersion: result.version, chunks: source.chunks, partitions: source.partitions,
     extracted, skipped: skipped + failed, counts, extractedTypes, total: entries.length,
-    textureDecoder: result.textureDecoder, textures,
-    limits: ['unreal-iostore-zen-conversion-limited-to-stock-ue5-textures', 'unreal-iostore-dependency-analysis-pending'] }
+    textureDecoder: result.textureDecoder, textures: derivatives.texture,
+    audioDecoder: result.audioDecoder, audio: derivatives.audio,
+    limits: ['unreal-iostore-zen-stock-ue5-textures-and-sound-waves', 'unreal-iostore-dependency-analysis-pending'] }
   const reports = {
     manifest: { version: 1, recipe: ioStoreRecipe, source: { name: source.name, format: ioStoreFormat,
       size: source.size, sha256: hash, files, license: null }, method: ioStoreMethod, converterVersion: cue4parseVersion, entries },
@@ -50,8 +51,9 @@ async function saveOutputs(workspace, source, files, result, hash, signal) {
   }
   await Promise.all(Object.entries(reports).map(([name, data]) =>
     writeFile(join(output, name + '.json'), JSON.stringify(data, null, 2) + '\n', { signal, flag: 'wx' })))
-  const cacheable = !failed && !textures.failed && !entries.some(entry => entry.issue === 'unreal-iostore-space-limit' ||
-    entry.exports?.some(texture => ['unreal-iostore-texture-io', 'unreal-iostore-texture-limit'].includes(texture.issue)))
+  const cacheable = !failed && !derivatives.texture.failed && !derivatives.audio.failed &&
+    !entries.some(entry => entry.issue === 'unreal-iostore-space-limit' ||
+      entry.exports?.some(product => /-(io|limit)$/.test(product.issue ?? '')))
   return { output, cacheable, report: { ...summary, ...(!extracted && { entries: entries.slice(0, 500) }) } }
 }
 

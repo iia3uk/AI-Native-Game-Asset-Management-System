@@ -1,6 +1,6 @@
 export function createAudioPreview(audio, status) {
   audio.addEventListener('error', () => {
-    if (!audio.hidden && audio.error) status('Не удалось воспроизвести WAV. Файл доступен для скачивания.')
+    if (!audio.hidden && audio.error) status('Не удалось воспроизвести звук. Файл доступен для скачивания.')
   })
   return {
     clear() {
@@ -10,7 +10,7 @@ export function createAudioPreview(audio, status) {
       audio.load()
     },
     show(file) {
-      if (file.ext !== 'wav' || !file.preview) return false
+      if (!['wav', 'ogg'].includes(file.ext) || !file.preview) return false
       audio.src = file.preview
       audio.hidden = false
       return true
