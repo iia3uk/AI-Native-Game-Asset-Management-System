@@ -1,6 +1,7 @@
 import { open } from 'node:fs/promises'
 import { basename, dirname, isAbsolute } from 'node:path'
 import { inputLimit } from '../../../engines/unity/bundle/run.mjs'
+import { findBundleDependencies } from '../../../engines/unity/bundle/source-dependencies.mjs'
 import { sameSource } from '../../../files/hash.mjs'
 import { companionSizeAllowed, findSerializedCompanions } from '../../../engines/unity/serialized/companions.mjs'
 import { isSerializedUnity, serializedProbeSize } from '../../../engines/unity/serialized/header.mjs'
@@ -38,7 +39,7 @@ export async function readBundleSource({ root, path, name }, serialized, signal)
   } finally {
     await handle.close()
   }
-  const resources = serialized ? await findSerializedCompanions(root, file.path) : []
-  if (!companionSizeAllowed(resources)) return { status: 'failed', issue: 'unity-bundle-companion-size' }
+  const resources = serialized ? await findSerializedCompanions(root, file.path) : await findBundleDependencies(root, file, signal)
+  if (serialized && !companionSizeAllowed(resources)) return { status: 'failed', issue: 'unity-bundle-companion-size' }
   return { root, file, name, serialized, resources }
 }

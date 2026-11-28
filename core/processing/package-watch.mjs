@@ -17,7 +17,8 @@ export function queueWatchedPackages(db, slots, ignoredPaths, enqueue) {
     const exclusions = prefixes.map(() => ' AND substr(a.path_key, 1, length(?)) <> ?').join('')
     const find = db.prepare(`WITH candidates AS (
       SELECT a.rowid, a.library_id, a.path_key, a.path, a.ext,
-        CASE WHEN a.ext IN ('asset', 'assets', 'sharedassets', 'utoc') THEN s.source_key ELSE a.hash END AS source_key
+        CASE WHEN a.ext IN ('asset', 'assets', 'sharedassets', 'utoc') THEN s.source_key
+             WHEN a.ext IN ('bundle', 'unity3d') THEN COALESCE(s.source_key, a.hash) ELSE a.hash END AS source_key
       FROM assets a LEFT JOIN watched_package_sources s ON s.asset_id = a.id
       WHERE a.library_id = ? AND a.ext IN ('unitypackage', 'bundle', 'unity3d', 'pak', 'asset', 'assets', 'sharedassets', 'utoc')
         AND a.ext IN (${extensions.map(() => '?').join(', ')}) AND a.missing_since IS NULL AND a.hash IS NOT NULL

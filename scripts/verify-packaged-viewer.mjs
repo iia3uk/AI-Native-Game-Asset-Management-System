@@ -85,6 +85,8 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'core/conversion/unity/materials/bundle-glb.mjs',
     'core/conversion/unity/materials/bundle-material.mjs',
     'core/engines/unity/bundle/material-protocol.mjs',
+    'core/engines/unity/bundle/member.mjs',
+    'core/engines/unity/bundle/source-dependencies.mjs',
     'core/packages/unreal/pak/cache.mjs',
     'core/packages/unreal/pak/import.mjs',
     'core/packages/unreal/iostore/import.mjs',

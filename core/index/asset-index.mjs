@@ -13,7 +13,7 @@ import { thumbnailPlan } from '../thumbnails/thumbnail-input.mjs'
 import { maxPakInput } from '../packages/unreal/pak/limits.mjs'
 import { watchedFormatByExtension, watchedPackageRecipe } from '../packages/watch-formats.mjs'
 import { watchIoStoreSource } from '../packages/unreal/iostore/watch-source.mjs'
-import { watchSerializedSource } from '../packages/unity/bundle/watch-source.mjs'
+import { watchUnityBinarySource } from '../packages/unity/bundle/watch-source.mjs'
 import { FolderRuns } from '../packages/folder-processing/state.mjs'
 import { PackageStorage } from '../packages/storage/registry.mjs'
 import { sharedDirectoryAvailable } from '../packages/storage/shared.mjs'
@@ -255,8 +255,9 @@ export class AssetIndex {
       const canReuse = existing?.processor_version === analysisVersion && existing.path === file.path &&
         (hash !== null ? existing.hash === hash : existing.size === size && existing.mtime === mtime && existing.ctime === ctime)
       const analysis = supportsAnalysis(file.ext) && !canReuse ? await analyzeAsset(library.root, file, signal) : null
-      const packageSource = hash && watchedFormatByExtension.get(file.ext) === 'unity-serialized' ?
-        await watchSerializedSource(library.root, file, hash, existing?.watched_resources, signal) : null
+      const watchedFormat = watchedFormatByExtension.get(file.ext)
+      const packageSource = hash && (watchedFormat === 'unity-serialized' || watchedFormat === 'unityfs') ?
+        await watchUnityBinarySource(library.root, file, hash, existing?.watched_resources, signal, watchedFormat === 'unity-serialized') : null
       discovered.set(key, { path: file.path, name: basename(file.path), ext: file.ext,
         kind: file.kind, size, mtime, ctime, hash, analysis, packageSource })
       if (watchIoStore && (file.ext === 'utoc' || file.ext === 'ucas')) {

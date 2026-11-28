@@ -5,9 +5,16 @@ import { bundleIdentity } from '../bundle-names.mjs'
 
 export const bundleObjectKey = (member, pathId) => member + ':' + pathId
 
+export function bundlePointer(member, reference) {
+  if (!reference) return null
+  const target = reference.targetMember ?? (reference.fileId === 0 ? member : null)
+  return target ? { member: target, pathId: reference.pathId } : null
+}
+
 export function bundleTarget(objects, member, reference, classId) {
-  if (reference?.fileId !== 0) return null
-  const target = objects.get(bundleObjectKey(member, reference.pathId))
+  const pointer = bundlePointer(member, reference)
+  if (!pointer) return null
+  const target = objects.get(bundleObjectKey(pointer.member, pointer.pathId))
   return target?.classId === classId && target.status === 'converted' && target.artifact?.path ? target : null
 }
 
@@ -16,7 +23,7 @@ export async function saveBundleMaterial(asset, stage, store, decoder, objects, 
   const { profile, shader, numbers, color } = asset.material
   const textures = asset.material.textures.map(binding => {
     const target = bundleTarget(objects, asset.member, binding.texture, 28)
-    const status = target ? 'resolved' : binding.texture.fileId ? 'external' : 'missing'
+    const status = target ? 'resolved' : bundlePointer(asset.member, binding.texture) ? 'missing' : 'external'
     const roles = []
     if (profile === 'standard' && binding.property === '_MainTex') {
       roles.push({ role: 'baseColor', channels: 'rgb', colorSpace: 'srgb' })

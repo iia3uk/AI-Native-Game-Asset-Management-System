@@ -194,6 +194,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   await verifyPackageCleanup(webContents, waitFor)
   const bundle = process.env.ASSET_VIEWER_SMOKE_BUNDLE
   const bundleMaterials = process.env.ASSET_VIEWER_SMOKE_BUNDLE_MATERIALS
+  const linkedBundles = process.env.ASSET_VIEWER_SMOKE_BUNDLE_LINKED
   const sprites = process.env.ASSET_VIEWER_SMOKE_SPRITES
   const atlas = process.env.ASSET_VIEWER_SMOKE_ATLAS
   const audio = process.env.ASSET_VIEWER_SMOKE_AUDIO
@@ -205,6 +206,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   await verifyPackageWatch(webContents, waitFor, fixtures, { bundle, player: watchPlayer, pak, ioStore })
   if (bundle) await verifyUnityBundle(webContents, waitFor, bundle)
   if (bundleMaterials) await verifyUnityBundle(webContents, waitFor, bundleMaterials, { materials: true })
+  if (linkedBundles) await verifyUnityBundle(webContents, waitFor, linkedBundles, { linked: true })
   if (sprites) await verifyUnitySprites(webContents, waitFor, sprites)
   if (atlas) await verifyUnitySprites(webContents, waitFor, atlas, { atlas: true })
   if (audio) await verifyUnityAudio(webContents, waitFor, audio)
@@ -218,6 +220,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   console.log('Desktop startup, demo, local audio playback, library watching, thumbnail cache, analysis, metadata, package import, pause, export, PBR material preview and renderer isolation passed.')
   if (bundle) console.log('UnityFS folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
   if (bundleMaterials) console.log('UnityFS material links, conflict reporting and two textured submeshes in the indexed GLB passed.')
+  if (linkedBundles) console.log('UnityFS manifest dependencies and textured GLB preview across three bundles passed.')
   if (sprites) console.log('UnityFS sprite inspection, queued import, dependency reporting and indexed PNG preview passed.')
   if (atlas) console.log('UnityFS SpriteAtlas inspection, queued import and indexed PNG preview passed.')
   if (audio) console.log('UnityFS PCM inspection, queued import, local byte ranges and indexed WAV playback passed.')

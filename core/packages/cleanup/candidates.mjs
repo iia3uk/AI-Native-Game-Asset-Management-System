@@ -86,7 +86,8 @@ export async function* cleanupCandidates(format, source, manifest, assets, selec
   if (!watchedPackageRecipe(format)?.extensions.includes(unrealFileType(name))) return
   if (format === 'unreal-pak' && !assets.every(asset => asset.status === 'extracted' &&
     Object.hasOwn(containerFileFolders, asset.format) && published(asset.artifact) && !asset.artifact.path.startsWith('Source/'))) return
-  if (['unityfs', 'unity-serialized'].includes(format) && !unityBinaryReadyForCleanup(assets)) return
+  if (['unityfs', 'unity-serialized'].includes(format) &&
+      (manifest.source.resources?.some(item => item.role === 'bundle') || !unityBinaryReadyForCleanup(assets))) return
   const backups = assets.flatMap(asset => [original(asset), ...exportsOf(asset)].filter(Boolean))
   if (backups.length) yield { root: dirname(source), path: name, size: manifest.source.size,
     sha256: manifest.source.contentsSha256 ?? manifest.source.sha256, backups }

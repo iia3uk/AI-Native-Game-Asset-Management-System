@@ -1,7 +1,7 @@
 import { basename } from 'node:path'
 
-export async function verifyUnityBundle(webContents, waitFor, fixture, { standalone = false, materials = false } = {}) {
-  const mesh = materials ? 'Painted' : 'Triangle'
+export async function verifyUnityBundle(webContents, waitFor, fixture, { standalone = false, materials = false, linked = false } = {}) {
+  const mesh = linked ? 'LinkedMesh' : materials ? 'Painted' : 'Triangle'
   const preview = 'Mesh-' + mesh + '.glb'
   await webContents.executeJavaScript(`
     if (!document.querySelector('#index-dialog').open) document.querySelector('#index-mode').click()
@@ -12,6 +12,10 @@ export async function verifyUnityBundle(webContents, waitFor, fixture, { standal
   const label = standalone ? 'Бинарный файл Unity' : 'UnityFS 8'
   await waitFor(`document.querySelector('#package-plans').textContent.includes(${JSON.stringify(label)})`)
   await waitFor(`document.querySelector('#package-plans').textContent.includes('${mesh} ·')`)
+  if (linked) {
+    await waitFor(`['Бандлы из манифеста', 'linked-paint.bundle', 'linked-images.bundle']
+      .every(text => document.querySelector('#package-plans').textContent.includes(text))`)
+  }
   const compressed = await webContents.executeJavaScript("document.querySelector('#package-plans').textContent.includes('StreamedDXT5 · DXT5')")
   await webContents.executeJavaScript("document.querySelector('#package-plans button').click()")
   const row = `Array.from(document.querySelector('#package-jobs').children)
@@ -27,6 +31,9 @@ export async function verifyUnityBundle(webContents, waitFor, fixture, { standal
     await waitFor(`(${row})?.textContent.includes('Материалы восстановлены в GLB') &&
       (${row})?.textContent.includes('Разные префабы назначают этому мешу разные материалы') &&
       (${row})?.textContent.includes('Material-Front.json')`)
+  } else if (linked) {
+    await waitFor(`(${row})?.textContent.includes('Материалы восстановлены в GLB') &&
+      (${row})?.textContent.includes('Texture-LinkedPaintColor.png')`)
   } else if (!standalone) await waitFor(`(${row})?.textContent.includes('Texture-Albedo.png')`)
   if (compressed) {
     await waitFor(`(${row})?.textContent.includes('Texture-InlineDXT1.png') && (${row})?.textContent.includes('Texture-StreamedDXT5.png')`)
@@ -40,4 +47,5 @@ export async function verifyUnityBundle(webContents, waitFor, fixture, { standal
   await webContents.executeJavaScript("document.querySelector('#index-preview').click()")
   await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('2 треугольника')")
   if (materials) await waitFor("document.querySelector('#color-source').textContent.includes('с текстурой 2')")
+  if (linked) await waitFor("document.querySelector('#color-source').textContent.includes('с текстурой')")
 }

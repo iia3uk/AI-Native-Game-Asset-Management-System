@@ -5,7 +5,7 @@ namespace AssetViewer.UnityBundle.UnityFs;
 
 internal static class BundleDirectory
 {
-    public static void Validate(AssetBundleFile bundle)
+    public static long Validate(AssetBundleFile bundle)
     {
         var info = bundle.BlockAndDirInfo;
         if (info.DirectoryInfos.Count is 0 or > 256 || info.BlockInfos.Length is 0 or > 8192)
@@ -34,5 +34,6 @@ internal static class BundleDirectory
                 throw new BundleException("unity-bundle-entry-range");
             previousEnd = entry.Offset + entry.DecompressedSize;
         }
+        return length;
     }
 }

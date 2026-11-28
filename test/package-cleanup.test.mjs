@@ -5,6 +5,7 @@ import { basename, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { cleanupCandidates } from '../core/packages/cleanup/candidates.mjs'
 import { planPackageCleanup, trashPackageSources } from '../core/packages/cleanup/plan.mjs'
 import { retireNativeCopies } from '../core/packages/cleanup/retired.mjs'
 import { unityBinaryReadyForCleanup } from '../core/packages/cleanup/unity-binary.mjs'
@@ -75,7 +76,7 @@ test('Unity cleanup verifies archive identity and its published payloads', async
   assert.ok((await readFile(archive)).length > 0)
 })
 
-test('Unity binary cleanup retains packages with undecoded objects', () => {
+test('Unity binary cleanup retains packages with undecoded objects or manifest dependencies', async () => {
   const sprite = { member: 'CAB-1', status: 'converted', classId: 213, pathId: '2',
     artifact: { status: 'converted', path: 'Textures/1/Sprite.png' }, sprite: { packed: { atlasPathId: '3' } } }
   const atlas = { member: 'CAB-1', status: 'unsupported', classId: 687078895, pathId: '3',
@@ -88,6 +89,11 @@ test('Unity binary cleanup retains packages with undecoded objects', () => {
   assert.equal(unityBinaryReadyForCleanup([sprite, atlas, bundle, { status: 'unsupported', classId: 114 }]), false)
   assert.equal(unityBinaryReadyForCleanup([sprite, atlas, bundle, { status: 'converted', artifact: null }]), false)
   assert.equal(unityBinaryReadyForCleanup([sprite, atlas, bundle, { ...sprite, classId: 21 }]), false)
+  const source = { size: 128, sha256: '1'.repeat(64) }
+  const candidates = resources => Array.fromAsync(cleanupCandidates('unityfs', 'original.bundle',
+    { source: { ...source, resources } }, [sprite, atlas, bundle]))
+  assert.equal((await candidates([])).length, 1)
+  assert.deepEqual(await candidates([{ name: 'library.bundle', role: 'bundle' }]), [])
 })
 
 test('compaction retains usable files and provenance, and leaves changed or unsupported data alone', async t => {

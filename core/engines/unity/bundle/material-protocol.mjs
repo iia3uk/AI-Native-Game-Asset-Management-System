@@ -1,3 +1,5 @@
+import { bundleMemberPattern } from './member.mjs'
+
 const pathIdPattern = /^-?[1-9]\d{0,18}$/
 const numericProperties = ['_Mode', '_Cutoff', '_Metallic', '_Glossiness']
 const vector = (values, length) => Array.isArray(values) && values.length === length &&
@@ -8,9 +10,10 @@ function reference(value) {
       typeof value.pathId !== 'string' || !pathIdPattern.test(value.pathId)) return null
   const id = BigInt(value.pathId)
   if (id < -(1n << 63n) || id >= 1n << 63n) return null
-  return { fileId: value.fileId, pathId: value.pathId }
+  const { fileId, pathId, targetMember } = value
+  if (targetMember !== undefined && (!fileId || typeof targetMember !== 'string' || !bundleMemberPattern.test(targetMember))) return null
+  return { fileId, pathId, ...(targetMember && { targetMember }) }
 }
-
 export function materialSource(value) {
   if (!value || ![null, 'standard'].includes(value.profile) ||
       !Array.isArray(value.textures) || value.textures.length > 64 ||
@@ -39,13 +42,15 @@ export function materialSource(value) {
 
 export function meshMaterialSlots(value) {
   if (!value) return null
-  if (['ambiguous', 'unresolved'].includes(value.status) && value.slots === null) return { status: value.status }
+  const { rendererMember } = value
+  if (rendererMember === undefined && ['ambiguous', 'unresolved'].includes(value.status) && value.slots === null) return { status: value.status }
   if (value.status !== 'linked' || !Array.isArray(value.slots) || value.slots.length > 128) return null
+  if (rendererMember !== undefined && (typeof rendererMember !== 'string' || !bundleMemberPattern.test(rendererMember))) return null
   const slots = []
   for (const slot of value.slots) {
     const link = reference(slot)
     if (slot !== null && !link) return null
     slots.push(link)
   }
-  return { status: 'linked', slots }
+  return { status: 'linked', slots, ...(rendererMember && { rendererMember }) }
 }

@@ -19,6 +19,7 @@ import { startServer, testDirectory } from './server-fixture.mjs'
 import { verifyBundleAudio } from './unity-bundle/audio.mjs'
 import { verifyBundleAtlas } from './unity-bundle/atlas.mjs'
 import { verifyBundleMaterials } from './unity-bundle/materials.mjs'
+import { verifyLinkedBundleMaterials } from './unity-bundle/linked-materials.mjs'
 import { readTexture } from './unity-bundle/png.mjs'
 import { verifyBcTextures } from './unity-bundle/bc-textures.mjs'
 import { verifyPlayerExports, verifyPlayerMalformed } from './unity-bundle/player.mjs'
@@ -121,6 +122,17 @@ test('UnityFS validates decoder reports and rejects non-bundle sources without t
     { ...material, textures: [{ ...binding, texture: { fileId: 0, pathId: '9223372036854775808' } }] }]) {
     assert.equal(bundleResult({ ...report, assets: [row, { ...paint, material: bad }] }, false), null)
   }
+  const external = { ...row, member: 'CAB-456', sourceArchive: 1 }
+  const textureLink = { fileId: 1, pathId: external.pathId, targetMember: external.member }
+  const withTarget = { ...paint, material: { ...material, textures: [{ ...binding, texture: textureLink }] } }
+  assert.deepEqual(bundleResult({ ...report, assets: [external, withTarget] }, false, false, 1).assets[1].material.textures[0].texture,
+    textureLink)
+  assert.equal(bundleResult({ ...report, assets: [external, withTarget] }, false), null)
+  assert.equal(bundleResult({ ...report, assets: [row, withTarget] }, false, false, 1), null)
+  const conflictingArchive = { ...withTarget, member: external.member }
+  assert.equal(bundleResult({ ...report, assets: [external, conflictingArchive] }, false, false, 1), null)
+  const conflictingCase = { ...conflictingArchive, member: external.member.toLowerCase(), sourceArchive: 1 }
+  assert.equal(bundleResult({ ...report, assets: [external, conflictingCase] }, false, false, 1), null)
 })
 
 test('Unity builds native UnityFS bundles and the independent worker indexes textures, sprites, meshes and audio', {
@@ -300,6 +312,13 @@ test('Unity builds native UnityFS bundles and the independent worker indexes tex
   await verifyBundleAtlas(root, atlasData, client(atlasData))
   const materialData = join(root, 'material-data')
   await verifyBundleMaterials(root, client(materialData))
+  const linkedData = join(root, 'linked-material-data')
+  const linkedServer = await startServer(linkedData)
+  try {
+    await verifyLinkedBundleMaterials(root, client(linkedData), (path, hash) => waitForImport(linkedServer, path, hash))
+  } finally {
+    await linkedServer.close()
+  }
   const audioData = join(root, 'audio-data')
   await verifyBundleAudio(root, audioData, client(audioData), worker)
   const standaloneData = join(root, 'standalone-data')

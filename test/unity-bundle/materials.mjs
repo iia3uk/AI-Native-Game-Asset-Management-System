@@ -5,7 +5,7 @@ import { readTexture } from './png.mjs'
 
 const loadJson = async path => JSON.parse(await readFile(path, 'utf8'))
 
-function glb(bytes) {
+export function glb(bytes) {
   assert.equal(bytes.toString('ascii', 0, 4), 'glTF')
   assert.equal(bytes.readUInt32LE(8), bytes.length)
   const end = 20 + bytes.readUInt32LE(12)

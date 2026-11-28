@@ -5,9 +5,10 @@ import { sameSource } from '../../../files/hash.mjs'
 import { findWorker, runJsonWorker } from '../../worker-process.mjs'
 import { findSerializedCompanions, serializedCompanionNames } from '../serialized/companions.mjs'
 import { stageFile } from './stage-file.mjs'
+import { bundleInputLimit, findBundleDependencies } from './source-dependencies.mjs'
 
 const MiB = 1024 ** 2
-export const inputLimit = 128 * MiB
+export const inputLimit = bundleInputLimit
 export const assetsToolsVersion = '3.0.5'
 
 export function locateBundleWorker() {
@@ -25,19 +26,20 @@ export async function stageBundle(source, workspace, inspectOnly, signal) {
   for (const { file, staged } of [{ file: source.file, staged: 'input.bundle' }, ...resources]) {
     if (!await stageFile(source.root, file, join(workspace, staged), signal)) return 'unity-bundle-source-changed'
   }
-  if (source.serialized) {
-    const current = await findSerializedCompanions(source.root, source.file.path)
-    const primary = await fileInfo(source.root, source.file.path)
-    if (!primary || !sameSource(primary.info, source.file.info) || current.length !== resources.length || current.some((resource, index) =>
-      resource.name !== resources[index].name || !sameSource(resource.file.info, resources[index].file.info))) {
-      return 'unity-bundle-source-changed'
-    }
+  const primary = await fileInfo(source.root, source.file.path)
+  if (!primary || !sameSource(primary.info, source.file.info)) return 'unity-bundle-source-changed'
+  const current = source.serialized ? await findSerializedCompanions(source.root, source.file.path) :
+    await findBundleDependencies(source.root, primary, signal)
+  if (current.length !== resources.length || current.some((resource, index) =>
+    resource.name !== resources[index].name || !sameSource(resource.file.info, resources[index].file.info))) {
+    return 'unity-bundle-source-changed'
   }
   await mkdir(join(workspace, 'output'))
   const companions = source.serialized &&
     Object.fromEntries(serializedCompanionNames(source.file.path).map(({ role, name }) => [role, name]))
   await writeFile(join(workspace, 'request.json'), JSON.stringify({ protocol: 1, inspectOnly, outputLimit,
-    serialized: source.serialized, ...(companions && { companions }) }),
+    serialized: source.serialized, ...(companions && { companions }),
+    ...(!source.serialized && resources.length && { bundleDependencies: resources.length }) }),
     { flag: 'wx', signal })
   return null
 }

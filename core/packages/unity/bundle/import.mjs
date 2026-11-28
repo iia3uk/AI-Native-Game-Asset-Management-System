@@ -96,7 +96,7 @@ export async function processUnityBundle(selected, { directory, inspectOnly = fa
     if (decoded?.status === 'completed' && decoded.decoderRevision !== bundleDecoderRevision) {
       return { status: 'failed', issue: 'unity-bundle-worker-revision' }
     }
-    const report = bundleResult(decoded, inspectOnly, serialized)
+    const report = bundleResult(decoded, inspectOnly, serialized, serialized ? 0 : source.resources.length)
     if (!report) return { status: 'failed', issue: 'unity-bundle-worker-protocol' }
     if (report.status !== 'completed') return report
     if (inspectOnly) return { ...report, hash, ...(fingerprint.resources && { resources: fingerprint.resources }),

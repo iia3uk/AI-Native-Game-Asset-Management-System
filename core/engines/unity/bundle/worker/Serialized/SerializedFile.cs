@@ -1,5 +1,6 @@
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
+using AssetViewer.UnityBundle.Objects.Materials;
 using AssetViewer.UnityBundle.Serialized.Player;
 
 namespace AssetViewer.UnityBundle.Serialized;
@@ -26,11 +27,15 @@ internal static class SerializedFile
         try
         {
             var file = manager.LoadAssetsFile(input, Member, false);
+            var member = new SerializedMember(manager, file, Member, input.Length);
+            var tables = new ObjectTables([member]);
+            var bindings = new Dictionary<ObjectAddress, MeshBindings>();
+            MeshMaterialSlots.Read(member, tables, bindings);
             var assets = new List<Asset>();
             var materialBudget = 8192;
             using var resources = new CompanionResources(companions);
-            SerializedObjects.Read(manager, file, Member, input.Length, resources, inspectOnly,
-                assets, ref outputLimit, ref materialBudget, PlayerLayout.Supports(file.file));
+            SerializedObjects.Read(member, tables, bindings, resources, inspectOnly,
+                assets, ref outputLimit, ref materialBudget, PlayerLayout.Supports(member.File));
             return new Report(1, Program.DecoderRevision, "completed", header.Version,
                 file.file.Metadata.UnityVersion, assets);
         }

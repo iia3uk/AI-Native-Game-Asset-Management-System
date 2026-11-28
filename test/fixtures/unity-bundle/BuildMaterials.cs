@@ -4,6 +4,22 @@ using UnityEngine;
 
 internal static class BundleFixtureMaterials
 {
+    public static AssetBundleBuild[] CreateLinked(string root, Mesh source)
+    {
+        root += "/LinkedMaterials";
+        Directory.CreateDirectory(root);
+        AssetDatabase.Refresh();
+        var shader = Shader.Find("Standard");
+        var paint = SaveMaterial(root, shader, "LinkedPaint", new Color32(83, 109, 221, 255));
+        var mesh = SaveMesh(root, source, "LinkedMesh");
+        var prefab = SavePrefab(root, "LinkedBody", mesh, paint, paint);
+        return new[] {
+            new AssetBundleBuild { assetBundleName = "linked-model.bundle", assetNames = new[] { prefab } },
+            new AssetBundleBuild { assetBundleName = "linked-paint.bundle", assetNames = new[] { root + "/LinkedPaint.mat" } },
+            new AssetBundleBuild { assetBundleName = "linked-images.bundle", assetNames = new[] { root + "/LinkedPaintColor.asset" } },
+        };
+    }
+
     public static string[] Create(string root, Mesh source)
     {
         root += "/Materials";

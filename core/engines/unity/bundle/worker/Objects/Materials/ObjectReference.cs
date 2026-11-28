@@ -1,9 +1,11 @@
 using System.Globalization;
+using System.Text.Json.Serialization;
 using AssetsTools.NET;
 
 namespace AssetViewer.UnityBundle.Objects.Materials;
 
-internal sealed record ObjectReference(int FileId, string PathId)
+internal sealed record ObjectReference(int FileId, string PathId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TargetMember = null)
 {
     public static ObjectReference? Read(AssetTypeValueField field)
     {

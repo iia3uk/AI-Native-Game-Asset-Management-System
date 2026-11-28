@@ -47,7 +47,7 @@ export async function applyBundleMaterials(file, entry, output, objects, budget,
   let complete = true
   for (const [index, reference] of bindings.slots.entries()) {
     signal?.throwIfAborted()
-    const source = bundleTarget(objects, entry.member, reference, 21)
+    const source = bundleTarget(objects, bindings.rendererMember ?? entry.member, reference, 21)
     const material = source?.material
     const mode = material?.numbers._Mode ?? 0
     if (material?.profile !== 'standard' || (mode !== 0 && mode !== 1)) {
@@ -56,7 +56,7 @@ export async function applyBundleMaterials(file, entry, output, objects, budget,
     }
     const primitive = primitives[index]
     const textured = primitive.attributes?.TEXCOORD_0 !== undefined
-    const key = source.pathId + ':' + textured
+    const key = source.id + ':' + textured
     if (!materials.has(key)) {
       const color = (material.color ?? [1, 1, 1, 1]).map(unit)
       const pbr = { baseColorFactor: color.map((value, channel) => channel < 3 ? linearColor(value) : value),
@@ -66,7 +66,7 @@ export async function applyBundleMaterials(file, entry, output, objects, budget,
       const slot = material.textures.find(item => item.property === '_MainTex')
       if (material.textures.some(item => item !== slot)) complete = false
       if (slot) {
-        const texture = bundleTarget(objects, entry.member, slot.texture, 28)
+        const texture = bundleTarget(objects, source.member, slot.texture, 28)
         if (textured && texture && texture.textureColorSpace === 'srgb') {
           const image = await addTexture(texture)
           if (image !== undefined) {

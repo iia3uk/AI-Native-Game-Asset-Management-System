@@ -1,44 +1,48 @@
 using AssetsTools.NET;
+using System.Text.Json.Serialization;
+using AssetViewer.UnityBundle.Serialized;
 
 namespace AssetViewer.UnityBundle.Objects.Materials;
 
-internal sealed record MeshBindings(string Status, ObjectReference?[]? Slots = null);
+internal sealed record MeshBindings(string Status, ObjectReference?[]? Slots = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RendererMember = null);
 
 internal static class MeshMaterialSlots
 {
-    public static Dictionary<long, MeshBindings> Read(Dictionary<long, AssetFileInfo> objects, AssetsFile file,
-        Func<long, int, AssetTypeValueField> readLocal)
+    public static void Read(SerializedMember member, ObjectTables tables, Dictionary<ObjectAddress, MeshBindings> result)
     {
-        var filters = new Dictionary<long, HashSet<long>>();
-        foreach (var (id, info) in objects)
+        if (!member.File.Metadata.TypeTreeEnabled) return;
+        var objects = tables.In(member);
+        var filters = new Dictionary<long, HashSet<ObjectAddress>>();
+        foreach (var info in objects.Values)
         {
-            if (info.GetTypeId(file) != 33) continue;
+            if (info.GetTypeId(member.File) != 33 || info.ByteSize > 2L << 20) continue;
             try
             {
-                var filter = readLocal(id, 33);
-                var mesh = ObjectReference.Local(filter["m_Mesh"]);
+                var filter = member.ReadField(info);
+                var mesh = tables.Address(member, tables.ReadReference(member, filter["m_Mesh"]), 43);
                 var owner = ObjectReference.Local(filter["m_GameObject"]);
-                if (mesh == 0 || owner == 0 || !IsClass(mesh, 43) || !IsClass(owner, 1)) continue;
+                if (mesh is not { } target || owner == 0 || !tables.IsClass(member.Name, owner, 1)) continue;
                 if (!filters.TryGetValue(owner, out var meshes)) filters.Add(owner, meshes = []);
-                meshes.Add(mesh);
+                meshes.Add(target);
             }
             catch (Exception error) when (error is not OutOfMemoryException) { }
         }
-        var result = new Dictionary<long, MeshBindings>();
-        if (filters.Count == 0) return result;
-        foreach (var (id, info) in objects)
+        if (filters.Count == 0) return;
+        foreach (var info in objects.Values)
         {
-            if (info.GetTypeId(file) != 23) continue;
-            var ownerMeshes = (HashSet<long>?)null;
+            if (info.GetTypeId(member.File) != 23 || info.ByteSize > 2L << 20) continue;
+            HashSet<ObjectAddress>? ownerMeshes = null;
             try
             {
-                var renderer = readLocal(id, 23);
+                var renderer = member.ReadField(info);
                 var owner = ObjectReference.Local(renderer["m_GameObject"]);
                 if (!filters.TryGetValue(owner, out ownerMeshes)) continue;
                 var materials = renderer["m_Materials.Array"];
                 var binding = ownerMeshes.Count != 1 || materials.IsDummy || materials.Children.Count > 128
                     ? new MeshBindings("unresolved")
-                    : new MeshBindings("linked", materials.Children.Select(ObjectReference.Read).ToArray());
+                    : new MeshBindings("linked", materials.Children.Select(field => tables.ReadReference(member, field)).ToArray(),
+                        member.Name);
                 foreach (var mesh in ownerMeshes) Merge(mesh, binding);
             }
             catch (Exception error) when (error is not OutOfMemoryException)
@@ -47,15 +51,30 @@ internal static class MeshMaterialSlots
                     foreach (var mesh in ownerMeshes) Merge(mesh, new MeshBindings("unresolved"));
             }
         }
-        return result;
-
-        bool IsClass(long id, int type) => objects.TryGetValue(id, out var info) && info.GetTypeId(file) == type;
-
-        void Merge(long mesh, MeshBindings binding)
+        void Merge(ObjectAddress mesh, MeshBindings binding)
         {
+            if (binding.RendererMember == mesh.Member) binding = binding with { RendererMember = null };
             if (!result.TryGetValue(mesh, out var current)) result.Add(mesh, binding);
-            else if (current.Slots == null || binding.Slots == null || !current.Slots.SequenceEqual(binding.Slots))
+            else if (!SameSlots(mesh.Member, current, binding))
                 result[mesh] = new MeshBindings("ambiguous");
         }
+    }
+
+    private static bool SameSlots(string meshMember, MeshBindings left, MeshBindings right)
+    {
+        if (left.Slots == null || right.Slots == null || left.Slots.Length != right.Slots.Length) return false;
+        var leftSource = left.RendererMember ?? meshMember;
+        var rightSource = right.RendererMember ?? meshMember;
+        for (var index = 0; index < left.Slots.Length; index++)
+        {
+            var a = left.Slots[index];
+            var b = right.Slots[index];
+            if (a == null && b == null) continue;
+            if (a == null || b == null || a.PathId != b.PathId) return false;
+            var target = a.TargetMember ?? (a.FileId == 0 ? leftSource : null);
+            var other = b.TargetMember ?? (b.FileId == 0 ? rightSource : null);
+            if (target != other || (target == null && (leftSource != rightSource || a.FileId != b.FileId))) return false;
+        }
+        return true;
     }
 }

@@ -306,7 +306,8 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
       details.insertBefore(element('p', formatLabel(plan.format) + ' ' + plan.containerVersion +
         ' · Unity ' + plan.unityVersion + ' · Без Unity Editor'), preview)
       if (plan.resources?.length) {
-        details.insertBefore(element('p', 'Файлы данных · ' + plan.resources.map(resource => resource.name).join(', ')), preview)
+        const label = plan.format === 'unityfs' ? 'Бандлы из манифеста' : 'Файлы данных'
+        details.insertBefore(element('p', label + ' · ' + plan.resources.map(resource => resource.name).join(', ')), preview)
       }
     }
     if (plan.format === 'unreal-pak') {

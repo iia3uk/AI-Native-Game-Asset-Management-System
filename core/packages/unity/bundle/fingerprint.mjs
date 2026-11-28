@@ -3,13 +3,14 @@ import { join } from 'node:path'
 import { artifactHash } from '../../../conversion/artifacts.mjs'
 
 export function companionDigest({ name, role, file }, sha256) {
-  return { name, role: role === 'texture' ? 'texture' : 'audio', size: file.info.size, sha256 }
+  return { name, role: role === 'audioStem' ? 'audio' : role, size: file.info.size, sha256 }
 }
 
-export function serializedFingerprint(name, contentsSha256, resources) {
+export function unitySourceFingerprint(name, contentsSha256, resources) {
   if (!resources.length) return { sha256: contentsSha256 }
   const sha256 = createHash('sha256')
-    .update(JSON.stringify(['unity-serialized-companions-v1', name, contentsSha256, resources]))
+    .update(JSON.stringify([resources[0].role === 'bundle' ? 'unity-bundle-dependencies-v1' : 'unity-serialized-companions-v1',
+      name, contentsSha256, resources]))
     .digest('hex')
   return { sha256, contentsSha256, resources }
 }
@@ -21,5 +22,5 @@ export async function bundleFingerprint(workspace, source, signal) {
     const hash = await artifactHash(join(workspace, resource.staged), signal)
     resources.push(companionDigest(resource, hash))
   }
-  return serializedFingerprint(source.name, contentsSha256, resources)
+  return unitySourceFingerprint(source.name, contentsSha256, resources)
 }

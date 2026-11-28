@@ -6,7 +6,8 @@ internal sealed record TextureBinding(string Property, ObjectReference Texture, 
 internal sealed record MaterialSource(ObjectReference? Shader, string? Profile, TextureBinding[] Textures,
     Dictionary<string, float> Numbers, float[]? Color);
 
-internal sealed class MaterialReader(Func<string, bool> isLocalStandard, Func<int, bool> isBuiltinShaderFile)
+internal sealed class MaterialReader(Func<AssetTypeValueField, ObjectReference?> readReference,
+    Func<ObjectReference, bool> isStandard)
 {
     public MaterialSource Read(AssetTypeValueField field, ref int budget)
     {
@@ -18,7 +19,7 @@ internal sealed class MaterialReader(Func<string, bool> isLocalStandard, Func<in
         foreach (var pair in maps.Children)
         {
             var slot = pair["second"];
-            var reference = ObjectReference.Read(slot["m_Texture"]);
+            var reference = readReference(slot["m_Texture"]);
             if (reference == null) continue;
             var property = pair["first"].AsString;
             if (property.Length is < 1 or > 80 || property.Any(char.IsControl) ||
@@ -50,9 +51,8 @@ internal sealed class MaterialReader(Func<string, bool> isLocalStandard, Func<in
         }
         if (textures.Count + 1 > budget) throw new BundleException("unity-bundle-material-limit");
         budget -= textures.Count + 1;
-        var shader = ObjectReference.Read(field["m_Shader"]);
-        var standard = shader != null && (shader.FileId == 0
-            ? isLocalStandard(shader.PathId) : shader.PathId == "46" && isBuiltinShaderFile(shader.FileId));
+        var shader = readReference(field["m_Shader"]);
+        var standard = shader != null && isStandard(shader);
         return new MaterialSource(shader, standard ? "standard" : null, textures.Values.ToArray(), numbers, color);
     }
 
