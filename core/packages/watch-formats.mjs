@@ -3,6 +3,7 @@ const recipes = {
   unityfs: { extensions: ['bundle', 'unity3d'], formats: 'fbx,glb' },
   'unity-serialized': { extensions: ['asset', 'assets', 'sharedassets'], formats: 'fbx,glb' },
   'unreal-pak': { extensions: ['pak'], formats: '' },
+  'unreal-iostore': { extensions: ['utoc'], formats: '' },
 }
 
 export const watchedPackageFormats = Object.keys(recipes)

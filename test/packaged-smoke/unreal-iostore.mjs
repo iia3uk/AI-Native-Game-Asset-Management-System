@@ -3,15 +3,38 @@ import { execFile } from 'node:child_process'
 import { mkdir, readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
+import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { writeIoStoreFixture } from '../fixtures/unreal-iostore.mjs'
 import { assertZenPng } from '../fixtures/unreal-zen-texture.mjs'
-import { testDirectory } from '../server-fixture.mjs'
+import { startServer, testDirectory } from '../server-fixture.mjs'
 
 const run = promisify(execFile)
 const packaged = resolve(process.env.ASSET_VIEWER_TEST_PACKAGED_DIR || 'release/win-unpacked')
 const executable = join(packaged, 'Asset Viewer.exe')
-const script = join(packaged, 'resources', 'app.asar', 'scripts', 'asset-viewer.mjs')
+const archive = join(packaged, 'resources', 'app.asar')
+const script = join(archive, 'scripts', 'asset-viewer.mjs')
+
+async function watchedImport(server) {
+  const read = async route => {
+    const response = await server.request('/api/index/' + route, { signal: AbortSignal.timeout(5000) })
+    assert.equal(response.status, 200)
+    return response.json()
+  }
+  const deadline = Date.now() + 15_000
+  do {
+    const { jobs } = await read('jobs?type=package-import')
+    assert.ok(jobs.length <= 1)
+    const [job] = jobs
+    if (job) {
+      assert.equal(job.trigger, 'watch')
+      assert.ok(['pending', 'running', 'completed'].includes(job.status), job.error || job.status)
+      if (job.status === 'completed' && (await read('jobs/' + job.result.scanJobId)).job.status === 'completed') return job
+    }
+    await delay(100)
+  } while (Date.now() < deadline)
+  assert.fail('The packaged server did not index the watched IoStore container.')
+}
 
 test('The packaged Windows importer verifies and indexes a multi-partition Unreal IoStore', { timeout: 35_000 }, async t => {
   const root = await testDirectory(t)
@@ -25,9 +48,11 @@ test('The packaged Windows importer verifies and indexes a multi-partition Unrea
   const plan = await cli('package-inspect', path)
   assert.equal(plan.format, 'unreal-iostore')
   assert.equal(plan.partitions, 2)
-  const { job, scan } = await cli('package-import', partitionPaths[1])
-  assert.equal(job.status, 'completed', job.error)
-  assert.equal(scan.status, 'completed', scan.error)
+  const library = await cli('connect', source)
+  const setting = await cli('watch-packages', library.id, 'on', '--format', 'unreal-iostore')
+  assert.deepEqual(setting.packageWatchFormats, ['unreal-iostore'])
+  const server = await startServer(root, env, { executable, entry: join(archive, 'server.mjs') })
+  const job = await watchedImport(server).finally(() => server.close())
   assert.equal(job.sourceKey, plan.hash)
   const { directory, report } = job.result
   assert.deepEqual(report.extractedTypes, { package: 1, bulk: 1, file: 1, registry: 0 })
@@ -37,7 +62,9 @@ test('The packaged Windows importer verifies and indexes a multi-partition Unrea
   assert.deepEqual(await readFile(join(directory, sound.artifact.path)), payloads.audio)
   const asset = entries.find(row => row.kind === 'package')
   assertZenPng(await readFile(join(directory, asset.exports[0].path)), false)
-  const cached = await cli('package-import', path)
+  const cached = await cli('package-import', partitionPaths[1])
+  assert.equal(cached.job.status, 'completed', cached.job.error)
+  assert.equal(cached.scan.status, 'completed', cached.scan.error)
   assert.equal(cached.job.result.reused, true)
   assert.equal(cached.job.result.directory, directory)
 })

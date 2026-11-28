@@ -12,6 +12,7 @@ import { QualityProfiles, validateQuality } from '../analysis/quality-profiles.m
 import { thumbnailPlan } from '../thumbnails/thumbnail-input.mjs'
 import { maxPakInput } from '../packages/unreal/pak/limits.mjs'
 import { watchedFormatByExtension, watchedPackageRecipe } from '../packages/watch-formats.mjs'
+import { watchIoStoreSource } from '../packages/unreal/iostore/watch-source.mjs'
 import { watchSerializedSource } from '../packages/unity/bundle/watch-source.mjs'
 import { FolderRuns } from '../packages/folder-processing/state.mjs'
 import { PackageStorage } from '../packages/storage/registry.mjs'
@@ -135,9 +136,11 @@ export class AssetIndex {
   }
 
   watchedLibraries() {
-    return this.#db.prepare(`SELECT id, root FROM libraries WHERE enabled = 1 AND (watch_enabled = 1 OR EXISTS (
-      SELECT 1 FROM package_watch_libraries WHERE library_id = libraries.id
-    ))`).all()
+    return this.#db.prepare(`SELECT id, root, (
+        SELECT json_group_array(format ORDER BY format) FROM package_watch_libraries WHERE library_id = libraries.id
+      ) AS formats FROM libraries WHERE enabled = 1 AND (watch_enabled = 1 OR EXISTS (
+        SELECT 1 FROM package_watch_libraries WHERE library_id = libraries.id
+      ))`).all()
   }
 
   setWatching(id, enabled) {
@@ -161,7 +164,15 @@ export class AssetIndex {
       if (!library) throw new IndexInputError('Библиотека не подключена.')
       if (enabled) {
         if (ignoredPaths.some(path => inside(path, library.root))) throw new IndexInputError('Выберите папку с исходными пакетами вне каталогов результатов и кеша.')
-        this.#db.prepare('INSERT OR IGNORE INTO package_watch_libraries (library_id, format) VALUES (?, ?)').run(id, format)
+        const { changes } = this.#db.prepare('INSERT OR IGNORE INTO package_watch_libraries (library_id, format) VALUES (?, ?)')
+          .run(id, format)
+        if (changes && format === 'unreal-iostore') {
+          // A scan from before the opt-in did not check TOC companions.
+          this.#db.prepare('UPDATE libraries SET generation = generation + 1 WHERE id = ?').run(id)
+          this.#db.prepare(`DELETE FROM watched_package_sources WHERE asset_id IN (
+            SELECT id FROM assets WHERE library_id = ? AND ext = 'utoc'
+          )`).run(id)
+        }
       } else {
         this.#db.prepare('DELETE FROM package_watch_libraries WHERE library_id = ? AND format = ?').run(id, format)
         this.jobs.cancelPackageWatch(id, format)
@@ -211,13 +222,16 @@ export class AssetIndex {
     }
     verifyScope()
     const previous = this.#db.prepare(`
-      SELECT a.*, p.processor_version, s.source_key AS serialized_key, s.resources AS serialized_resources
+      SELECT a.*, p.processor_version, s.source_key AS watched_key, s.resources AS watched_resources
       FROM assets a LEFT JOIN asset_analysis p ON p.asset_id = a.id
-      LEFT JOIN serialized_package_sources s ON s.asset_id = a.id
+      LEFT JOIN watched_package_sources s ON s.asset_id = a.id
       WHERE a.library_id = ?
     `).all(id)
     const byPath = new Map(previous.map(item => [item.path_key, item]))
     const discovered = new Map()
+    const watchIoStore = this.#db.prepare("SELECT 1 FROM package_watch_libraries WHERE library_id = ? AND format = 'unreal-iostore'").get(id)
+    const ioStoreFiles = new Map()
+    const ioStoreTocs = []
     let hashed = 0
     let reused = 0
     let skippedHashes = 0
@@ -227,6 +241,7 @@ export class AssetIndex {
       const existing = byPath.get(key)
       const { size, mtimeMs: mtime, ctimeMs: ctime } = file.info
       let hash = null
+      let freshHash
       if (size > (file.ext === 'pak' ? maxPakInput : maxHashedSize)) {
         skippedHashes++
       } else if (existing?.hash && existing.size === size && existing.mtime === mtime && existing.ctime === ctime) {
@@ -234,16 +249,26 @@ export class AssetIndex {
         reused++
       } else {
         hash = await hashFile(library.root, file.absolute, file.info, signal)
+        freshHash = hash
         hashed++
       }
       const canReuse = existing?.processor_version === analysisVersion && existing.path === file.path &&
         (hash !== null ? existing.hash === hash : existing.size === size && existing.mtime === mtime && existing.ctime === ctime)
       const analysis = supportsAnalysis(file.ext) && !canReuse ? await analyzeAsset(library.root, file, signal) : null
-      const serialized = hash && watchedFormatByExtension.get(file.ext) === 'unity-serialized' ?
-        await watchSerializedSource(library.root, file, hash, existing?.serialized_resources, signal) : null
+      const packageSource = hash && watchedFormatByExtension.get(file.ext) === 'unity-serialized' ?
+        await watchSerializedSource(library.root, file, hash, existing?.watched_resources, signal) : null
       discovered.set(key, { path: file.path, name: basename(file.path), ext: file.ext,
-        kind: file.kind, size, mtime, ctime, hash, analysis, serialized })
+        kind: file.kind, size, mtime, ctime, hash, analysis, packageSource })
+      if (watchIoStore && (file.ext === 'utoc' || file.ext === 'ucas')) {
+        ioStoreFiles.set(key, { info: file.info, freshHash })
+        if (file.ext === 'utoc') ioStoreTocs.push(file)
+      }
       onProgress?.(discovered.size)
+    }
+    for (const toc of ioStoreTocs) {
+      const key = pathKey(toc.path)
+      discovered.get(key).packageSource = await watchIoStoreSource(
+        library.root, toc, ioStoreFiles, byPath.get(key)?.watched_resources, signal)
     }
     signal?.throwIfAborted()
     const summary = { assets: discovered.size, added: 0, changed: 0, moved: 0, missing: 0, hashed, reused, skippedHashes }
@@ -280,8 +305,8 @@ export class AssetIndex {
     `)
     const version = this.#db.prepare('INSERT INTO asset_versions(asset_id, path, size, mtime, hash, recorded_at) VALUES (?, ?, ?, ?, ?, ?)')
     const markMissing = this.#db.prepare('UPDATE assets SET missing_since = ? WHERE id = ?')
-    const removeSerialized = this.#db.prepare('DELETE FROM serialized_package_sources WHERE asset_id = ?')
-    const saveSerialized = this.#db.prepare(`INSERT INTO serialized_package_sources (asset_id, source_key, resources)
+    const removePackageSource = this.#db.prepare('DELETE FROM watched_package_sources WHERE asset_id = ?')
+    const savePackageSource = this.#db.prepare(`INSERT INTO watched_package_sources (asset_id, source_key, resources)
       VALUES (?, ?, ?) ON CONFLICT(asset_id) DO UPDATE SET source_key = excluded.source_key, resources = excluded.resources`)
     const fields = this.#db.prepare('SELECT category, tags, note, license FROM assets WHERE id = ?')
     const deleteAnalysis = this.#db.prepare('DELETE FROM asset_analysis WHERE asset_id = ?')
@@ -314,10 +339,10 @@ export class AssetIndex {
         version.run(assetId, file.path, file.size, file.mtime, file.hash, now)
         summary.added++
       }
-      if (file.serialized && (file.serialized.key !== before?.serialized_key || file.serialized.resources !== before?.serialized_resources)) {
-        saveSerialized.run(assetId, file.serialized.key, file.serialized.resources)
-      } else if (!file.serialized && before?.serialized_key) {
-        removeSerialized.run(assetId)
+      if (file.packageSource && (file.packageSource.key !== before?.watched_key || file.packageSource.resources !== before?.watched_resources)) {
+        savePackageSource.run(assetId, file.packageSource.key, file.packageSource.resources)
+      } else if (!file.packageSource && before?.watched_key) {
+        removePackageSource.run(assetId)
       }
       if (file.analysis || (before?.processor_version && !supportsAnalysis(file.ext))) deleteAnalysis.run(assetId)
       if (file.analysis) {

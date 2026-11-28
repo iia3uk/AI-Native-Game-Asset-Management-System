@@ -1,4 +1,4 @@
-import { packageWatch, packageWatchByFormat, packageWatchSerialized } from './schema/package-watch.mjs'
+import { packageWatch, packageWatchByFormat, packageWatchIoStore, packageWatchSerialized } from './schema/package-watch.mjs'
 import { folderRunsSchema } from './schema/folder-runs.mjs'
 import { packageOutputRoots } from './schema/package-storage.mjs'
 
@@ -194,7 +194,7 @@ const packageImportPause = `
     CHECK (pause_requested IN (0, 1) AND (type = 'package-import' OR pause_requested = 0));
 `
 
-export const schemaVersion = 15
+export const schemaVersion = 16
 
 export function transaction(db, write) {
   db.exec('BEGIN IMMEDIATE')
@@ -230,6 +230,7 @@ export function migrate(db) {
     if (lockedVersion < 13) db.exec(packageImportPause)
     if (lockedVersion < 14) db.exec(folderRunsSchema)
     if (lockedVersion < 15) db.exec(packageOutputRoots)
+    if (lockedVersion < 16) db.exec(packageWatchIoStore)
     db.exec('PRAGMA user_version = ' + schemaVersion)
   })
 }

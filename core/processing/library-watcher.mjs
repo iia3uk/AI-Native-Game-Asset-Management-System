@@ -81,7 +81,7 @@ export class LibraryWatcher {
       state.watcher?.close()
       this.#roots.delete(id)
     }
-    for (const { id, root } of libraries) {
+    for (const { id, root, formats } of libraries) {
       if (this.#stopped) return
       let state = this.#roots.get(id)
       if (!state) {
@@ -96,6 +96,8 @@ export class LibraryWatcher {
         state.identity = identity
         state.reconcileAt = identity ? Date.now() : Infinity
       }
+      if (identity && formats !== state.formats) state.reconcileAt = Date.now()
+      state.formats = formats
       if (identity && !state.watcher) this.#attach(state)
     }
   }

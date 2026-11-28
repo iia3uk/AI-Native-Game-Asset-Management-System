@@ -199,7 +199,7 @@ test('Schema 10 migration keeps existing Unity opt-ins and automatic job history
     removePackageImportPauseSchema(legacy)
     legacy.exec(`ALTER TABLE package_watch_libraries RENAME TO settings_v11;
       ALTER TABLE package_watch_imports DROP COLUMN format;
-      DROP TABLE serialized_package_sources;
+      DROP TABLE watched_package_sources;
       DROP INDEX live_watched_packages;
       ${packageWatch}
       INSERT INTO package_watch_libraries SELECT library_id FROM settings_v11;
@@ -268,7 +268,7 @@ test('Schema 11 migration keeps every previous format and its automatic job hist
     assert.deepEqual(jobs.map(job => index.jobs.get(job.id)), jobs)
     assert.deepEqual(jobs.map(job => index.jobs.watchedImportSource(job.id)), sources)
     assert.equal(index.jobs.refillWatchedImports([]), 0)
-    assert.equal(index.integrity().schemaVersion, 15)
+    assert.equal(index.integrity().schemaVersion, 16)
   } finally {
     await index.close()
   }

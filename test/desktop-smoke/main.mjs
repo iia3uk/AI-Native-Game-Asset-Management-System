@@ -180,7 +180,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   const pak = process.env.ASSET_VIEWER_SMOKE_PAK === '1'
   const ioStore = process.env.ASSET_VIEWER_SMOKE_IOSTORE === '1'
   const watchPlayer = process.env.ASSET_VIEWER_SMOKE_WATCH_PLAYER
-  await verifyPackageWatch(webContents, waitFor, fixtures, { bundle, player: watchPlayer, pak })
+  await verifyPackageWatch(webContents, waitFor, fixtures, { bundle, player: watchPlayer, pak, ioStore })
   if (bundle) await verifyUnityBundle(webContents, waitFor, bundle)
   if (sprites) await verifyUnitySprites(webContents, waitFor, sprites)
   if (atlas) await verifyUnitySprites(webContents, waitFor, atlas, { atlas: true })

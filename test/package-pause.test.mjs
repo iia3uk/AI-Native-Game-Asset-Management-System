@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { AssetIndex } from '../core/index/asset-index.mjs'
-import { removePackageImportPauseSchema, removePackageOutputStorageSchema } from './fixtures/index-schema.mjs'
+import { removeIoStoreWatchSchema, removePackageImportPauseSchema, removePackageOutputStorageSchema } from './fixtures/index-schema.mjs'
 import { fixtureModel, ids, unityEntries, writeUnityFixture } from './fixtures/unitypackage.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 
@@ -31,6 +31,7 @@ test('a paused import holds its recipe across restart and resumes to verified ou
   try {
     removePackageOutputStorageSchema(previous)
     removePackageImportPauseSchema(previous)
+    removeIoStoreWatchSchema(previous)
     previous.exec('PRAGMA user_version = 12')
   } finally {
     previous.close()
