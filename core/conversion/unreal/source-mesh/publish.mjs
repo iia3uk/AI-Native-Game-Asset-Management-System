@@ -6,7 +6,7 @@ import { decodeSourceMesh, sourceMeshFileLimit, sourceMeshRevision } from '../..
 import { fileInfo } from '../../../files/asset-files.mjs'
 import { readVerifiedFile } from '../../../files/read-verified.mjs'
 import { ExportArtifacts } from '../../artifacts.mjs'
-import { publishSourceCollision } from '../collision/publish.mjs'
+import { publishCollision } from '../collision/publish.mjs'
 import { publishUnrealGeometry } from '../mesh-artifact.mjs'
 
 const method = 'unreal-source-mesh'
@@ -62,7 +62,8 @@ export async function publishSourceMeshes({ records, output, workspace, source, 
     }
     let collisionIssue = result.collisionIssue
     if (result.collision) {
-      const saved = await publishSourceCollision({ asset, collision: result.collision, scratch, stem, store, signal })
+      const saved = await publishCollision({ asset, collision: result.collision, scratch, stem, store,
+        method: 'unreal-source-collision', signal })
       if (saved.description) {
         collision.assets++
         collision.shapes += result.collision.shapes.length

@@ -1,10 +1,10 @@
 import { Box3, Vector3 } from 'three'
 import { ConvexHull } from 'three/addons/math/ConvexHull.js'
-import { requireLayout } from '../../editor-package/tables.mjs'
+import { requireLayout } from '../editor-package/tables.mjs'
 
 const hullTolerance = 1e-7
 
-export function legacyHullIndices(vertices) {
+export function convexHullIndices(vertices) {
   const points = vertices.map(vertex => new Vector3(...vertex))
   const bounds = new Box3().setFromPoints(points)
   const center = bounds.getCenter(new Vector3())

@@ -1,3 +1,5 @@
+import { unrealBodySetup } from './unreal-body-setup.mjs'
+
 const magic = Buffer.from('c1832a9e', 'hex')
 const int = value => {
   const bytes = Buffer.alloc(4)
@@ -46,7 +48,8 @@ export function cookedMeshLod(vertices, indices, sections, { wide = false, inval
 export const meshPoints = [[0, 0, 0, 0, 0, 0.25, 0.75], [0, 100, 0, 0, 1, 0.5, 1],
   [200, 0, 0, 1, 0, 1, 0], [200, 100, 0, 1, 1, 0.75, 0.25]]
 
-export function cookedStaticMesh({ name, split = true, rootClass = '/Script/Engine', invalidIndex = false, external = false }) {
+export function cookedStaticMesh({ name, split = true, rootClass = '/Script/Engine', invalidIndex = false, external = false,
+  body = null }) {
   const names = new Map()
   const fname = name => {
     if (!names.has(name)) names.set(name, names.size)
@@ -55,7 +58,7 @@ export function cookedStaticMesh({ name, split = true, rootClass = '/Script/Engi
   const primary = cookedMeshLod(meshPoints, [0, 1, 2, 2, 1, 3], [[1, 0, 1], [0, 3, 1]], { invalidIndex })
   const secondary = cookedMeshLod(meshPoints.slice(0, 3), [0, 1, 2], [[0, 0, 1]], { wide: true, external })
   const exportData = Buffer.concat([
-    fname('None'), int(0), Buffer.from([1, 0]), ints(1, 0, 0), Buffer.alloc(16), int(0),
+    fname('None'), int(0), Buffer.from([1, 0]), ints(1, body ? 2 : 0, 0), Buffer.alloc(16), int(0),
     int(2), primary.exportData, secondary.exportData,
     Buffer.from([2, 1, 1]), floats(100, 50, 0, 100, 50, 0, 112),
     int(1), ...[1, 0.45, 0, 0, 0, 0, 0, 0].map(size => Buffer.concat([int(1), float(size)])),
@@ -64,11 +67,20 @@ export function cookedStaticMesh({ name, split = true, rootClass = '/Script/Engi
   ])
   const imports = [['Class', 'StaticMesh', -2], ['Package', rootClass, 0],
     ['MaterialInstanceConstant', 'MI_Panel', -4], ['Package', '/Game/Example/MI_Panel', 0]]
+  if (body) imports.push(['Class', 'BodySetup', -2])
   const importTable = Buffer.concat(imports.map(([type, label, outer]) =>
     Buffer.concat([fname('/Script/CoreUObject'), fname(type), int(outer), fname(label)])))
   const object = Buffer.alloc(104)
   object.writeInt32LE(-1)
   fname(name).copy(object, 16)
+  const bodyObject = body && Buffer.alloc(104)
+  const bodyData = body && Buffer.concat([unrealBodySetup(fname, body), int(0)])
+  if (bodyObject) {
+    bodyObject.writeInt32LE(-5)
+    bodyObject.writeInt32LE(body.wrongOwner ? 0 : 1, 12)
+    fname('BodySetup_0').copy(bodyObject, 16)
+    bodyObject.writeBigInt64LE(BigInt(bodyData.length), 28)
+  }
   const nameTable = Buffer.concat([...names.keys()].map(value => Buffer.concat([string(value), Buffer.alloc(4)])))
   const header = Buffer.alloc(180)
   magic.copy(header)
@@ -80,21 +92,25 @@ export function cookedStaticMesh({ name, split = true, rootClass = '/Script/Engi
   header.writeInt32LE(header.length, 40)
   const importAt = header.length + nameTable.length
   const exportAt = importAt + importTable.length
-  const dependsAt = exportAt + object.length
-  const headerSize = dependsAt + 4
+  const dependsAt = exportAt + object.length + (bodyObject?.length ?? 0)
+  const dependencies = Buffer.alloc(body ? 8 : 4)
+  const headerSize = dependsAt + dependencies.length
   header.writeInt32LE(headerSize, 24)
-  header.writeInt32LE(1, 52)
+  header.writeInt32LE(body ? 2 : 1, 52)
   header.writeInt32LE(exportAt, 56)
   header.writeInt32LE(imports.length, 60)
   header.writeInt32LE(importAt, 64)
   header.writeInt32LE(dependsAt, 68)
-  header.writeBigInt64LE(BigInt(headerSize + exportData.length), 156)
+  const bulkStart = headerSize + exportData.length + (bodyData?.length ?? 0)
+  header.writeBigInt64LE(BigInt(bulkStart), 156)
   object.writeBigInt64LE(BigInt(exportData.length), 28)
   object.writeBigInt64LE(BigInt(headerSize), 36)
-  const tables = [header, nameTable, importTable, object, int(0)]
+  if (bodyObject) bodyObject.writeBigInt64LE(BigInt(headerSize + exportData.length), 36)
+  const tables = [header, nameTable, importTable, object, ...(bodyObject ? [bodyObject] : []), dependencies]
+  const contents = [exportData, ...(bodyData ? [bodyData] : []), magic]
   return [
-    { path: name + '.uasset', content: Buffer.concat(split ? tables : [...tables, exportData, magic]) },
-    ...(split ? [{ path: name + '.uexp', content: Buffer.concat([exportData, magic]) }] : []),
+    { path: name + '.uasset', content: Buffer.concat(split ? tables : [...tables, ...contents]) },
+    ...(split ? [{ path: name + '.uexp', content: Buffer.concat(contents) }] : []),
     ...(secondary.bulkData ? [{ path: name + '.ubulk', content: secondary.bulkData }] : []),
   ]
 }

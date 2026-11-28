@@ -31,6 +31,7 @@ export async function publishPakMeshes(entries, eligible, { decoder, workspace, 
   for (const { asset, entry } of inputs) {
     if (asset.exports.length) entry.exports = asset.exports
     if (asset.issues.length) entry.issues = asset.issues
+    if (asset.collisionIssue) entry.collisionIssue = asset.collisionIssue
   }
   return stage.summary
 }

@@ -42,7 +42,8 @@ async function saveOutputs(workspace, source, result, hash, { recipe, decoder, b
     ...(result.textureDecoder && { textureDecoder: result.textureDecoder, textures }),
     ...(result.audioDecoder && { audioDecoder: result.audioDecoder, ...(Object.values(audio).some(Boolean) && { audio }) }),
     ...(hasMaterials && { materials }), ...(meshes && { meshes }),
-    limits: ['unreal-pak-cooked-decoding-limited-to-stock-ue4', 'unreal-pak-archive-dependencies-incomplete'] }
+    limits: ['unreal-pak-cooked-decoding-limited-to-stock-ue4', 'unreal-pak-archive-dependencies-incomplete',
+      'collision-limited-to-supported-simple-ue4-shapes'] }
   const reportText = JSON.stringify(summary, null, 2) + '\n'
   const manifest = { version: 1, recipe, source: { name: source.name, size: source.file.info.size, sha256: hash, license: null },
     method: summary.method, converterVersion: summary.converterVersion, entries,
@@ -53,7 +54,7 @@ async function saveOutputs(workspace, source, result, hash, { recipe, decoder, b
     writeFile(join(output, 'conversion-report.json'), reportText, { signal, flag: 'wx' }),
     writeFile(join(output, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { signal, flag: 'wx' }),
   ])
-  const cacheable = !failed && !materials.issue && !meshes?.failed &&
+  const cacheable = !failed && !materials.issue && !meshes?.failed && !meshes?.collision?.failed &&
     (!meshes?.issue || meshes.issue === 'unreal-loose-meshes-budget') &&
     !entries.some(entry => entry.exports?.some(file => file.status === 'failed' ||
       ['unreal-cooked-texture-limit', 'unreal-cooked-texture-io', 'unreal-cooked-material-read', 'unreal-cooked-mesh-limit',

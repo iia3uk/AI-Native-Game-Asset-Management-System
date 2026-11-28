@@ -3,6 +3,7 @@ import { renameSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { exportRecipe, verifyExports } from '../../../conversion/cache.mjs'
+import { collisionTotalsMatch } from '../../../conversion/unreal/collision/cache.mjs'
 import { cookedMaterialRevision } from '../../../conversion/unreal/cooked-material/publish.mjs'
 import { publishLooseCooked } from '../../../conversion/unreal/loose-cooked/publish.mjs'
 import { publishSourceSoundCues } from '../../../conversion/unreal/source-audio/publish.mjs'
@@ -14,6 +15,7 @@ import { publishActorXAnimations } from '../../../conversion/unreal/viewer/actor
 import { createViewerDerivatives } from '../../../conversion/unreal/viewer/derivatives.mjs'
 import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
 import { unrealBridgeVersion } from '../../../engines/unreal/bridge/project.mjs'
+import { cookedCollisionRevision } from '../../../engines/unreal/collision/cooked.mjs'
 import { locateUnrealBridge } from '../../../engines/unreal/bridge/selection.mjs'
 import { looseMeshRevision } from '../../../engines/unreal/decoder/mesh-protocol.mjs'
 import { cookedAudioRevision } from '../../../engines/unreal/decoder/audio-protocol.mjs'
@@ -57,6 +59,8 @@ async function cachedResult(root, name, hash, source, recipe, signal) {
         data?.version !== version || data.source?.format !== source.format || data.source.sha256 !== hash ||
         data.recipe !== recipe || report?.method !== method || report.version !== version ||
         !Number.isSafeInteger(report.written) ||
+        !Array.isArray(data.assets) || !collisionTotalsMatch(data.assets.filter(asset => asset.storage === 'cooked'),
+          report.unrealCooked?.meshes?.collision) ||
         !await verifyExports(directory, await availablePackageAssets(directory, data.assets, signal), signal)) {
       throw new Error('Invalid cached Unreal outputs')
     }
@@ -90,6 +94,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     ['unreal-cooked-texture', looseTextureRevision, decoder ? cue4parseVersion : null],
     ['unreal-cooked-audio', cookedAudioRevision, decoder ? cue4parseVersion : null],
     ['unreal-cooked-mesh', looseMeshRevision, decoder ? cue4parseVersion : null],
+    ['unreal-cooked-collision', cookedCollisionRevision],
     viewer && ['ue-viewer', unrealViewerRevision, ...viewer.identity]]
   const recipe = exportRecipe(exportFormats, blender, engineRecipe)
   const root = await packageWorkspaceRoot(directory, 'unreal-loose-v' + version, { sourceRoot: source.protectedRoot })
@@ -167,7 +172,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
       ...(unrealCooked && { unrealCooked }),
       ...(soundCues.graphs || soundCues.incomplete || soundCues.issue ? { soundCues } : {}),
       limitations: ['unsupported-cooked-unreal-objects-preserved-as-source', 'unreal-dependency-coverage-is-partial',
-        'material-graphs-not-converted', 'source-collision-limited-to-supported-simple-ue4-shapes'] }
+        'material-graphs-not-converted', 'collision-limited-to-supported-simple-ue4-shapes'] }
     await Promise.all(Object.entries({ manifest: JSON.stringify(manifest, null, 2) + '\n', dependencies,
       'conversion-report': JSON.stringify(report, null, 2) + '\n' }).map(([key, value]) =>
       writeFile(join(output, key + '.json'), value, { flag: 'wx', signal })))

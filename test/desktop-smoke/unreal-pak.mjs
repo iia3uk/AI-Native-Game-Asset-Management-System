@@ -14,7 +14,7 @@ export async function verifyUnrealPak(webContents, waitFor, fixtures) {
     ...cookedMaterial({ name: 'Pak-Paint', parent: ['/Engine/EngineMaterials/DefaultMaterial'],
       textures: [{ parameter: 'BaseColor', value: '/Game/Pak-Tint' }] }),
     ...cookedTexture({ name: 'Pak-Tint', format: 'PF_G8', width: 2, height: 2, pixels: Buffer.from([5, 40, 80, 255]) }),
-    ...cookedStaticMesh({ name: 'Pak-CookedModel', external: true }),
+    ...cookedStaticMesh({ name: 'Pak-CookedModel', external: true, body: { pointOnly: true } }),
   ]))
   await webContents.executeJavaScript(`
     if (!document.querySelector('#index-dialog').open) document.querySelector('#index-mode').click()
@@ -39,7 +39,7 @@ export async function verifyUnrealPak(webContents, waitFor, fixtures) {
   await waitFor(`(${row})?.textContent.includes('Материалы из cooked-ресурсов · Готово 1') &&
     (${row})?.textContent.includes('Pak-Paint.material.json')`)
   await waitFor(`(${row})?.textContent.includes('Статические модели cooked UE4.27 · Моделей · 1 · LOD · 2') &&
-    (${row})?.textContent.includes('2 GLB')`)
+    (${row})?.textContent.includes('2 GLB') && (${row})?.textContent.includes('Форм коллизии · 4')`)
   await webContents.executeJavaScript(`Array.from((${row}).querySelectorAll('button'))
     .find(button => button.textContent === 'Показать в индексе').click()`)
   await waitFor("document.querySelector('#index-results').textContent.includes('Pak-Cabin.glb') && " +
@@ -51,4 +51,12 @@ export async function verifyUnrealPak(webContents, waitFor, fixtures) {
   await waitFor("document.querySelector('#index-name').textContent === 'Pak-CookedModel_Lod1.glb' && !document.querySelector('#index-preview').disabled")
   await webContents.executeJavaScript("document.querySelector('#index-preview').click()")
   await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('1 треугольник')")
+  await webContents.executeJavaScript("document.querySelector('#index-mode').click()")
+  await waitFor("document.querySelector('#index-dialog').open && document.querySelector('#index-results').getAttribute('aria-busy') === 'false' && " +
+    "document.querySelector('#index-results').textContent.includes('Pak-CookedModel-Collision.glb')")
+  await webContents.executeJavaScript(`Array.from(document.querySelectorAll('#index-results button'))
+    .find(button => button.textContent.startsWith('Pak-CookedModel-Collision.glb')).click()`)
+  await waitFor("document.querySelector('#index-name').textContent === 'Pak-CookedModel-Collision.glb' && !document.querySelector('#index-preview').disabled")
+  await webContents.executeJavaScript("document.querySelector('#index-preview').click()")
+  await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('4 меша')")
 }

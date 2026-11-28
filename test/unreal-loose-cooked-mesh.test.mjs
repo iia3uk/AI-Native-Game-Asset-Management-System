@@ -59,6 +59,32 @@ test('cooked mesh worker metadata can only address bounded numbered geometry and
   }
 })
 
+test('loose UE4 cooked collision is extracted without the render worker and reports an absent sidecar', async t => {
+  const root = await testDirectory(t)
+  const content = join(root, 'Content')
+  await mkdir(content)
+  const complete = cookedStaticMesh({ name: 'SM_Physics', body: {} })
+  const [headerOnly] = cookedStaticMesh({ name: 'SM_NoExports', body: {} })
+  await Promise.all([...complete, headerOnly].map(file => writeFile(join(content, file.path), file.content)))
+  const server = await startServer(root, { ASSET_VIEWER_CUE4PARSE: join(root, 'missing-worker'), ASSET_VIEWER_UE_VIEWER: '' })
+  try {
+    const { package: source } = await post(server, '/api/index/packages/inspect', { path: content })
+    const { job: queued } = await post(server, '/api/index/packages/import',
+      { path: content, hash: source.hash, mode: 'engineless' }, 202)
+    const job = await waitJob(server, queued.id)
+    assert.equal(job.status, 'completed', job.error)
+    const { directory, report } = job.result
+    assert.equal(report.unrealCooked.meshes.issue, 'unreal-loose-meshes-unavailable')
+    assert.deepEqual(report.unrealCooked.meshes.collision, { assets: 1, shapes: 4, glb: 1, incomplete: 1 })
+    const { assets } = await readJSON(join(directory, 'manifest.json'))
+    const valid = assets.find(entry => entry.sourcePath === 'SM_Physics.uasset')
+    const absent = assets.find(entry => entry.sourcePath === 'SM_NoExports.uasset')
+    assert.deepEqual(valid.exports.map(item => item.role), ['collision-shapes', 'collision-preview'])
+    assert.equal(absent.collisionIssue, 'unreal-cooked-collision-export-missing')
+    assert.deepEqual(absent.exports, [])
+  } finally { await server.close() }
+})
+
 test('versioned cooked StaticMesh import preserves two LODs and publishes a textured preview and verified export',
   { skip: process.env.ASSET_VIEWER_TEST_CUE4PARSE !== '1', timeout: 65_000 }, async t => {
     const root = await testDirectory(t)
@@ -69,8 +95,8 @@ test('versioned cooked StaticMesh import preserves two LODs and publishes a text
     await mkdir(destination)
     const texturePath = '/Game/Example/T_Paint'
     const fixtures = [
-      ...cookedStaticMesh({ name: 'SM_Panel', external: true }),
-      ...cookedStaticMesh({ name: 'SM_Damaged', invalidIndex: true, split: false }),
+      ...cookedStaticMesh({ name: 'SM_Panel', external: true, body: { pointOnly: true } }),
+      ...cookedStaticMesh({ name: 'SM_Damaged', invalidIndex: true, split: false, body: { wrongOwner: true } }),
       ...cookedStaticMesh({ name: 'SM_Unrelated', rootClass: '/Script/Other' }),
       ...cookedMaterial({ name: 'M_Base', split: false }),
       ...cookedMaterial({ name: 'MI_Panel', parent: ['/Game/Example/M_Base'],
@@ -89,15 +115,28 @@ test('versioned cooked StaticMesh import preserves two LODs and publishes a text
       const { report, directory, scanJobId } = job.result
       assert.deepEqual(report.unrealCooked.meshes, {
         meshes: 2, gltf: 3, texturedGltf: 3, missingLods: 1, skipped: 0, failed: 0,
+        collision: { assets: 1, shapes: 4, glb: 1, incomplete: 1 },
         derivatives: { fbx: nativeBlender ? 3 : 0, glb: 3 },
       })
       assert.equal((await waitJob(server, scanJobId)).status, 'completed')
       const manifest = await readJSON(join(directory, 'manifest.json'))
       const row = name => manifest.assets.find(asset => asset.sourcePath === 'Example/' + name + '.uasset')
       const panel = row('SM_Panel')
-      const products = panel.exports.filter(item => item.format === 'glb')
+      const products = panel.exports.filter(item => item.format === 'glb' && item.role === 'model')
       assert.deepEqual(products.map(item => [item.lod, item.metrics.triangles, item.metrics.textures]), [[0, 2, 1], [1, 1, 1]])
+      const collision = panel.exports.find(item => item.role === 'collision-shapes')
+      const previewCollision = panel.exports.find(item => item.role === 'collision-preview')
+      assert.equal(previewCollision.settingsPath, collision.path)
+      const physics = await readJSON(join(directory, collision.path))
+      assert.equal(physics.body, 'BodySetup_0')
+      assert.equal(physics.traceMode, 'CTF_UseSimpleAndComplex')
+      assert.deepEqual(physics.shapes.map(shape => shape.type), ['box', 'sphere', 'capsule', 'convex'])
+      assert.equal(physics.shapes[3].indexSource, 'convex-hull')
+      assert.deepEqual(physics.previewOmitted, [])
+      const collisionDocument = glb(await readFile(join(directory, previewCollision.path))).json
+      assert.deepEqual(collisionDocument.nodes.map(node => node.extras.collisionShape), ['box', 'sphere', 'capsule', 'convex'])
       assert.ok(row('SM_Damaged').issues.includes('unreal-cooked-mesh-lods-incomplete'))
+      assert.equal(row('SM_Damaged').collisionIssue, 'unreal-cooked-collision-layout')
       assert.deepEqual(row('SM_Damaged').exports.filter(item => item.format === 'glb').map(item => item.lod), [1])
       assert.equal(row('SM_Unrelated').exports.length, 0)
       const { json, bin } = glb(await readFile(join(directory, products[0].path)))
@@ -119,6 +158,7 @@ test('versioned cooked StaticMesh import preserves two LODs and publishes a text
       }
       const { assets: indexed } = await (await server.request('/api/index/search?kind=model&library=' + job.result.library.id)).json()
       assert.ok(indexed.some(item => item.path === products[0].path))
+      assert.ok(indexed.some(item => item.path === previewCollision.path))
       const asset = manifest.assets.indexOf(panel)
       const route = jobs + job.id
       const plan = await post(server, route + '/export-plan', { destination, asset })
@@ -129,7 +169,15 @@ test('versioned cooked StaticMesh import preserves two LODs and publishes a text
         'M_Base.uasset', 'MI_Panel.uasset', 'MI_Panel.uexp', 'SM_Panel.uasset', 'SM_Panel.uexp', 'SM_Panel.ubulk',
         'T_Paint.uasset', 'T_Paint.ubulk', 'T_Paint.uexp',
       ].map(name => 'Example/' + name).sort())
+      for (const artifact of [collision, previewCollision]) {
+        assert.deepEqual(await readFile(join(exported.directory, artifact.path)), await readFile(join(directory, artifact.path)))
+      }
       for (const file of fixtures) assert.deepEqual(await readFile(join(example, file.path)), file.content)
       assert.equal((await enqueue()).result.reused, true)
+      const previewPath = join(directory, previewCollision.path)
+      const changed = await readFile(previewPath)
+      changed[changed.length - 1] ^= 1
+      await writeFile(previewPath, changed)
+      assert.match((await enqueue()).error, /Сохранённый импорт Unreal повреждён/)
     } finally { await server.close() }
   })

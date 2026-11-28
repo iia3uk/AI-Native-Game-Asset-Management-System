@@ -5,6 +5,7 @@ import { boundedCookedBatch } from '../../../engines/unreal/decoder/budget.mjs'
 import { looseMeshResult, looseMeshRevision } from '../../../engines/unreal/decoder/mesh-protocol.mjs'
 import { cue4parseVersion, runUnrealDecoder, stageUnrealInputs } from '../../../engines/unreal/decoder/run.mjs'
 import { readBoundedText } from '../../../files/asset-files.mjs'
+import { publishCookedCollision } from '../collision/cooked.mjs'
 import { publishTexturedViewerModels } from '../viewer/bind-materials.mjs'
 import { cookedMeshMethod, publishCookedLod } from './geometry.mjs'
 
@@ -12,18 +13,25 @@ const format = 'loose-meshes'
 const converterVersion = cue4parseVersion + '-mesh-' + looseMeshRevision
 const classes = new Set(['StaticMesh'])
 const modelMethod = 'unreal-cooked-mesh-material-binding'
+const maxMeshes = 128
 
-async function candidates(inputs, output, signal) {
+async function candidates(inputs, { output, scratch, store, summary, signal }) {
   const found = []
+  let collisionCount = 0
   for (const input of inputs) {
     signal?.throwIfAborted()
-    if (input.asset.exports.some(item => item.role === 'model' && item.path && item.lod === 0)) continue
+    let table, mesh
     try {
-      const table = await readCookedTables(output, input.header, signal)
-      if (table?.topLevel(classes)) found.push(input)
+      table = await readCookedTables(output, input.header, signal)
+      mesh = table?.topLevel(classes)
     } catch (error) {
       if (!(error instanceof RangeError)) throw error
     }
+    if (!mesh) continue
+    if (collisionCount++ < maxMeshes) {
+      await publishCookedCollision(input, table, mesh, { output, scratch, store, summary, signal })
+    } else summary.issue = 'unreal-cooked-collision-budget'
+    if (!input.asset.exports.some(item => item.role === 'model' && item.path && item.lod === 0)) found.push(input)
   }
   return found
 }
@@ -49,22 +57,24 @@ async function materialDescriptions(records, output, resolve, models, signal) {
 }
 
 export async function publishCookedMeshes(inputs, { records, decoder, output, workspace, resolve, store, signal }) {
-  const found = await candidates(inputs, output, signal)
-  if (!found.length) return null
   const summary = { meshes: 0, gltf: 0, texturedGltf: 0, missingLods: 0, skipped: 0, failed: 0 }
   const models = []
   const resultStage = { models, summary, store }
-  if (!decoder) {
-    summary.issue = 'unreal-loose-meshes-unavailable'
-    return resultStage
-  }
-  const { selected, size, files, limited } = boundedCookedBatch(found, 128)
-  if (limited) summary.issue = 'unreal-loose-meshes-budget'
-  const count = selected.length
-  if (!count) return resultStage
   const scratch = join(workspace, format)
-  await mkdir(scratch)
   try {
+    const collision = { assets: 0, shapes: 0, glb: 0, incomplete: 0 }
+    const found = await candidates(inputs, { output, scratch: join(scratch, 'collision'), store, summary: collision, signal })
+    if (Object.values(collision).some(Boolean)) summary.collision = collision
+    if (!found.length) return summary.collision ? resultStage : null
+    if (!decoder) {
+      summary.issue = 'unreal-loose-meshes-unavailable'
+      return resultStage
+    }
+    const { selected, size, files, limited } = boundedCookedBatch(found, maxMeshes)
+    if (limited) summary.issue = 'unreal-loose-meshes-budget'
+    const count = selected.length
+    if (!count) return resultStage
+    await mkdir(scratch, { recursive: true })
     const issue = await stageUnrealInputs({ root: output, size, files, count }, format, scratch, false, signal)
     const result = !issue && looseMeshResult(await runUnrealDecoder(decoder, scratch, signal), count)
     if (result?.status !== 'completed') {

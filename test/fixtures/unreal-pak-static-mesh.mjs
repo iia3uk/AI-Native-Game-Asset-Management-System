@@ -2,10 +2,10 @@ import { cookedMaterial } from './unreal-cooked-material.mjs'
 import { cookedStaticMesh } from './unreal-cooked-static-mesh.mjs'
 import { cookedTexture } from './unreal-cooked-texture.mjs'
 
-export function pakStaticMesh(name) {
+export function pakStaticMesh(name, { body } = {}) {
   const texture = '/Game/Example/T_Panel'
   return [
-    ...cookedStaticMesh({ name, external: true }),
+    ...cookedStaticMesh({ name, external: true, body }),
     ...cookedMaterial({ name: 'M_Panel', split: false }),
     ...cookedMaterial({ name: 'MI_Panel', parent: ['/Game/Example/M_Panel'],
       textures: [{ parameter: 'BaseColor', value: texture }], streaming: [{ path: texture }] }),

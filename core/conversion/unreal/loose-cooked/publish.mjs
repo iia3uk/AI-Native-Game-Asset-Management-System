@@ -36,7 +36,7 @@ export async function publishLooseCooked({ records, source, decoder, output, wor
     inputs.some(({ asset }) => asset.exports.some(product => ['unreal-cooked-audio-io', 'unreal-cooked-audio-limit'].includes(product.issue)))
   const meshRetry = meshes?.summary.issue && !['unreal-loose-meshes-unavailable', 'unreal-loose-meshes-budget'].includes(meshes.summary.issue)
   const partial = Boolean(textureRetry || textures.failed || audioRetry || audio?.failed || materials.failed || materials.issue ||
-    meshRetry || meshes?.summary.failed)
+    meshRetry || meshes?.summary.failed || meshes?.summary.collision?.failed)
   return { report: { textures, materials, partial, ...(audio && Object.values(audio).some(Boolean) && { audio }),
     ...(meshes && { meshes: meshes.summary }) }, meshes }
 }

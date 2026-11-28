@@ -133,8 +133,8 @@ test('compressed Pak import publishes indexed cooked StaticMesh LODs and their e
     const root = await testDirectory(t)
     const path = join(root, 'CookedModels.pak')
     const destination = join(root, 'delivery')
-    const files = pakStaticMesh('SM_PakPanel')
-    const truncated = cookedStaticMesh({ name: 'SM_MissingBulk', external: true })
+    const files = pakStaticMesh('SM_PakPanel', { body: {} })
+    const truncated = cookedStaticMesh({ name: 'SM_MissingBulk', external: true, split: false, body: { badIndex: true } })
       .filter(file => !file.path.endsWith('.ubulk')).map(file => ({ ...file, path: 'Example/' + file.path }))
     const impostor = cookedStaticMesh({ name: 'SM_Impostor', rootClass: '/Script/Other' })
     const source = makeModernPak([...files, ...truncated, ...impostor].map(file => ({ ...file, compressed: true })))
@@ -148,6 +148,7 @@ test('compressed Pak import publishes indexed cooked StaticMesh LODs and their e
       const { directory, report, scanJobId, library } = imported.result
       assert.deepEqual(report.meshes, {
         meshes: 2, gltf: 3, texturedGltf: 3, missingLods: 1, skipped: 0, failed: 0, derivatives: { fbx: 0, glb: 3 },
+        collision: { assets: 2, shapes: 7, glb: 2, incomplete: 1 },
       })
       assert.equal((await waitForJob(server, scanJobId)).status, 'completed')
       const route = '/api/index/jobs/' + imported.id
@@ -155,9 +156,16 @@ test('compressed Pak import publishes indexed cooked StaticMesh LODs and their e
       const panel = entries.find(entry => entry.path.endsWith('/SM_PakPanel.uasset'))
       const incomplete = entries.find(entry => entry.path.endsWith('/SM_MissingBulk.uasset'))
       assert.ok(incomplete.issues.includes('unreal-cooked-mesh-lods-incomplete'))
-      assert.deepEqual(incomplete.exports.filter(item => item.format === 'glb').map(item => item.lod), [0])
+      assert.deepEqual(incomplete.exports.filter(item => item.format === 'glb' && item.role === 'model').map(item => item.lod), [0])
+      assert.equal(incomplete.collisionIssue, 'unreal-cooked-collision-partial')
       assert.equal(entries.find(entry => entry.path.endsWith('/SM_Impostor.uasset')).exports, undefined)
-      const models = panel.exports.filter(item => item.format === 'glb')
+      const models = panel.exports.filter(item => item.format === 'glb' && item.role === 'model')
+      const collision = panel.exports.find(item => item.role === 'collision-shapes')
+      const previewCollision = panel.exports.find(item => item.role === 'collision-preview')
+      assert.equal(previewCollision.settingsPath, collision.path)
+      const physics = JSON.parse(await readFile(join(directory, collision.path), 'utf8'))
+      assert.equal(physics.shapes[3].indices.length, 15)
+      assert.equal(physics.previewDegenerateTriangles, 1)
       assert.deepEqual(models.map(item => [item.lod, item.metrics.triangles, item.metrics.textures]), [[0, 2, 1], [1, 1, 1]])
       const pngProduct = entries.find(entry => entry.path.endsWith('/T_Panel.uasset')).exports[0]
       const pixels = await readFile(join(directory, pngProduct.path))
@@ -172,6 +180,7 @@ test('compressed Pak import publishes indexed cooked StaticMesh LODs and their e
       }
       const { assets: modelsIndexed } = await (await server.request('/api/index/search?kind=model&library=' + library.id)).json()
       assert.ok(models.every(product => modelsIndexed.some(item => item.path === product.path)))
+      assert.ok(modelsIndexed.some(item => item.path === previewCollision.path))
       const asset = entries.indexOf(panel)
       const plan = await (await server.post(route + '/export-plan', { destination, asset })).json()
       assert.equal(plan.dependencyStatus, 'partial')
@@ -184,6 +193,9 @@ test('compressed Pak import publishes indexed cooked StaticMesh LODs and their e
         files.map(file => 'Fixture/Content/' + file.path).sort())
       for (const file of files) {
         assert.deepEqual(await readFile(join(exported, 'Source', 'Fixture', 'Content', file.path)), file.content)
+      }
+      for (const artifact of [collision, previewCollision]) {
+        assert.deepEqual(await readFile(join(exported, artifact.path)), await readFile(join(directory, artifact.path)))
       }
       const cached = await queueImport(server, path, hash)
       assert.equal(cached.status, 'completed', cached.error)
@@ -206,7 +218,10 @@ test('compressed Pak import publishes indexed cooked StaticMesh LODs and their e
       const originalManifest = await readFile(manifestPath, 'utf8')
       const editedManifest = JSON.parse(originalManifest)
       const editedPanel = editedManifest.entries.find(entry => entry.path === panel.path)
-      editedPanel.exports = editedPanel.exports.filter(item => item.path !== models[0].path)
+      editedPanel.exports = editedPanel.exports.filter(item => item.path !== previewCollision.path)
+      await writeFile(manifestPath, JSON.stringify(editedManifest))
+      assert.match((await queueImport(server, path, hash)).error, /Кеш импорта Unreal Pak повреждён/)
+      editedPanel.exports = panel.exports.filter(item => item.path !== models[0].path)
       await writeFile(manifestPath, JSON.stringify(editedManifest))
       assert.match((await queueImport(server, path, hash)).error, /Кеш импорта Unreal Pak повреждён/)
       await writeFile(manifestPath, originalManifest)

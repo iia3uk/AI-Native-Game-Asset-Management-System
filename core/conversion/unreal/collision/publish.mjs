@@ -2,9 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { modelArtifact } from '../../artifacts.mjs'
 
-const method = 'unreal-source-collision'
-
-export async function publishSourceCollision({ asset, collision, scratch, stem, store, signal }) {
+export async function publishCollision({ asset, collision, scratch, stem, store, method, converterVersion, signal }) {
   const { buffer, previewOmitted, ...shapes } = collision
   const metadata = JSON.stringify({ version: 1, sourcePath: asset.sourcePath, axisOrder: 'Unreal XYZ',
     lengthUnit: 'cm', rotationUnit: 'degrees', quaternionOrder: 'xyzw', ...shapes, previewOmitted }, null, 2) + '\n'
@@ -12,7 +10,7 @@ export async function publishSourceCollision({ asset, collision, scratch, stem, 
   if (issue) return { issue }
   const metadataPath = join(scratch, 'collision.json')
   await writeFile(metadataPath, metadata, { signal })
-  const details = { method, status: 'converted', from: asset.output }
+  const details = { method, ...(converterVersion !== undefined && { converterVersion }), status: 'converted', from: asset.output }
   const description = await store.save('Metadata/' + asset.id + '/collision.json',
     { path: metadataPath, info: { size: Buffer.byteLength(metadata) } },
     { ...details, format: 'json', role: 'collision-shapes', shapes: shapes.shapes.length })
@@ -24,7 +22,7 @@ export async function publishSourceCollision({ asset, collision, scratch, stem, 
     const filename = Buffer.byteLength(name) <= 255 ? name : 'Collision.glb'
     await writeFile(join(scratch, 'Collision.glb'), buffer, { signal })
     const verified = await modelArtifact(scratch, 'Collision.glb', 'glb', signal)
-    if (!verified) return { description, issue: 'unreal-source-collision-preview' }
+    if (!verified) return { description, issue: method + '-preview' }
     preview = await store.save('Previews/' + asset.id + '/' + filename, verified,
       { ...details, format: 'glb', role: 'collision-preview', settingsPath: description.path })
     asset.exports.push(preview)
