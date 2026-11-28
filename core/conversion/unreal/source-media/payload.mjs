@@ -1,6 +1,6 @@
 import { unrealPackageSummary } from '../../../packages/unreal/package-summary.mjs'
 import { bulkMagic, inflateSourceChunks } from './chunks.mjs'
-import { embeddedPng, pngMagic } from './png.mjs'
+import { embeddedPng, pngMagic } from '../../../files/png-structure.mjs'
 import { embeddedWave, waveMagic } from './wave.mjs'
 
 const signature = Buffer.from('c1832a9e', 'hex')

@@ -69,6 +69,8 @@ Schema 9 adds the mode and requested Unity version to the job and to the cache r
 
 `core/engines/blender/batch.mjs` runs the bundled Python adapter for formats that need conversion. The adapter stages OBJ and glTF dependencies, imports each model once and uses the same scene for the requested derivatives. Legacy previews and package conversions share a serial Blender runner within the server process. The two features have separate scripts and timeout policies.
 
+`core/materials/unreal/packed-layout.mjs` identifies explicit ORM, RMA and MRA parameter roles. An exact texture reference and a matching mask or auxiliary slot in the UE Viewer dump are required. `core/conversion/unreal/viewer/packed-maps.mjs` publishes a distinct ORM image when the channels need reordering and reuses it across materials. The glTF binder uses the red channel for occlusion, green for roughness and blue for metallic. The import retains the original texture and glTF.
+
 The CLI and stdio MCP interfaces call `AssetIndex` directly. The MCP connector opens the database read-only and applies a library scope to every asset query.
 
 The Electron main process launches the loopback server in a UtilityProcess and injects an ephemeral authorization header in its dedicated browser session. The isolated renderer can choose a folder or resolve the path of a file selected or dropped in the importer. The desktop app prefers port 8178, permits a configured port, and can fall back to an ephemeral port. Indexed user metadata stays independent of the browser port.

@@ -49,7 +49,8 @@ export function bindViewerMaterials(document, lookup, modelPath) {
     const emissive = singleMap(description, 'emissive')
     const baseColorTexture = color && image(color)
     const emissiveTexture = emissive && image(emissive)
-    if (!baseColorTexture && !emissiveTexture) continue
+    const packedTexture = description.packedMap?.path && image(description.packedMap.path)
+    if (!baseColorTexture && !emissiveTexture && !packedTexture) continue
     const pbr = material.pbrMetallicRoughness
     if (baseColorTexture) {
       pbr.baseColorTexture = baseColorTexture
@@ -65,8 +66,12 @@ export function bindViewerMaterials(document, lookup, modelPath) {
         material.extensions = { ...material.extensions, [extension]: { emissiveStrength: strength } }
       }
     }
-    pbr.metallicFactor = scalar(description, 'metallic', 1) ?? 0
-    pbr.roughnessFactor = scalar(description, 'roughness', 1) ?? .5
+    if (packedTexture) {
+      material.occlusionTexture = packedTexture
+      pbr.metallicRoughnessTexture = packedTexture
+    }
+    pbr.metallicFactor = packedTexture ? 1 : (scalar(description, 'metallic', 1) ?? 0)
+    pbr.roughnessFactor = packedTexture ? 1 : (scalar(description, 'roughness', 1) ?? .5)
   }
   return { sources, images: images.size }
 }

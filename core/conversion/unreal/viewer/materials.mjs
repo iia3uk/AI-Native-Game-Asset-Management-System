@@ -3,7 +3,8 @@ import { join, posix } from 'node:path'
 import { fileInfo, readBoundedText } from '../../../files/asset-files.mjs'
 import { describeUnrealMaterial } from '../../../materials/unreal/describe.mjs'
 import { viewerMaterialProperties, viewerMaterialSlots } from '../../../materials/unreal/viewer-properties.mjs'
-import { embeddedPng } from '../source-media/png.mjs'
+import { embeddedPng } from '../../../files/png-structure.mjs'
+import { publishPackedMap } from './packed-maps.mjs'
 
 const MiB = 1024 ** 2
 const key = path => path.normalize('NFC').toLowerCase()
@@ -31,7 +32,8 @@ export async function publishViewerMaterials({ targets, parameters, store, recor
   const byName = Map.groupBy(targets, asset => key(posix.basename(asset.sourcePath).slice(0, -7)))
   const resolve = path => byPath.get(key(path))
   const descriptions = new Map()
-  const counts = { materialJson: 0, texturePng: 0, texturedGltf: 0 }
+  const cache = new Map()
+  const counts = { materialJson: 0, texturePng: 0, texturedGltf: 0, packedMaterials: 0, repackedMaps: 0 }
   for (const asset of targets) {
     signal?.throwIfAborted()
     if (await publishTexture(asset, decoded, store, version, signal)) counts.texturePng++
@@ -46,6 +48,8 @@ export async function publishViewerMaterials({ targets, parameters, store, recor
     if (!props || !slots) continue
     const properties = viewerMaterialProperties(props)
     const description = describeUnrealMaterial({ asset, properties, slots: viewerMaterialSlots(slots), resolve, version })
+    description.packedMap = await publishPackedMap(description, { cache, resolve, store,
+      workspace: parameters.workspace, version, signal, counts })
     const dir = 'Materials/' + asset.id + '/'
     const entries = [
       ['bindings.json', 'json', 'material', JSON.stringify(description, null, 2) + '\n'],
@@ -64,6 +68,8 @@ export async function publishViewerMaterials({ targets, parameters, store, recor
     if (!asset.exports.some(item => item.path === dir + 'bindings.json')) continue
     asset.status = 'converted'
     counts.materialJson++
+    if (description.packedMap?.path) counts.packedMaterials++
+    if (description.packedMap?.issue) asset.issues.push(description.packedMap.issue)
     descriptions.set(asset.id, description)
     const parents = properties.parent ? [{ path: properties.parent, type: 'unreal-material-parent' }] : []
     const textures = properties.textures.map(({ name, path }) => ({ path, parameter: name, type: 'unreal-material-texture' }))

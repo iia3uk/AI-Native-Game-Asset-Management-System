@@ -57,9 +57,15 @@ const packageIssues = {
   'unreal-material-preview-approximate': 'Текстуры восстановлены по параметрам. Отображение может отличаться от Unreal.',
   'unreal-material-model-size-limit': 'Модель с описанием материалов превышает лимит glTF',
   'unreal-material-conversion-fallback': 'Blender конвертировал модель без восстановленных текстур',
+  'unreal-packed-material-ambiguous': 'Указано несколько карт или схем упаковки каналов',
+  'unreal-packed-material-unconfirmed': 'Карта каналов не подтверждена параметрами Unreal',
+  'unreal-packed-material-missing': 'Карта каналов не найдена',
+  'unreal-packed-material-image-unsupported': 'Формат PNG карты каналов не поддерживается',
   'shader-graph-not-reconstructed': 'Граф шейдера не восстановлен',
   'texture-color-space-from-parameter-role': 'Цветовое пространство определено по роли параметра',
   'normal-orientation-and-packed-channels-unverified': 'Ориентация нормалей и упаковка каналов требуют проверки',
+  'normal-orientation-unverified': 'Ориентация карты нормалей требует проверки',
+  'unreal-packed-shader-operations-unverified': 'Операции шейдера над каналами карты не восстановлены',
   'unreal-version-unavailable': 'Запрошенная версия Unreal недоступна',
   'unreal-editor-version-unsupported': 'Версия Unreal Editor не поддерживается',
   'unreal-companion-orphan': 'Отсутствует связанный пакет Unreal',
@@ -71,6 +77,7 @@ const artifactRoles = {
   prefab: 'Префаб', component: 'Компонент', mesh: 'Меш',
   animation: 'Анимация', texture: 'Текстура', material: 'Материал', audio: 'Аудио',
   model: 'Модель', 'skeletal-model': 'Модель со скелетом', skeleton: 'Скелет', 'material-source': 'Свойства материала',
+  'preview-texture': 'Карта каналов для предпросмотра',
 }
 
 export const describeIssue = issue => packageIssues[issue] ?? issue
