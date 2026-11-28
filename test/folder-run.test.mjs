@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { cp, mkdir, readFile, readdir, realpath, symlink, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, readFile, readdir, realpath, rename, symlink, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
@@ -21,6 +21,7 @@ async function desktop(directory) {
   return {
     close: server.close,
     unauthorized: () => server.request(route),
+    get: path => server.request(path, { headers }),
     post: (path, input) => server.post(path, input, headers),
     async until(predicate) {
       const deadline = Date.now() + 8000
@@ -124,6 +125,95 @@ async function archive(input, name) {
   return realpath(await writeUnityFixture(join(input, name + '.unitypackage'),
     unityEntries(ids.model, 'Assets/' + name + '.obj', fixtureModel)))
 }
+
+test('shared folder runs index the only published files, reuse them after restart, and reject a replaced storage root',
+  { timeout: 24000 }, async t => {
+    const { root, input, output, database } = await folders(t)
+    const unity = await archive(input, 'Shared')
+    const native = join(input, 'Step.uasset')
+    const original = ue4SourceFixture('SoundWave', sourceWave())
+    await writeFile(native, original)
+    const body = { path: input, destination: output, shared: true }
+    const readIndex = async action => {
+      const index = await AssetIndex.open(database)
+      try { return action(index) }
+      finally { await index.close() }
+    }
+    const finished = run => readIndex(index => {
+      const state = index.folderRuns.claimCleanup(run.id, false)
+      assert.equal(state.phase, 'reviewing')
+      assert.equal(index.folderRuns.dismissCleanup(run.id), true)
+      return { jobs: state.items.map(item => index.jobs.get(item.jobId)), assets: index.search().assets }
+    })
+    const hash = createHash('sha256').update(await readFile(unity)).digest('hex')
+    const held = await readIndex(index => index.jobs.pauseImport(index.jobs.enqueueImport(unity, hash).id))
+    const first = await desktop(root)
+    let storagePath, exports, model, unityJob
+    try {
+      assert.equal((await first.post(route, { path: input, shared: true })).status, 400)
+      assert.equal((await first.post(route, body)).status, 202)
+      const run = await first.until(run => run.phase !== 'running')
+      assert.equal(run.phase, 'cleanup', JSON.stringify(run))
+      assert.equal(run.shared, true)
+      assert.equal(run.exported, 2)
+      assert.equal(run.reused, 0)
+      storagePath = run.storagePath
+      assert.deepEqual(await readdir(output), [basename(storagePath)])
+      const { jobs, assets } = await finished(run)
+      unityJob = jobs.find(job => job.packageName === basename(unity))
+      const unrealJob = jobs.find(job => job.result.report.packageFormat.startsWith('unreal-'))
+      assert.notEqual(unityJob.id, held.id)
+      assert.equal(await readIndex(index => index.jobs.get(held.id).status), 'paused')
+      assert.equal(unityJob.outputRootId, unrealJob.outputRootId)
+      assert.equal(unityJob.result.storage.path, storagePath)
+      assert.equal(unrealJob.result.storage.path, storagePath)
+      assert.equal(unityJob.result.storage.ino, String((await lstat(storagePath, { bigint: true })).ino))
+      assert.equal(unityJob.result.storage.destination.ino, String((await lstat(output, { bigint: true })).ino))
+      assert.deepEqual(await readdir(join(root, 'data', 'imports')).catch(error => {
+        assert.equal(error.code, 'ENOENT')
+        return []
+      }), [])
+      assert.equal(await readFile(join(unityJob.result.directory, 'Source', 'Assets', 'Shared.obj'), 'utf8'), fixtureModel)
+      assert.deepEqual(await readFile(join(unrealJob.result.directory, 'Audio', 'Step.wav')), sourceWave())
+      assert.deepEqual(await readFile(native), original)
+      exports = jobs.map(job => job.result.directory)
+      model = assets.find(asset => asset.ext === 'obj')
+      const opened = await first.post('/api/index/assets/' + model.id + '/open', {})
+      assert.equal(opened.status, 200, await opened.clone().text())
+      const preview = (await opened.json()).folder.resources.find(file => file.path === model.path).url
+      assert.equal(await (await first.get(preview)).text(), fixtureModel)
+
+      const manifest = '/api/index/jobs/' + unityJob.id + '/manifest'
+      assert.equal((await first.get(manifest)).status, 200)
+      const extra = join(root, 'manual-export')
+      await mkdir(extra)
+      const plan = await first.post('/api/index/jobs/' + unityJob.id + '/export-plan', { destination: extra })
+      assert.equal(plan.status, 200, await plan.clone().text())
+      assert.ok((await plan.json()).paths.includes('Source/Assets/Shared.obj'))
+
+      const offline = storagePath + '-offline'
+      await rename(storagePath, offline)
+      await cp(offline, storagePath, { recursive: true, errorOnExist: true })
+      assert.equal((await first.get(preview)).status, 404)
+      assert.equal((await first.post('/api/index/assets/' + model.id + '/open', {})).status, 404)
+      assert.equal((await first.get(manifest)).status, 404)
+      await rename(storagePath, join(root, 'replacement'))
+      await rename(offline, storagePath)
+      assert.equal(await (await first.get(preview)).text(), fixtureModel)
+    } finally { await first.close() }
+
+    const repeat = await desktop(root)
+    try {
+      assert.equal((await repeat.post(route, body)).status, 202)
+      const run = await repeat.until(run => run.phase !== 'running')
+      assert.equal(run.phase, 'cleanup', JSON.stringify(run))
+      assert.equal(run.reused, 2)
+      const { jobs, assets } = await finished(run)
+      assert.deepEqual(jobs.map(job => job.result.directory), exports)
+      assert.equal(assets.find(asset => asset.ext === 'obj').id, model.id)
+      assert.deepEqual(await readdir(output), [basename(storagePath)])
+    } finally { await repeat.close() }
+  })
 
 function checkpointBeforeExportCompletion(database) {
   const db = new DatabaseSync(database)

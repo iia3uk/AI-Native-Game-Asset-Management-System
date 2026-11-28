@@ -3,6 +3,8 @@ import { IndexConflictError, IndexInputError } from '../../index/index-errors.mj
 import { inspectPackage } from '../dispatch.mjs'
 import { folderPackageOptions } from '../discovery/recipe.mjs'
 import { exportPackageResult } from '../export/publish.mjs'
+import { readPackageResult } from '../manifest-page.mjs'
+import { openSharedStorage, sameStorageDirectory } from '../storage/shared.mjs'
 import { discoverFolderRun, folderRunSource } from './source.mjs'
 
 function message(error) {
@@ -33,6 +35,8 @@ export class FolderRunWorker {
 
   #timeout() { return AbortSignal.any([this.signal, AbortSignal.timeout(120_000)]) }
 
+  #ignored() { return [...this.ignoredPaths, ...this.index.packageStorage.paths()] }
+
   async #job(id, wake) {
     for (;;) {
       this.signal.throwIfAborted()
@@ -49,10 +53,14 @@ export class FolderRunWorker {
     if (!item.jobId) {
       run.step = 'import'
       folderRuns.save(run)
-      const source = await folderRunSource(run.source, item, this.ignoredPaths)
+      const source = await folderRunSource(run.source, item, this.#ignored())
       const report = await inspectPackage(source, { signal: this.#timeout() })
       this.signal.throwIfAborted()
       const options = folderPackageOptions(report.format, run.options)
+      if (run.options.shared) {
+        const storage = await openSharedStorage(this.index.packageStorage, run.destination)
+        options.outputRootId = storage.id
+      }
       jobs.enqueueImport(source.path, report.hash, options.formats, options, job => {
         item.jobId = job.id
         folderRuns.save(run)
@@ -69,7 +77,14 @@ export class FolderRunWorker {
     const scan = await this.#job(job.result?.scanJobId ?? '', this.wakeScan)
     if (scan?.status === 'cancelled') return 'cancelled'
     if (scan?.status !== 'completed') throw new IndexConflictError(scan?.error || 'Индексация не завершена.')
-    if (run.destination) {
+    if (run.options.shared) {
+      const storage = job.result?.storage
+      const result = sameStorageDirectory(storage?.destination, run.destination) && await readPackageResult(this.importDirectory, job)
+      if (!result) throw new IndexConflictError('Результат в общей папке недоступен.')
+      item.directory = result.directory
+      item.sharedReused = job.result.reused === true
+      run.storagePath = storage.path
+    } else if (run.destination) {
       run.step = 'export'
       folderRuns.save(run)
       const result = await exportPackageResult(this.importDirectory,
@@ -98,7 +113,7 @@ export class FolderRunWorker {
     const store = this.index.folderRuns
     try {
       if (run.step === 'discover') {
-        run.items = await discoverFolderRun(run.source, this.ignoredPaths, this.#timeout())
+        run.items = await discoverFolderRun(run.source, this.#ignored(), this.#timeout())
         this.signal.throwIfAborted()
         run.step = 'import'
         store.save(run)

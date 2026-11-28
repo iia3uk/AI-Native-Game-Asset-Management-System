@@ -1,5 +1,6 @@
 import { packageWatch, packageWatchByFormat, packageWatchSerialized } from './schema/package-watch.mjs'
 import { folderRunsSchema } from './schema/folder-runs.mjs'
+import { packageOutputRoots } from './schema/package-storage.mjs'
 
 const initial = `
   CREATE TABLE libraries (
@@ -193,7 +194,7 @@ const packageImportPause = `
     CHECK (pause_requested IN (0, 1) AND (type = 'package-import' OR pause_requested = 0));
 `
 
-export const schemaVersion = 14
+export const schemaVersion = 15
 
 export function transaction(db, write) {
   db.exec('BEGIN IMMEDIATE')
@@ -228,6 +229,7 @@ export function migrate(db) {
     if (lockedVersion < 12) db.exec(packageWatchSerialized)
     if (lockedVersion < 13) db.exec(packageImportPause)
     if (lockedVersion < 14) db.exec(folderRunsSchema)
+    if (lockedVersion < 15) db.exec(packageOutputRoots)
     db.exec('PRAGMA user_version = ' + schemaVersion)
   })
 }

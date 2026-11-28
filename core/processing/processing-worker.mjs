@@ -6,6 +6,7 @@ import { ScanChangeError } from '../files/asset-files.mjs'
 import { thumbnailCurrent } from '../thumbnails/thumbnail-input.mjs'
 import { queuedPackageSource, watchedPackageSource } from '../packages/source.mjs'
 import { stagePackage } from '../packages/dispatch.mjs'
+import { sharedDirectoryIdentity, verifySharedPublication, verifySharedStorage } from '../packages/storage/shared.mjs'
 
 const timeouts = { scan: 300_000, thumbnail: 25_000, 'package-import': 600_000 }
 const operation = { scan: 'сканирования библиотеки', thumbnail: 'создания миниатюры', 'package-import': 'импорта пакета' }
@@ -109,14 +110,19 @@ export class ProcessingWorker {
   async #import(job, signal, onProgress) {
     const watched = this.index.jobs.watchedImportSource(job.id)
     const source = watched ? await watchedPackageSource(watched) : await queuedPackageSource(this.index.jobs.importSource(job.id))
-    await stagePackage(this.importDirectory, source, job, {
+    const storage = job.outputRootId ? this.index.packageStorage.get(job.outputRootId) : null
+    const directory = job.outputRootId ? verifySharedStorage(storage) : this.importDirectory
+    await stagePackage(directory, source, job, {
       signal, onProgress, expectedFormat: job.trigger === 'watch' ? watched?.format : undefined,
       publish: (result, move, hasAssets) => {
         signal.throwIfAborted()
         return this.index.jobs.completeImport(job.id, this.#id, () => {
+          const root = storage && verifySharedPublication(storage, result)
           move()
-          const library = hasAssets ? this.index.registerLibrary(result.source, source.name) : null
-          return { library, directory: result.directory, report: result.report, reused: result.reused }
+          const scope = storage && { id: storage.id, ...sharedDirectoryIdentity(root, result.source) }
+          const library = hasAssets ? this.index.registerLibrary(result.source, source.name, scope) : null
+          return { library, directory: result.directory, report: result.report, reused: result.reused,
+            ...(storage && { storage, directoryIdentity: sharedDirectoryIdentity(root, result.directory) }) }
         })
       },
     })

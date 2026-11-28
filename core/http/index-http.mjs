@@ -14,6 +14,7 @@ import { engineInventory } from '../engines/inventory.mjs'
 import { FolderRunWorker } from '../packages/folder-processing/runner.mjs'
 import { prepareFolderRun } from '../packages/folder-processing/source.mjs'
 import { folderRunSummary } from '../packages/folder-processing/state.mjs'
+import { sharedDirectoryAvailable } from '../packages/storage/shared.mjs'
 
 export function indexRoutes({ database, thumbnailDirectory, importDirectory, ignoredWatchPaths = [], exportProtectedRoots = [],
   json, body, allowsWrite, openFolder, invalidateFolder, desktop = false }) {
@@ -87,8 +88,9 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
         if (method === 'GET' && !id && !action) return json(response, 200, { run: folderRunSummary(index.folderRuns.get(), index.jobs) })
         if (method === 'POST' && !id && !action) {
           const input = await body(request).catch(() => null)
-          const roots = [...exportProtectedRoots, ...index.libraries().map(library => library.root)]
-          const run = index.folderRuns.start(await prepareFolderRun(input, roots, ignoredWatchPaths))
+          const ignored = [...ignoredWatchPaths, ...index.packageStorage.paths()]
+          const roots = [...exportProtectedRoots, ...ignored, ...index.libraries().map(library => library.root)]
+          const run = index.folderRuns.start(await prepareFolderRun(input, roots, ignored))
           folderWorker.wake()
           return json(response, 202, { run: folderRunSummary(run, index.jobs) })
         }
@@ -116,7 +118,7 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
       if (method === 'POST' && resource === 'libraries' && ['watch', 'package-watch'].includes(action)) {
         const input = await body(request).catch(() => null)
         const library = action === 'watch' ? index.setWatching(id, input?.enabled) :
-          index.setPackageWatching(id, input?.enabled, ignoredWatchPaths, input?.format)
+          index.setPackageWatching(id, input?.enabled, [...ignoredWatchPaths, ...index.packageStorage.paths()], input?.format)
         watcher?.refresh()
         return json(response, 200, { library })
       }
@@ -212,10 +214,11 @@ export function indexRoutes({ database, thumbnailDirectory, importDirectory, ign
       }
       if (method === 'POST' && resource === 'assets' && id && action === 'open') {
         const asset = index.asset(id)
-        if (!asset || asset.missingSince || !await fileInfo(asset.root, asset.path)) {
+        const scope = asset && index.libraryStorage(asset.libraryId)
+        if (!asset || asset.missingSince || (scope && !sharedDirectoryAvailable(scope)) || !await fileInfo(asset.root, asset.path)) {
           return json(response, 404, { error: 'Исходный файл недоступен.' })
         }
-        const folder = await openFolder(asset)
+        const folder = await openFolder(asset, scope)
         const file = folder.files.get(asset.path)
         if (file) {
           const pack = [...folder.packs.values()].find(pack => pack.files.includes(file))

@@ -13,10 +13,15 @@ export async function prepareFolderRun(input, protectedRoots, ignoredPaths) {
   if (ignoredPaths.some(root => inside(root, path))) throw new IndexInputError('Выберите папку за пределами служебных папок Asset Viewer.')
   const { dev, ino } = await stat(path)
   const source = { path, dev, ino }
-  const destination = input.destination ? await exportDestination(input.destination, [...protectedRoots, path]) : null
-  const { compact = false } = input
+  const { compact = false, shared = false } = input
+  const destination = input.destination
+    ? await exportDestination(input.destination, [...protectedRoots, path], { exactIdentity: shared === true })
+    : null
   if (typeof compact !== 'boolean' || (compact && !destination)) {
     throw new IndexInputError('Укажите общую папку экспорта для удаления служебных копий.')
+  }
+  if (typeof shared !== 'boolean' || (shared && !destination)) {
+    throw new IndexInputError('Укажите общую папку для хранения файлов библиотеки.')
   }
   const { mode } = unityImportOptions(input.mode)
   const formats = packageExportFormats(input.formats).split(',').filter(Boolean)
@@ -24,7 +29,7 @@ export async function prepareFolderRun(input, protectedRoots, ignoredPaths) {
   if ([unityVersion, unrealVersion].some(version => typeof version !== 'string' || version.length > 32)) {
     throw new IndexInputError('Укажите версию редактора.')
   }
-  return { source, destination, options: { mode, formats, unityVersion, unrealVersion, compact } }
+  return { source, destination, options: { mode, formats, unityVersion, unrealVersion, compact, shared } }
 }
 
 async function verifySource({ path, dev, ino }) {

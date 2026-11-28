@@ -6,7 +6,7 @@ import { inflateSync } from 'node:zlib'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { AssetIndex } from '../core/index/asset-index.mjs'
-import { removePackageWatchSchema } from './fixtures/index-schema.mjs'
+import { removePackageWatchSchema, removePackageOutputStorageSchema } from './fixtures/index-schema.mjs'
 import { ThumbnailCache } from '../core/thumbnails/thumbnail-cache.mjs'
 import { generateFixtures } from '../scripts/generate-fixtures.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
@@ -166,6 +166,7 @@ test('schema 5 scan records survive migration and a queued thumbnail resumes aft
   await index.close()
   const raw = new DatabaseSync(database)
   try {
+    removePackageOutputStorageSchema(raw)
     removePackageWatchSchema(raw)
     raw.exec(`CREATE TABLE schema5_jobs AS SELECT id, library_id, type, status, priority, created_at, started_at,
       finished_at, attempts, progress, result, error, worker, lease_until, cancel_requested, trigger FROM processing_jobs;
@@ -176,7 +177,7 @@ test('schema 5 scan records survive migration and a queued thumbnail resumes aft
   index = await AssetIndex.open(database)
   let queued
   try {
-    assert.equal(index.integrity().schemaVersion, 14)
+    assert.equal(index.integrity().schemaVersion, 15)
     assert.equal(index.jobs.get(scan.id).createdAt, scan.createdAt)
     assert.equal(index.asset(model.id).note, 'Keep reviewed model')
     queued = index.jobs.enqueueThumbnail(index.thumbnailSource(model.id))
@@ -204,6 +205,7 @@ test('schema 6 migration preserves pending thumbnails and their source identity'
   await index.close()
   const raw = new DatabaseSync(database)
   try {
+    removePackageOutputStorageSchema(raw)
     removePackageWatchSchema(raw)
     raw.exec(`CREATE TABLE schema6_jobs AS SELECT id, library_id, type, status, priority, created_at, started_at,
       finished_at, attempts, progress, result, error, worker, lease_until, cancel_requested, trigger, asset_id, source_key

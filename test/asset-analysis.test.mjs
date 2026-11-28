@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { AssetIndex } from '../core/index/asset-index.mjs'
-import { removePackageImportPauseSchema, removePackageWatchSchema } from './fixtures/index-schema.mjs'
+import { removePackageImportPauseSchema, removePackageWatchSchema, removePackageOutputStorageSchema } from './fixtures/index-schema.mjs'
 import { generateFixtures } from '../scripts/generate-fixtures.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 
@@ -184,6 +184,7 @@ test('schema 3 migration backfills analysis on scan without changing asset histo
   const raw = new DatabaseSync(database)
   let index
   try {
+    removePackageOutputStorageSchema(raw)
     removePackageWatchSchema(raw)
     removePackageImportPauseSchema(raw)
     raw.exec('DROP TABLE quality_profiles; DROP TABLE asset_dependencies; DROP TABLE asset_analysis; PRAGMA user_version = 3')

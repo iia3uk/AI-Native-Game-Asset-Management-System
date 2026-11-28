@@ -11,6 +11,7 @@ import { checkedPath, fileInfo, readBoundedText } from './core/files/asset-files
 import { dataPaths } from './core/config/data-paths.mjs'
 import { generateFixtures } from './scripts/generate-fixtures.mjs'
 import { indexRoutes } from './core/http/index-http.mjs'
+import { sharedDirectoryAvailable } from './core/packages/storage/shared.mjs'
 
 const project = fileURLToPath(new URL('.', import.meta.url))
 try {
@@ -182,14 +183,17 @@ function invalidateIndexedFolder(id) {
   void entry?.folder.then(folder => folders.delete(folder.id), () => undefined)
 }
 
-async function openIndexedFolder(asset) {
+async function openIndexedFolder(asset, scope) {
   const current = indexedFolders.get(asset.libraryId)
   if (current?.generation === asset.generation) {
     const folder = await current.folder
     if (folder.files.has(asset.path)) return folder
   }
   invalidateIndexedFolder(asset.libraryId)
-  const next = { generation: asset.generation, folder: openFolder(asset.root, { canonical: true }) }
+  const next = { generation: asset.generation, folder: openFolder(asset.root, { canonical: true }).then(folder => {
+    if (scope) folder.storageScope = scope
+    return folder
+  }) }
   indexedFolders.set(asset.libraryId, next)
   try {
     return await next.folder
@@ -197,6 +201,12 @@ async function openIndexedFolder(asset) {
     if (indexedFolders.get(asset.libraryId) === next) indexedFolders.delete(asset.libraryId)
     throw error
   }
+}
+
+function availableFolder(id) {
+  const folder = folders.get(id)
+  if (!folder?.storageScope || sharedDirectoryAvailable(folder.storageScope)) return folder
+  return null
 }
 
 async function openDemo() {
@@ -223,7 +233,7 @@ async function handleFolder(request, response, path) {
     }
   }
   const [, , , id, route, fileId] = path.split('/')
-  const folder = folders.get(id)
+  const folder = availableFolder(id)
   if (!folder) return json(response, 404, { error: 'Папка закрыта. Выберите её снова.' })
   if (request.method === 'GET' && !route) return json(response, 200, folder.info)
   if (request.method === 'GET' && route === 'group') {
@@ -360,12 +370,12 @@ const server = createServer(async (request, response) => {
       await sendFile(request, response, await safeFile(rhino, path.slice(17)))
     } else if (path.startsWith('/local-files/')) {
       const [, , id, ...pieces] = path.split('/')
-      const folder = folders.get(id)
+      const folder = availableFolder(id)
       const file = folder?.files.get(pieces.join('/'))
       await sendFile(request, response, file && await safeFile(folder.root, file.path), true)
     } else if (path.startsWith('/local-previews/')) {
       const [, , id, file] = path.split('/')
-      const preview = await folders.get(id)?.previews.get(file)?.catch(() => null)
+      const preview = await availableFolder(id)?.previews.get(file)?.catch(() => null)
       await sendFile(request, response, preview && await safeFile(dirname(preview), preview), true)
     } else {
       await sendFile(request, response, await safeFile(publicPath, path === '/' ? 'index.html' : path.slice(1)))

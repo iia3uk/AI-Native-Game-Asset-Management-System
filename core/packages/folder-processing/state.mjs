@@ -51,8 +51,9 @@ export function folderRunSummary(run, jobs) {
   const failures = items.filter(item => item.error)
   const exports = items.filter(item => item.directory).map(item => item.directory)
   return { id, phase, step, source: source.path, destination: destination?.path, compact: run.options?.compact === true,
+    shared: run.options?.shared === true, storagePath: run.storagePath,
     position, total: items.length,
-    exported: exports.length, reused: items.filter(item => item.directory && item.exportJobId).length,
+    exported: exports.length, reused: items.filter(item => item.directory && (item.exportJobId || item.sharedReused)).length,
     firstExport: exports[0], failureCount: failures.length,
     firstFailure: failures[0] && { path: failures[0].path, error: failures[0].error },
     status: active?.pauseRequested && active.status === 'running' ? 'pausing' : active?.status,

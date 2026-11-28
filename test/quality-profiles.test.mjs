@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { AssetIndex } from '../core/index/asset-index.mjs'
-import { removePackageImportPauseSchema, removePackageWatchSchema } from './fixtures/index-schema.mjs'
+import { removePackageImportPauseSchema, removePackageWatchSchema, removePackageOutputStorageSchema } from './fixtures/index-schema.mjs'
 import { validateQuality } from '../core/analysis/quality-profiles.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 
@@ -124,6 +124,7 @@ test('schema 4 migration retains existing analysis and profile edits survive bac
 
   const raw = new DatabaseSync(database)
   try {
+    removePackageOutputStorageSchema(raw)
     removePackageWatchSchema(raw)
     removePackageImportPauseSchema(raw)
     raw.exec('DROP TABLE quality_profiles; PRAGMA user_version = 4;')
@@ -132,7 +133,7 @@ test('schema 4 migration retains existing analysis and profile edits survive bac
 
   index = await AssetIndex.open(database)
   try {
-    assert.equal(index.integrity().schemaVersion, 14)
+    assert.equal(index.integrity().schemaVersion, 15)
     assert.deepEqual(index.inspect(asset.id), before)
     const profile = index.qualityProfiles.update('custom-project', { revision: 0, limits: { maxTriangles: 1 } })
     const snapshot = await index.backup(join(directory, 'backups'))

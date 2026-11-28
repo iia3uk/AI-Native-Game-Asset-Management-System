@@ -34,7 +34,7 @@ export async function planPackageCleanup({ imports, protectedRoots, job, source,
       files.push({ original, root: candidate.root, backups, output: result.directory, nativeCopy })
     }
   }
-  return { engine, source, output: result.directory, files,
+  return { engine, source, output: result.directory, storageRoot: result.root, files,
     bytes: files.reduce((sum, file) => sum + file.original.info.size, 0) }
 }
 

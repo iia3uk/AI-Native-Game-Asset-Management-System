@@ -17,7 +17,7 @@ const dataFolders = new Set(['Source', ...exportFolders])
 const changed = () => new IndexConflictError('Файлы или отчёт импорта изменились. Проверьте результат импорта.')
 const json = data => JSON.stringify(data, null, 2) + '\n'
 
-export async function exportDestination(input, protectedRoots) {
+export async function exportDestination(input, protectedRoots, { exactIdentity = false } = {}) {
   if (typeof input !== 'string' || input.length > 4096 || /[\x00-\x1f]/.test(input)) {
     throw new IndexInputError('Выберите существующую папку для экспорта.')
   }
@@ -26,6 +26,10 @@ export async function exportDestination(input, protectedRoots) {
   const canonicalRoots = await Promise.all(protectedRoots.filter(Boolean).map(root => realpath(root).catch(() => root)))
   if (canonicalRoots.some(root => inside(root, path))) {
     throw new IndexInputError('Выберите папку вне подключённых библиотек и каталогов данных приложения.')
+  }
+  if (exactIdentity) {
+    const { dev, ino } = await stat(path, { bigint: true })
+    return { path, dev: String(dev), ino: String(ino) }
   }
   const { dev, ino } = await stat(path)
   return { path, dev, ino }

@@ -7,7 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { test } from 'node:test'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { AssetIndex } from '../core/index/asset-index.mjs'
-import { removePackageImportPauseSchema, removePackageWatchSchema } from './fixtures/index-schema.mjs'
+import { removePackageImportPauseSchema, removePackageWatchSchema, removePackageOutputStorageSchema } from './fixtures/index-schema.mjs'
 import { generateFixtures } from '../scripts/generate-fixtures.mjs'
 import { archiveBytes, fixtureTexture, ids, unityEntries } from './fixtures/unitypackage.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
@@ -91,6 +91,7 @@ test('schema 7 pending imports survive the migration and format choices distingu
   await index.close()
   const raw = new DatabaseSync(database)
   try {
+    removePackageOutputStorageSchema(raw)
     removePackageWatchSchema(raw)
     removePackageImportPauseSchema(raw)
     raw.exec(`DROP INDEX one_active_import_per_package;

@@ -14,6 +14,8 @@ import { maxPakInput } from '../packages/unreal/pak/limits.mjs'
 import { watchedFormatByExtension, watchedPackageRecipe } from '../packages/watch-formats.mjs'
 import { watchSerializedSource } from '../packages/unity/bundle/watch-source.mjs'
 import { FolderRuns } from '../packages/folder-processing/state.mjs'
+import { PackageStorage } from '../packages/storage/registry.mjs'
+import { sharedDirectoryAvailable } from '../packages/storage/shared.mjs'
 
 const readable = 'a.id, a.library_id AS libraryId, l.name AS library, a.path, a.name, a.ext, a.kind,' +
   ' a.size, a.mtime, a.hash, a.first_seen AS firstSeen, a.missing_since AS missingSince,' +
@@ -78,6 +80,7 @@ export class AssetIndex {
       }
       this.jobs = new ProcessingJobs(this.#db)
       this.folderRuns = new FolderRuns(this.#db)
+      this.packageStorage = new PackageStorage(this.#db)
       this.qualityProfiles = new QualityProfiles(this.#db)
     } catch (error) {
       this.#db.close()
@@ -96,12 +99,23 @@ export class AssetIndex {
   }
 
   // Used inside the package publication transaction, after committing its verified root to disk.
-  registerLibrary(root, name) {
+  registerLibrary(root, name, scope) {
     this.#db.prepare(`
-      INSERT INTO libraries (id, root, root_key, name, created_at) VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(root_key) DO UPDATE SET enabled = 1, generation = generation + 1 WHERE enabled = 0
-    `).run(randomUUID(), root, pathKey(root), name, timestamp())
+      INSERT INTO libraries (id, root, root_key, name, created_at, output_root_id, output_dev, output_ino)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(root_key) DO UPDATE SET enabled = 1, generation = generation + 1,
+        output_root_id = COALESCE(excluded.output_root_id, output_root_id),
+        output_dev = COALESCE(excluded.output_dev, output_dev), output_ino = COALESCE(excluded.output_ino, output_ino)
+      WHERE enabled = 0 OR (excluded.output_root_id IS NOT NULL AND
+        (output_root_id IS NOT excluded.output_root_id OR output_dev IS NOT excluded.output_dev OR output_ino IS NOT excluded.output_ino))
+    `).run(randomUUID(), root, pathKey(root), name, timestamp(), scope?.id ?? null, scope?.dev ?? null, scope?.ino ?? null)
     return this.#db.prepare('SELECT id, root, name FROM libraries WHERE root_key = ?').get(pathKey(root))
+  }
+
+  libraryStorage(id) {
+    const row = this.#db.prepare('SELECT root, output_root_id, output_dev, output_ino FROM libraries WHERE id = ?').get(id)
+    return row?.output_root_id && { storage: this.packageStorage.get(row.output_root_id),
+      directory: { path: row.root, dev: row.output_dev, ino: row.output_ino } }
   }
 
   libraries() {
@@ -191,6 +205,11 @@ export class AssetIndex {
   async #scan(id, signal, onProgress, beforeCommit, onCommit) {
     const library = this.#db.prepare('SELECT * FROM libraries WHERE id = ? AND enabled = 1').get(id)
     if (!library) throw new IndexInputError('Библиотека не подключена.')
+    const scope = this.libraryStorage(id)
+    const verifyScope = () => {
+      if (scope && !sharedDirectoryAvailable(scope)) throw new IndexInputError('Общая папка библиотеки недоступна.')
+    }
+    verifyScope()
     const previous = this.#db.prepare(`
       SELECT a.*, p.processor_version, s.source_key AS serialized_key, s.resources AS serialized_resources
       FROM assets a LEFT JOIN asset_analysis p ON p.asset_id = a.id
@@ -232,6 +251,7 @@ export class AssetIndex {
     return transaction(this.#db, () => {
       beforeCommit?.()
       signal?.throwIfAborted()
+      verifyScope()
       const now = timestamp()
       const { changes } = this.#db.prepare(`
         UPDATE libraries SET indexed_at = ?, generation = generation + 1
@@ -369,6 +389,8 @@ export class AssetIndex {
       a.mtime, a.ctime, a.missing_since AS missingSince, l.root FROM assets a JOIN libraries l ON a.library_id = l.id
       WHERE a.id = ? AND l.enabled = 1`).get(id)
     if (!asset || (libraryIds !== undefined && !libraryIds.includes(asset.libraryId))) return null
+    const scope = this.libraryStorage(asset.libraryId)
+    if (scope && !sharedDirectoryAvailable(scope)) return null
     const dependencies = asset.ext === 'obj' ? [] : this.#db.prepare(`
       SELECT d.location, d.path AS reference, b.path, b.size, b.hash, b.mtime, b.ctime
       FROM asset_dependencies d LEFT JOIN assets b ON b.library_id = ? AND b.path_key = d.path_key AND b.missing_since IS NULL

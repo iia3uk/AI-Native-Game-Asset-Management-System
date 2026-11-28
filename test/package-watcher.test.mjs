@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
 import { test } from 'node:test'
 import { AssetIndex } from '../core/index/asset-index.mjs'
-import { removePackageImportPauseSchema, removePackageWatchSchema } from './fixtures/index-schema.mjs'
+import { removePackageImportPauseSchema, removePackageWatchSchema, removePackageOutputStorageSchema } from './fixtures/index-schema.mjs'
 import { packageWatch, packageWatchByFormat } from '../core/index/schema/package-watch.mjs'
 import { ProcessingWorker } from '../core/processing/processing-worker.mjs'
 import { fixtureTexture, unityEntries, writeUnityFixture } from './fixtures/unitypackage.mjs'
@@ -162,6 +162,7 @@ test('Schema 9 migration preserves libraries and existing jobs with package watc
   const legacy = new DatabaseSync(database)
   try {
     removePackageWatchSchema(legacy)
+    removePackageOutputStorageSchema(legacy)
     removePackageImportPauseSchema(legacy)
     legacy.exec('PRAGMA user_version = 9;')
   } finally {
@@ -194,6 +195,7 @@ test('Schema 10 migration keeps existing Unity opt-ins and automatic job history
 
   const legacy = new DatabaseSync(database)
   try {
+    removePackageOutputStorageSchema(legacy)
     removePackageImportPauseSchema(legacy)
     legacy.exec(`ALTER TABLE package_watch_libraries RENAME TO settings_v11;
       ALTER TABLE package_watch_imports DROP COLUMN format;
@@ -245,6 +247,7 @@ test('Schema 11 migration keeps every previous format and its automatic job hist
       CREATE TEMP TABLE saved_imports AS SELECT * FROM package_watch_imports;
     `)
     removePackageWatchSchema(legacy)
+    removePackageOutputStorageSchema(legacy)
     removePackageImportPauseSchema(legacy)
     legacy.exec(`
       ${packageWatch}
@@ -265,7 +268,7 @@ test('Schema 11 migration keeps every previous format and its automatic job hist
     assert.deepEqual(jobs.map(job => index.jobs.get(job.id)), jobs)
     assert.deepEqual(jobs.map(job => index.jobs.watchedImportSource(job.id)), sources)
     assert.equal(index.jobs.refillWatchedImports([]), 0)
-    assert.equal(index.integrity().schemaVersion, 14)
+    assert.equal(index.integrity().schemaVersion, 15)
   } finally {
     await index.close()
   }

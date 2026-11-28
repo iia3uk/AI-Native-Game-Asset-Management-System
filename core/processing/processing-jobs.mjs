@@ -7,7 +7,7 @@ import { queueWatchedPackages } from './package-watch.mjs'
 const fields = 'id, library_id AS libraryId, type, status, priority, created_at AS createdAt, started_at AS startedAt,' +
   ' finished_at AS finishedAt, attempts, progress, result, error, trigger, cancel_requested AS cancelRequested,' +
   ' asset_id AS assetId, source_key AS sourceKey, package_path AS packagePath, export_formats AS exportFormats,' +
-  ' engine_mode AS engineMode, editor_version AS editorVersion, pause_requested AS pauseRequested'
+  ' engine_mode AS engineMode, editor_version AS editorVersion, pause_requested AS pauseRequested, output_root_id AS outputRootId'
 const leaseMs = 15_000
 const importLimit = 16
 const now = () => new Date().toISOString()
@@ -24,12 +24,13 @@ const releasingLease = `
 
 function shape(job) {
   if (!job) return job
-  const { packagePath, exportFormats, engineMode, editorVersion, pauseRequested, ...fields } = job
+  const { packagePath, exportFormats, engineMode, editorVersion, pauseRequested, outputRootId, ...fields } = job
   if (packagePath) {
     fields.packageName = basename(packagePath)
     if (exportFormats) fields.exportFormats = exportFormats.split(',')
     if (engineMode !== 'engineless') fields.engineMode = engineMode
     if (editorVersion) fields.editorVersion = editorVersion
+    if (outputRootId) fields.outputRootId = outputRootId
     if (pauseRequested) {
       fields.pauseRequested = true
       if (fields.status === 'pending') fields.status = 'paused'
@@ -90,10 +91,10 @@ export class ProcessingJobs {
     return this.get(id)
   }
 
-  #activeImport(path, key, exportFormats, mode, editorVersion) {
+  #activeImport(path, key, exportFormats, mode, editorVersion, outputRootId = null) {
     return this.#db.prepare(`SELECT id FROM processing_jobs WHERE type = 'package-import' AND package_path = ?
       AND source_key = ? AND export_formats = ? AND engine_mode = ? AND editor_version = ?
-      AND status IN ('pending','running')`).get(path, key, exportFormats, mode, editorVersion)
+      AND output_root_id IS ? AND status IN ('pending','running')`).get(path, key, exportFormats, mode, editorVersion, outputRootId)
   }
 
   #importCount() {
@@ -101,30 +102,33 @@ export class ProcessingJobs {
       WHERE type = 'package-import' AND status IN ('pending','running')`).get().count
   }
 
-  #createImport(path, key, formats, mode, editorVersion, priority, trigger) {
+  #createImport(path, key, formats, mode, editorVersion, priority, trigger, outputRootId = null) {
     const id = randomUUID()
     this.#db.prepare(`INSERT INTO processing_jobs (id, type, status, priority, created_at, source_key, package_path,
-      export_formats, engine_mode, editor_version, trigger) VALUES (?, 'package-import', 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, priority, now(), key, path, formats, mode, editorVersion, trigger)
+      export_formats, engine_mode, editor_version, trigger, output_root_id)
+      VALUES (?, 'package-import', 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, priority, now(), key, path, formats, mode, editorVersion, trigger, outputRootId)
     return this.get(id)
   }
 
-  enqueueImport(path, key, exportFormats = '', { mode = 'engineless', editorVersion = '' } = {}, onQueued = job => job) {
+  enqueueImport(path, key, exportFormats = '', { mode = 'engineless', editorVersion = '', outputRootId = null } = {},
+    onQueued = job => job) {
     return transaction(this.#db, () => {
-      const current = this.#activeImport(path, key, exportFormats, mode, editorVersion)
+      const current = this.#activeImport(path, key, exportFormats, mode, editorVersion, outputRootId)
       if (current) {
         this.#db.prepare("UPDATE processing_jobs SET trigger = 'manual', priority = MAX(priority, 0) WHERE id = ? AND cancel_requested = 0")
           .run(current.id)
         return onQueued(this.get(current.id))
       }
       if (this.#importCount() >= importLimit) throw new IndexInputError('Очередь импорта заполнена.')
-      return onQueued(this.#createImport(path, key, exportFormats, mode, editorVersion, 0, 'manual'))
+      return onQueued(this.#createImport(path, key, exportFormats, mode, editorVersion, 0, 'manual', outputRootId))
     })
   }
 
   refillWatchedImports(ignoredPaths) {
     const mode = 'engineless'
-    return transaction(this.#db, () => queueWatchedPackages(this.#db, importLimit - 1 - this.#importCount(), ignoredPaths, (path, key, formats) => {
+    const excluded = [...ignoredPaths, ...this.#db.prepare('SELECT root FROM package_output_roots').all().map(row => row.root)]
+    return transaction(this.#db, () => queueWatchedPackages(this.#db, importLimit - 1 - this.#importCount(), excluded, (path, key, formats) => {
       if (this.#activeImport(path, key, formats, mode, '')) return null
       return this.#createImport(path, key, formats, mode, '', -10, 'watch')
     }))
@@ -197,7 +201,7 @@ export class ProcessingJobs {
       if (!job || !['failed', 'interrupted', 'cancelled'].includes(job.status) || job.attempts >= 3) return null
       if (job.type === 'package-import') {
         if (this.#activeImport(this.importSource(job.id), job.sourceKey, job.exportFormats?.join(',') ?? '',
-          job.engineMode ?? 'engineless', job.editorVersion ?? '')) return null
+          job.engineMode ?? 'engineless', job.editorVersion ?? '', job.outputRootId)) return null
         if (this.#importCount() >= importLimit) throw new IndexInputError('Очередь импорта заполнена.')
       } else {
         const library = this.#db.prepare('SELECT id FROM libraries WHERE id = ? AND enabled = 1').get(job.libraryId)

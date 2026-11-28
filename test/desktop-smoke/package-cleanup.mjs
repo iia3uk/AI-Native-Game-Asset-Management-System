@@ -20,14 +20,16 @@ export async function verifyPackageCleanup(webContents, waitFor) {
   let confirm = false
   let exportRoot
   let beforeAnswer
+  let sharedOutput = false
   try {
     dialog.showMessageBox = async (_window, options) => {
       if (exportRoot) {
         const directory = await webContents.executeJavaScript(
-          "document.querySelector('#package-process-output').textContent.slice('Экспорт · '.length)")
+          "document.querySelector('#package-process-output').textContent.slice(" +
+          (sharedOutput ? 'Библиотека · '.length : 'Экспорт · '.length) + ")")
         assert.equal(directory.startsWith(exportRoot + sep), true)
         const manifest = JSON.parse(await readFile(join(directory, 'manifest.json'), 'utf8'))
-        assert.equal(manifest.export.processedOnly, true)
+        assert.equal(manifest.export?.processedOnly, sharedOutput ? undefined : true)
         if (options.checkboxLabel.includes('Unity')) {
           const prefab = manifest.assets.find(asset => asset.id === ids.prefab)
           assert.equal(prefab.output, null)
@@ -35,7 +37,8 @@ export async function verifyPackageCleanup(webContents, waitFor) {
           assert.equal(await readFile(join(directory, model.output), 'utf8'), fixtureModel)
         } else {
           const [asset] = manifest.assets
-          assert.equal(asset.output, null)
+          if (sharedOutput) assert.ok(asset.output.endsWith('.uasset'))
+          else assert.equal(asset.output, null)
           const wav = asset.exports.find(item => item.format === 'wav')
           assert.deepEqual(await readFile(join(directory, wav.path)), sourceWave())
           await beforeAnswer?.(join(directory, wav.path))
@@ -50,13 +53,14 @@ export async function verifyPackageCleanup(webContents, waitFor) {
       moved.push(path)
     }
     const input = ue4SourceFixture('SoundWave', sourceWave())
-    async function submit(folder, destination, compact = false) {
+    async function submit(folder, destination, compact = false, shared = false) {
       await webContents.executeJavaScript(`{
         document.querySelector('#package-source-cleanup').open = true
         document.querySelector('#package-process-source').value = ${JSON.stringify(folder)}
         document.querySelector('#package-process-destination').value = ${JSON.stringify(destination ?? folder)}
         document.querySelector('#package-process-destination').dispatchEvent(new Event('input'))
         document.querySelector('#package-process-compact').checked = ${compact}
+        document.querySelector('#package-process-shared').checked = ${shared}
         document.querySelector('#package-engine-mode').value = 'engineless'
         document.querySelector('#package-process-cleanup').click()
       }`)
@@ -209,6 +213,31 @@ export async function verifyPackageCleanup(webContents, waitFor) {
       assert.deepEqual(await readFile(join(result.directory, 'Audio', 'Step.wav')), sourceWave())
       assert.deepEqual(await readFile(join(item.directory, 'Audio', 'Step.wav')), sourceWave())
     } finally { await index.close() }
+
+    await webContents.executeJavaScript("document.querySelector('#package-restore-confirmation').click()")
+    await waitFor("document.querySelector('#package-cleanup-status').textContent === 'Подтверждения Unity и Unreal включены.'")
+    exportRoot = join(root, 'Shared output')
+    sharedOutput = true
+    const sharedFolder = join(root, 'Shared Unreal')
+    const sharedSource = join(sharedFolder, 'Step.uasset')
+    await Promise.all([mkdir(exportRoot), mkdir(sharedFolder)])
+    await writeFile(sharedSource, input)
+    await submit(sharedFolder, exportRoot, true, true)
+    await waitFor("document.querySelector('#package-cleanup-status').textContent.includes('Удалено служебных копий 1') && document.querySelector('#package-process-output').textContent.startsWith('Библиотека · ')")
+    assert.equal(prompts.length, 9)
+    assert.deepEqual(moved, [first, second, unitySource, mixedUnity, compactSource, sharedSource])
+    const sharedIndex = await AssetIndex.open(join(process.env.ASSET_VIEWER_DATA_DIR, 'index.sqlite'))
+    try {
+      const run = sharedIndex.folderRuns.get()
+      const [item] = run.items
+      const result = sharedIndex.jobs.get(item.jobId).result
+      assert.equal(run.options.shared, true)
+      assert.equal(result.directory, item.directory)
+      assert.equal(result.library.root, item.directory)
+      assert.deepEqual(await readdir(exportRoot), [basename(run.storagePath)])
+      assert.deepEqual(await readFile(join(item.directory, 'Audio', 'Step.wav')), sourceWave())
+      await assert.rejects(readFile(join(item.directory, 'Source', 'Content', 'Step.uasset')), { code: 'ENOENT' })
+    } finally { await sharedIndex.close() }
   } finally {
     dialog.showMessageBox = ask
     dialog.showOpenDialog = pick

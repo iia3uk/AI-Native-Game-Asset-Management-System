@@ -20,6 +20,7 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
   const section = get('source-cleanup')
   const source = get('process-source')
   const destination = get('process-destination')
+  const shared = get('process-shared')
   const compact = get('process-compact')
   const sourcePick = get('process-source-pick')
   const destinationPick = get('process-destination-pick')
@@ -30,6 +31,7 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
   const status = get('cleanup-status')
   const output = get('process-output')
   const controls = [source, destination, sourcePick, destinationPick, process, restore]
+  const destinationOptions = [shared, compact]
   const setStatus = message => { status.textContent = message }
   let run
   let polling = false
@@ -48,15 +50,18 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
     if (next.id !== run?.id) {
       source.value = next.source
       destination.value = next.destination ?? ''
+      shared.checked = next.shared
       compact.checked = next.compact
       if (active) section.open = true
     }
-    compact.disabled = Boolean(active || submitting || !destination.value.trim())
+    destinationOptions.forEach(control => { control.disabled = Boolean(active || submitting || !destination.value.trim()) })
     run = next
-    output.textContent = next.exported > 1 ? 'Экспортировано пакетов · ' + next.exported + ' · ' + next.destination :
-      next.firstExport ? 'Экспорт · ' + next.firstExport : ''
+    const label = next.shared ? 'Библиотека' : 'Экспорт'
+    output.textContent = next.exported > 1 ? (next.shared ? 'Библиотека · Пакетов: ' : 'Экспортировано пакетов · ') +
+      next.exported + ' · ' + (next.storagePath ?? next.destination) :
+      next.firstExport ? label + ' · ' + next.firstExport : ''
     const message = busy ? 'Проверка исходников и результатов импорта…' : statusMessage(next)
-    const reused = next.reused ? ' · Использовано готовых экспортов: ' + next.reused : ''
+    const reused = next.reused ? ' · Использовано ' + (next.shared ? 'готовых импортов' : 'готовых экспортов') + ': ' + next.reused : ''
     setStatus(message + reused + (next.failureCount && next.phase !== 'failed'
       ? ' · Ошибок обработки ' + next.failureCount + ' · ' + next.firstFailure.path + ' · ' + next.firstFailure.error
       : ''))
@@ -116,7 +121,9 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
     }))
   }
 
-  destination.addEventListener('input', () => { compact.disabled = !destination.value.trim() })
+  destination.addEventListener('input', () => {
+    destinationOptions.forEach(control => { control.disabled = !destination.value.trim() })
+  })
 
   get('process-folder-form').addEventListener('submit', event => {
     event.preventDefault()
@@ -124,7 +131,7 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
     void runLocked(async () => {
       submitting = true
       submission++
-      for (const control of [...controls, compact]) control.disabled = true
+      for (const control of [...controls, ...destinationOptions]) control.disabled = true
       output.textContent = ''
       setStatus('Выбор папки для обработки…')
       let started
@@ -136,6 +143,7 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
         const { editorVersion: unrealVersion } = importOptions('unreal-content')
         const target = destination.value.trim()
         const response = await json(route, post({ path, destination: target, compact: Boolean(target && compact.checked),
+          shared: Boolean(target && shared.checked),
           mode, formats, unityVersion, unrealVersion }))
         started = response.run
       } catch (error) { setStatus(error.message) }
@@ -144,7 +152,7 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
         if (started) { display(started); void poll() }
         else {
           controls.forEach(control => { control.disabled = false })
-          compact.disabled = !destination.value.trim()
+          destinationOptions.forEach(control => { control.disabled = !destination.value.trim() })
         }
       }
     })

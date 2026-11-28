@@ -2,6 +2,7 @@ import { realpath } from 'node:fs/promises'
 import { checkedPath, readBoundedText } from '../files/asset-files.mjs'
 import { IndexInputError } from '../index/index-errors.mjs'
 import { availablePackageAssets } from './cleanup/retired.mjs'
+import { sharedDirectoryAvailable } from './storage/shared.mjs'
 
 export async function readPackageDocument(directory, name) {
   const text = await readBoundedText(directory, name + '.json', 64 * 1024 ** 2)
@@ -11,7 +12,13 @@ export async function readPackageDocument(directory, name) {
 
 export async function readPackageResult(importDirectory, job) {
   if (job?.type !== 'package-import' || job.status !== 'completed' || !job.result?.directory) return null
-  const root = await realpath(importDirectory).catch(() => null)
+  let root
+  if (job.result.storage) {
+    const { storage, directoryIdentity } = job.result
+    if (storage.id !== job.outputRootId || directoryIdentity?.path !== job.result.directory ||
+        !sharedDirectoryAvailable({ storage, directory: directoryIdentity })) return null
+    root = storage.path
+  } else if (!job.outputRootId) root = await realpath(importDirectory).catch(() => null)
   const directory = root && await checkedPath(root, job.result.directory)
   if (!directory || directory === root) return null
   const manifest = await readPackageDocument(directory, 'manifest')

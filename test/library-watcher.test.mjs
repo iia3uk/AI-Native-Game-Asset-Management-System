@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { AssetIndex } from '../core/index/asset-index.mjs'
-import { removePackageWatchSchema } from './fixtures/index-schema.mjs'
+import { removePackageWatchSchema, removePackageOutputStorageSchema } from './fixtures/index-schema.mjs'
 import { LibraryWatcher } from '../core/processing/library-watcher.mjs'
 import { ProcessingWorker } from '../core/processing/processing-worker.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
@@ -30,6 +30,7 @@ test('v2 migration defaults to off and disabling watch preserves an explicitly r
   const preexisting = index.jobs.enqueue(id)
   await index.close()
   const raw = new DatabaseSync(database)
+  removePackageOutputStorageSchema(raw)
   removePackageWatchSchema(raw)
   raw.exec(`
     DROP TABLE quality_profiles;

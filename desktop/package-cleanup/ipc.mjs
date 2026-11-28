@@ -6,6 +6,9 @@ import { planPackageCleanup, trashPackageSources } from '../../core/packages/cle
 import { retireNativeCopies } from '../../core/packages/cleanup/retired.mjs'
 import { exportPackageResult } from '../../core/packages/export/publish.mjs'
 import { FolderRuns } from '../../core/packages/folder-processing/state.mjs'
+import { readPackageResult } from '../../core/packages/manifest-page.mjs'
+import { PackageStorage } from '../../core/packages/storage/registry.mjs'
+import { sameStorageDirectory } from '../../core/packages/storage/shared.mjs'
 import { ProcessingJobs } from '../../core/processing/processing-jobs.mjs'
 import { cleanupPreferences, saveCleanupPreferences } from './preferences.mjs'
 
@@ -28,7 +31,7 @@ async function confirmRemoval(window, plan) {
     detail: [
       items.join('\n'), plan.files.length + ' файл(ов) · ' + size + ' МиБ',
       'Исходники могут содержать данные, которых нет в экспорте, и использоваться в проекте. В корзине их можно восстановить.',
-      ...(plan.compact ? ['После переноса оригиналов Asset Viewer удалит их проверенные служебные копии. Готовые форматы останутся в библиотеке и в папке экспорта.'] : []),
+      ...(plan.compact ? ['После переноса оригиналов Asset Viewer удалит их проверенные служебные копии. Готовые файлы останутся доступны в библиотеке.'] : []),
     ].join('\n\n'),
     buttons: ['Оставить файлы', 'Перенести в корзину'], defaultId: 0, cancelId: 0, noLink: true,
     checkboxLabel: 'Больше не спрашивать для ' + engines[plan.engine],
@@ -50,11 +53,13 @@ export function bindPackageCleanup({ window, origin, paths, preferencesDirectory
     return locked(async () => {
       const db = new DatabaseSync(paths.database, { readOnly: true })
       let records
+      let sharedRoots
       try {
         db.exec('PRAGMA busy_timeout=4000')
         records = completedJobs(new ProcessingJobs(db), [...new Set(ids)])
+        sharedRoots = new PackageStorage(db).paths()
       } finally { db.close() }
-      return performCleanup(records, AbortSignal.timeout(10 * 60_000))
+      return performCleanup(records, AbortSignal.timeout(10 * 60_000), { sharedRoots })
     })
   })
 
@@ -88,7 +93,7 @@ export function bindPackageCleanup({ window, origin, paths, preferencesDirectory
         }
         const compact = run.destination && run.options?.compact === true ? verifyPublished : null
         const result = await performCleanup(verified, signal, {
-          requireConfirmation: action === 'review', compact, jobs,
+          requireConfirmation: action === 'review', compact, jobs, sharedRoots: new PackageStorage(db).paths(),
         })
         if (skippedExports.size) result.skippedExports = skippedExports.size
         store.save({ ...run, cleanup: result }, 'done')
@@ -98,8 +103,14 @@ export function bindPackageCleanup({ window, origin, paths, preferencesDirectory
   })
 
   async function verifyExport(run, item, { job, source }, signal) {
-    if (!item?.directory || !item.reservation) return false
+    if (!item?.directory) return false
     try {
+      if (run.options?.shared) {
+        if (!sameStorageDirectory(job.result?.storage?.destination, run.destination)) return false
+        const stored = await readPackageResult(paths.imports, job)
+        return stored?.directory === item.directory
+      }
+      if (!item.reservation) return false
       const result = await exportPackageResult(paths.imports, [...protectedRoots, run.source.path], job,
         { destination: run.destination.path, processedOnly: true }, {
           signal, jobSource: source, journal: { destination: run.destination, reservation: item.reservation,
@@ -113,15 +124,15 @@ export function bindPackageCleanup({ window, origin, paths, preferencesDirectory
     }
   }
 
-  async function performCleanup(records, signal, { requireConfirmation, compact, jobs } = {}) {
+  async function performCleanup(records, signal, { requireConfirmation, compact, jobs, sharedRoots = [] } = {}) {
     const store = await realpath(preferencesDirectory)
     const groups = { unity: new Map(), unreal: new Map() }
     const importsByOutput = new Map()
     for (const record of records) {
       const { job, source } = record
-      const plan = await planPackageCleanup({ imports: paths.imports, protectedRoots, job, source, signal })
+      const plan = await planPackageCleanup({ imports: paths.imports, protectedRoots: [...protectedRoots, ...sharedRoots], job, source, signal })
       if (!plan) continue
-      if (compact) importsByOutput.set(plan.output, record)
+      if (compact) importsByOutput.set(plan.output, { ...record, storageRoot: plan.storageRoot })
       for (const file of plan.files) groups[plan.engine].set(pathKey(file.original.path), file)
     }
     const preferences = await cleanupPreferences(store)
@@ -159,11 +170,11 @@ export function bindPackageCleanup({ window, origin, paths, preferencesDirectory
       result.skipped += moved.skipped
       result.bytes += moved.bytes
       if (moved.moved && optOut) preferences[engine] = changedPreferences = true
-      if (movedCopies.length) {
-        const retirement = await retireNativeCopies(paths.imports, movedCopies, signal)
+      for (const [root, copies] of Map.groupBy(movedCopies, file => importsByOutput.get(file.output).storageRoot)) {
+        const retirement = await retireNativeCopies(root, copies, signal)
         for (const [key, value] of Object.entries(retirement)) result[key] = (result[key] ?? 0) + value
         if (retirement.retired) {
-          for (const output of new Set(movedCopies.filter(file => file.nativeCopy).map(file => file.output))) {
+          for (const output of new Set(copies.filter(file => file.nativeCopy).map(file => file.output))) {
             const libraryId = importsByOutput.get(output)?.job.libraryId
             if (libraryId) jobs.enqueue(libraryId)
           }
