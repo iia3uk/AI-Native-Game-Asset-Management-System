@@ -42,6 +42,8 @@ Unreal inspection reads bounded package and container headers without running an
 
 Source-media extraction reads staged UE4 packages up to 128 MiB. It validates PCM format and frame alignment for WAV and validates CRCs, dimensions and image chunk boundaries for PNG. The zlib chunk reader checks compressed and uncompressed lengths and caps decoded source art at 64 MiB per asset. The package media budget is 8 GiB, subject to available space.
 
+SoundCue decoding reads SHA-256-verified staged UE4 packages up to 2 MiB. It walks engine-owned exports under the cue, bounds the number and depth of connections, and rejects cycles. A soft SoundWave path must match a typed import and resolve to a known package in the selected content. WAV links use paths from artifacts already published in that import. Graph JSON provides metadata and remains ineligible as the sole replacement for a native cue during cleanup.
+
 Optional UE Viewer decoding requires an explicitly configured executable. It runs with the current account's OS permissions, uses fixed arguments and reads staged copies of versioned UE4 assets with known sidecars. Each export pass has a two-minute timeout. Publication matches output paths to source packages, validates glTF buffer ranges and PSA chunk sizes and applies a 4 GiB artifact budget. Use a trusted executable and trusted packages.
 
 ActorX binding verifies published PSA and settings checksums and validates key counts, timing and finite transforms. It reads PSA files up to 16 MiB and stages at most 64 MiB of generated tracks per import. Binding requires a single compatible skeleton. When a PSA has a settings companion, source cleanup verifies both published files.

@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
-import { basename, join, posix } from 'node:path'
+import { join, posix } from 'node:path'
+import { unrealGameAssetResolver } from '../../../engines/unreal/editor-package/game-path.mjs'
 import { staticMeshPackage } from '../../../engines/unreal/source-mesh/package.mjs'
 import { decodeSourceMesh, sourceMeshFileLimit, sourceMeshRevision } from '../../../engines/unreal/source-mesh/run.mjs'
 import { fileInfo } from '../../../files/asset-files.mjs'
@@ -9,25 +10,6 @@ import { publishSourceCollision } from '../collision/publish.mjs'
 import { viewerModel } from '../viewer/model.mjs'
 
 const method = 'unreal-source-mesh'
-const key = path => path.normalize('NFC').toLowerCase()
-
-export function sourceMaterialResolver(assets, root) {
-  const byPath = new Map(assets.filter(asset => asset.output && asset.type === 'uasset')
-    .map(asset => [key(asset.sourcePath), asset]))
-  const selected = key(root.replaceAll('\\', '/').replace(/\/$/, ''))
-  return path => {
-    if (typeof path !== 'string' || !path.startsWith('/Game/')) return null
-    const parts = path.slice(6).split('/')
-    if (parts.some(part => !part || part === '.' || part === '..' || part.includes('\\'))) return null
-    if (parts.length === 1 && basename(root).toLowerCase() !== 'content') return null
-    for (let skip = 0; skip < parts.length; skip++) {
-      if (skip && !selected.endsWith('/' + key(parts.slice(0, skip).join('/')))) continue
-      const asset = byPath.get(key(parts.slice(skip).join('/') + '.uasset'))
-      if (asset) return asset
-    }
-    return null
-  }
-}
 
 async function publishModel({ asset, scratch, store, lod, document, buffer, stem, signal }) {
   const bin = stem + '.bin'
@@ -51,7 +33,7 @@ async function publishModel({ asset, scratch, store, lod, document, buffer, stem
 export async function publishSourceMeshes({ records, output, workspace, source, signal, store = new ExportArtifacts(output, signal) }) {
   const scratch = join(workspace, 'unreal-source-mesh')
   await mkdir(scratch)
-  const resolveMaterial = sourceMaterialResolver(records.assets, source.root)
+  const resolveMaterial = unrealGameAssetResolver(records.assets, source.root)
   const models = []
   const summary = { converterVersion: sourceMeshRevision, meshes: 0, gltf: 0, failed: 0, missingLods: 0, texturedGltf: 0 }
   const collision = summary.collision = { assets: 0, shapes: 0, glb: 0, incomplete: 0 }

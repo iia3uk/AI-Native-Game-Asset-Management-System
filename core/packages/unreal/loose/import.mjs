@@ -3,6 +3,7 @@ import { renameSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { exportRecipe, verifyExports } from '../../../conversion/cache.mjs'
+import { publishSourceSoundCues } from '../../../conversion/unreal/source-audio/publish.mjs'
 import { prepareSourceMaterials, publishSourceMaterials } from '../../../conversion/unreal/source-material/publish.mjs'
 import { recoverUnrealMedia } from '../../../conversion/unreal/source-media/extract.mjs'
 import { publishSourceMeshes } from '../../../conversion/unreal/source-mesh/publish.mjs'
@@ -12,6 +13,7 @@ import { createViewerDerivatives } from '../../../conversion/unreal/viewer/deriv
 import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
 import { unrealBridgeVersion } from '../../../engines/unreal/bridge/project.mjs'
 import { locateUnrealBridge } from '../../../engines/unreal/bridge/selection.mjs'
+import { sourceSoundCueRevision } from '../../../engines/unreal/source-audio/cues.mjs'
 import { sourceMeshRevision } from '../../../engines/unreal/source-mesh/run.mjs'
 import { sourceMaterialRevision } from '../../../engines/unreal/source-material/properties.mjs'
 import { locateUnrealViewer, unrealViewerRevision } from '../../../engines/unreal/viewer/run.mjs'
@@ -74,6 +76,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
   const blender = exportFormats.length ? await locateBatchBlender() : null
   const editor = await editorRecipe(selection, engineMode, editorVersion)
   const engineRecipe = [editor, ['unreal-source-mesh', sourceMeshRevision], ['unreal-source-material', sourceMaterialRevision],
+    ['unreal-sound-cue', sourceSoundCueRevision],
     viewer && ['ue-viewer', unrealViewerRevision, ...viewer.identity]]
   const recipe = exportRecipe(exportFormats, blender, engineRecipe)
   const root = await packageWorkspaceRoot(directory, 'unreal-loose-v' + version, { sourceRoot: source.protectedRoot })
@@ -103,6 +106,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
         onProgress: progress => onProgress?.((decoded ? 65 : 60) + Math.floor((progress - 60) * 0.4)) }) : null
     const media = await recoverUnrealMedia(records, { output, workspace, signal,
       onProgress: progress => onProgress?.(79 + Math.floor(progress * 0.04)) })
+    const soundCues = await publishSourceSoundCues({ records, output, workspace, source, signal })
     const packedMapCache = new Map()
     const sourceMaterialInput = sourceMeshes && await prepareSourceMaterials({ records, output, workspace, signal,
       store: sourceMeshes.store, resolve: sourceMeshes.resolveMaterial })
@@ -140,12 +144,13 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
       ...(unrealViewer && { unrealViewer }),
       ...(unrealSourceMeshes && { unrealSourceMeshes }),
       ...(sourceMaterials && { unrealSourceMaterials: sourceMaterials.summary }),
+      ...(soundCues.graphs || soundCues.incomplete || soundCues.issue ? { soundCues } : {}),
       limitations: ['unsupported-cooked-unreal-objects-preserved-as-source', 'dependency-resolution-requires-asset-registry',
         'material-graphs-not-converted', 'source-collision-limited-to-supported-simple-ue4-shapes'] }
     await Promise.all(Object.entries({ manifest, dependencies: { version, dependencies: records.dependencies },
       'conversion-report': report }).map(([key, value]) =>
       writeFile(join(output, key + '.json'), JSON.stringify(value, null, 2) + '\n', { flag: 'wx', signal })))
-    const partial = unrealViewer?.status === 'partial' || unrealSourceMeshes?.issue || sourceMaterials?.summary.issue
+    const partial = unrealViewer?.status === 'partial' || unrealSourceMeshes?.issue || sourceMaterials?.summary.issue || soundCues.issue
     const destination = join(root, partial ? name + '-' + randomUUID() : name)
     signal?.throwIfAborted()
     onProgress?.(95)

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { encodeSourceMesh } from '../core/conversion/unreal/source-mesh/gltf.mjs'
-import { sourceMaterialResolver } from '../core/conversion/unreal/source-mesh/publish.mjs'
+import { unrealGameAssetResolver } from '../core/engines/unreal/editor-package/game-path.mjs'
 import { sourceMeshLods } from '../core/engines/unreal/source-mesh/mesh-description.mjs'
 import { staticMeshPackage } from '../core/engines/unreal/source-mesh/package.mjs'
 import { sourceMeshHeaders } from './fixtures/unreal-source-mesh.mjs'
@@ -72,7 +72,7 @@ test('UE4 geometry export keeps units, face orientation, vertex attributes, and 
 
 test('UE4 source mesh material paths can omit the selected package root and cannot match another package', () => {
   const trim = { type: 'uasset', sourcePath: 'Materials/MI_Trim.uasset', output: 'Source/Content/Materials/MI_Trim.uasset' }
-  const resolve = sourceMaterialResolver([trim], 'F:\\Assets\\Forest')
+  const resolve = unrealGameAssetResolver([trim], 'F:\\Assets\\Forest')
   assert.equal(resolve('/Game/Forest/Materials/MI_Trim'), trim)
   assert.equal(resolve('/Game/Other/Materials/MI_Trim'), null)
   assert.equal(resolve('/Game/../Materials/MI_Trim'), null)

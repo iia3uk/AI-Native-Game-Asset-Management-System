@@ -1,7 +1,7 @@
 import { readPackageLayout } from '@threenative/raw-unreal'
 
-const importStride = 36
 const exportStride = 104
+const editorLayouts = new Map([[518, { editorVersion: 37, importStride: 28 }], [522, { editorVersion: 40, importStride: 36 }]])
 
 export const requireLayout = (condition) => {
   if (!condition) throw new RangeError('Unsupported or invalid Unreal editor package layout')
@@ -34,11 +34,13 @@ function readNames(bytes, layout, end) {
   return names
 }
 
-// Stock UE4 522 editor packages use fixed-width import/export entries and inline export data.
-export function editorPackage(bytes) {
+// These stock UE4 editor layouts use fixed-width import/export entries and inline export data.
+export function editorPackage(bytes, version = 522) {
   const layout = readPackageLayout(bytes)
-  if (!layout || layout.legacyFileVersion !== -7 || layout.fileVersionUE4 !== 522 ||
-      layout.licenseeVersion !== 0 || layout.editorObjectVersion !== 40) return null
+  const schema = editorLayouts.get(version)
+  if (!schema || !layout || layout.legacyFileVersion !== -7 || layout.fileVersionUE4 !== version ||
+      layout.licenseeVersion !== 0 || layout.editorObjectVersion !== schema.editorVersion) return null
+  const { importStride } = schema
   const { totalHeaderSize, bulkDataStartOffset, exportCount, exportOffset, nameOffset, nameCount } = layout
   requireLayout(exportCount <= 4096 && nameCount <= 32_768)
   const folderEnd = skipUnrealString(bytes, 28 + bytes.readInt32LE(20) * 20, nameOffset)

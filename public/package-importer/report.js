@@ -60,6 +60,15 @@ const packageIssues = {
   'unreal-source-collision-partial': 'Некоторые формы коллизии не удалось восстановить',
   'unreal-source-collision-preview': 'GLB коллизии не прошёл проверку',
   'unreal-source-material-time-budget': 'Достигнут лимит времени чтения материалов UE4',
+  'unreal-sound-cue-time-budget': 'Достигнут лимит времени чтения SoundCue',
+  'unreal-sound-cue-layout': 'Структура графа SoundCue повреждена или не поддерживается',
+  'unreal-sound-cue-unsupported-node': 'Часть узлов SoundCue сохранена без настроек',
+  'unreal-sound-cue-no-root': 'В SoundCue отсутствует выходной узел',
+  'unreal-sound-cue-external-settings': 'Внешние настройки звука и затухания требуют Unreal',
+  'unreal-sound-cue-wave-reference': 'Ссылка SoundCue на SoundWave не подтверждена',
+  'unreal-sound-cue-wave-missing': 'Связанный SoundWave отсутствует в выбранной папке',
+  'unreal-sound-cue-wave-unavailable': 'Связанный SoundWave найден, но WAV недоступен',
+  'unreal-sound-cue-no-waves': 'В графе SoundCue нет доступных ссылок на звук',
   'unreal-viewer-no-versioned-ue4-inputs': 'Нет пакетов с поддерживаемой версией UE4',
   'unreal-viewer-space-limit': 'Недостаточно места для декодирования UE4',
   'unreal-viewer-failed': 'UE Viewer завершился с ошибкой',
@@ -105,6 +114,7 @@ const artifactRoles = {
   'preview-texture': 'Карта каналов для предпросмотра',
   'actorx-settings': 'Настройки PSA', 'animation-buffer': 'Ключи анимации',
   'collision-shapes': 'Данные коллизии', 'collision-preview': 'Предпросмотр коллизии',
+  'sound-cue': 'Граф SoundCue',
 }
 
 export const describeIssue = issue => packageIssues[issue] ?? issue
@@ -139,6 +149,7 @@ export function appendManifest({ details, record, json, element, button, assetSt
           const { path, shader } = asset.materialDescription
           row.append(element('p', ['Привязки материала', shader, path].filter(Boolean).join(' · ')))
         }
+        if (asset.soundCue) row.append(element('p', 'Связанных WAV · ' + asset.soundCue.linkedWaves))
         const artifacts = [asset.artifact, ...(asset.exports ?? [])].filter(item => item && item.format !== 'meta')
         if (artifacts.length) {
           const results = element('ul')

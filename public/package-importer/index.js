@@ -138,7 +138,8 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
         details.append(element('p', [formatLabel(packageFormat), engineVersion].filter(Boolean).join(' · ')))
       }
       if (isUnrealLoose(record.result.report.packageFormat)) {
-        const { packageFormat, engineVersion, unreal, media, unrealViewer, unrealSourceMeshes, unrealSourceMaterials } = record.result.report
+        const { packageFormat, engineVersion, unreal, media, soundCues, unrealViewer, unrealSourceMeshes,
+          unrealSourceMaterials } = record.result.report
         const gltf = (unrealViewer?.gltf ?? 0) + (unrealSourceMeshes?.gltf ?? 0)
         const textured = (unrealViewer?.materials?.texturedGltf ?? 0) + (unrealSourceMeshes?.texturedGltf ?? 0)
         const materials = (unrealViewer?.materials?.materialJson ?? 0) + (unrealSourceMaterials?.materialJson ?? 0)
@@ -150,6 +151,8 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
         const glb = (unrealViewer?.derivatives?.glb ?? 0) + (unrealSourceMeshes?.derivatives?.glb ?? 0)
         details.append(element('p', [formatLabel(packageFormat), engineVersion || unreal?.editorVersion,
           media?.png && media.png + ' PNG', media?.wav && media.wav + ' WAV',
+          soundCues?.graphs && 'Графов SoundCue · ' + soundCues.graphs,
+          soundCues?.incomplete && 'Неполных SoundCue · ' + soundCues.incomplete,
           unrealSourceMeshes?.meshes && 'Статических моделей UE4 · ' + unrealSourceMeshes.meshes,
           collision?.shapes && 'Форм коллизии · ' + collision.shapes,
           collision?.incomplete && 'Пакетов с неполными коллизиями · ' + collision.incomplete,
@@ -162,6 +165,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
           fbx && fbx + ' FBX', glb && glb + ' GLB',
           unrealSourceMeshes?.issue && describeIssue(unrealSourceMeshes.issue),
           unrealSourceMaterials?.issue && describeIssue(unrealSourceMaterials.issue),
+          soundCues?.issue && describeIssue(soundCues.issue),
           unrealViewer?.issue && describeIssue(unrealViewer.issue),
           unreal?.issue && describeIssue(unreal.issue)].filter(Boolean).join(' · ')))
       }
