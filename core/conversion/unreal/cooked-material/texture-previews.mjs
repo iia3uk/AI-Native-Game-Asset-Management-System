@@ -3,7 +3,7 @@ import { publishCookedNormal } from './normal-map.mjs'
 
 export const cookedMaterialPreviewRevision = 1
 export const cookedPackedMethod = 'unreal-cooked-packed-texture'
-const rgbFormats = new Set(['PF_B8G8R8A8', 'PF_R8G8B8A8', 'PF_DXT1', 'PF_DXT5'])
+const rgbFormats = new Set(['PF_B8G8R8A8', 'PF_R8G8B8A8', 'PF_DXT1', 'PF_DXT5', 'PF_BC7'])
 
 function packedSourceIssue(texture) {
   if (texture.srgb !== false) return 'unreal-cooked-packed-color-space'

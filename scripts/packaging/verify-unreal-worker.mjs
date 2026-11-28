@@ -3,7 +3,7 @@ import { basename, join } from 'node:path'
 
 const workerName = 'AssetViewer.UnrealDecode'
 const noticeFiles = [
-  'CUE4Parse-LICENSE.txt', 'CUE4Parse-NOTICE.txt', 'Dependencies.txt',
+  'CUE4Parse-LICENSE.txt', 'CUE4Parse-NOTICE.txt', 'Dependencies.txt', 'BCnEncoder-LICENSE.txt',
   'FixedMathSharp-LICENSE.txt', 'FixedMathSharp-NOTICE.txt', 'FixedMathSharp-COPYRIGHT.txt',
   'BouncyCastle-LICENSE.md', 'CommunityToolkit-LICENSE.md', 'CommunityToolkit-NOTICE.txt',
   'DotNetPackages-NOTICE.txt', 'Newtonsoft.Json-LICENSE.md', 'LICENSE.TXT', 'THIRD-PARTY-NOTICES.TXT',

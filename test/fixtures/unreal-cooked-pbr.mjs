@@ -1,3 +1,4 @@
+import { bc7Mode6 } from './unreal-bc7-texture.mjs'
 import { cookedMaterial } from './unreal-cooked-material.mjs'
 import { cookedSkeletalMeshFixture } from './unreal-cooked-skeletal-mesh.mjs'
 import { cookedTexture } from './unreal-cooked-texture.mjs'
@@ -13,7 +14,8 @@ export function cookedPbrFixture() {
   const instance = (name, textures, streaming, parent = 'M_Base') => cookedMaterial({
     name, parent: [path(parent), parent === 'M_Base' ? 'Material' : 'MaterialInstanceConstant'], textures, streaming,
   })
-  const mask = (name, srgb) => cookedTexture({ name, format: 'PF_R8G8B8A8', width: 1, height: 1, pixels: cookedPbrMask, srgb })
+  const mask = (name, srgb) => cookedTexture({ name, format: 'PF_BC7', width: 1, height: 1, srgb,
+    pixels: bc7Mode6([...cookedPbrMask.subarray(0, 3), 254]) })
   const normal = normalMap => cookedTexture({ name: normalMap ? 'T_Bump' : 'T_Untyped', format: 'PF_BC5', width: 2, height: 1,
     pixels: cookedPbrNormalBlock, normalMap })
   const files = (name, parts) => Object.entries(parts).map(([ext, content]) => ({ path: name + '.' + ext, content }))

@@ -13,6 +13,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../../formats/dotnet/BlockCompression.cs" Link="Formats/BlockCompression.cs" />
+    <PackageReference Include="BCnEncoder.Net" Version="[2.3.0]" />
     <PackageReference Include="CUE4Parse" Version="[1.2.2.202611]" />
     <PackageReference Include="Microsoft.Bcl.Memory" Version="[10.0.9]" />
     <RuntimeHostConfigurationOption Include="System.GC.HeapHardLimit" Value="536870912" />

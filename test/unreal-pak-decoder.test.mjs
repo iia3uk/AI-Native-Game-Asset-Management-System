@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { pakResult } from '../core/engines/unreal/decoder/protocol.mjs'
+import { pakResult, pakTextureRevision } from '../core/engines/unreal/decoder/protocol.mjs'
 import { locateUnrealDecoder } from '../core/engines/unreal/decoder/run.mjs'
 import { generateFixtures } from '../scripts/generate-fixtures.mjs'
 import { makeModernPak, makePak, wavTone } from './fixtures/unreal-pak.mjs'
@@ -31,9 +31,12 @@ test('Pak texture output can only use the validated owning entry and worker file
   const texture = { width: 2, height: 2, size: 80, mip: 0, pixelFormat: 'PF_B8G8R8A8', srgb: true,
     normalZReconstructed: false, file: '../external.png' }
   const entry = { path: 'Fixture/Content/Tint.uasset', size: 512, output: 0, status: 'extracted', issue: null, texture }
-  const result = { protocol: 1, status: 'completed', containerVersion: 4, textureDecoder: 2, entries: [entry] }
+  const result = { protocol: 1, status: 'completed', containerVersion: 4, textureDecoder: pakTextureRevision, entries: [entry] }
   const options = { inspectOnly: false, version: 4 }
   assert.equal(pakResult(result, options).entries[0].texture.file, '00000.png')
+  const bc7 = { ...entry, texture: { ...texture, pixelFormat: 'PF_BC7' } }
+  assert.equal(pakResult({ ...result, entries: [bc7] }, options).entries[0].texture.pixelFormat, 'PF_BC7')
+  assert.equal(pakResult({ ...result, textureDecoder: 2 }, options), null)
   for (const asset of [{ ...entry, path: 'Fixture/Content/Tint.wav' }, { ...entry, texture: { ...texture, width: 16384 } },
     { ...entry, texture: { ...texture, size: 1024 ** 3 } }, { ...entry, textureIssue: 'unreal-cooked-texture-io' },
     { ...entry, texture: { ...texture, normalZReconstructed: true } },

@@ -9,8 +9,10 @@ provides LICENSE.TXT and THIRD-PARTY-NOTICES.TXT.
 
 The CUE4Parse notices come from https://github.com/FabianFG/CUE4Parse/tree/e76778c10ed25860e11ec488750753224d067d87.
 The FixedMathSharp copyright notice comes from https://github.com/mrdav30/FixedMathSharp/tree/f15ca366f8fd1b9db96e54ef38aee7e6d35e1c0e.
+The BCnEncoder.Net MIT license comes from https://github.com/Nominom/BCnEncoder.NET/blob/74eda8a330759d81e6307f19aefc547e40687825/LICENSE-MIT.
 
 Package/version | License | Attribution
+BCnEncoder.Net/2.3.0 | MIT | See BCnEncoder-LICENSE.txt
 Berrysoft.XXTea/4.0.9 | MIT | Copyright (c) 2019 Berrysoft
 Blake3/3.0.2 | BSD-2-Clause | Copyright (c) 2020 Alexandre Mutel
 BouncyCastle.Cryptography/2.6.2 | MIT | Copyright (c) 2000-2025 The Legion of the Bouncy Castle Inc.

@@ -74,7 +74,10 @@ for (const mode of ['loose', 'pak']) test('cooked ' + mode + ' publishes verifie
   }
   const rma = await description('MI_RMA')
   assert.deepEqual([...readPngRgb(await readFile(join(directory, rma.packedMap.path))).rows], [0, 150, 10, 72])
-  assert.deepEqual(readPngRgb(await readFile(join(directory, paint.packedMap.sourceImage))).rows.subarray(1), cookedPbrMask)
+  const mask = find('T_Data').exports.find(item => item.path === paint.packedMap.sourceImage)
+  assert.equal(mask.pixelFormat, 'PF_BC7')
+  assert.deepEqual([...readPngRgb(await readFile(join(directory, mask.path))).rows.subarray(1)],
+    [...cookedPbrMask.subarray(0, 3), 254])
 
   const mesh = find('SK_Test')
   const previews = mesh.exports.filter(item => item.role === 'skeletal-model' && item.format === 'glb')

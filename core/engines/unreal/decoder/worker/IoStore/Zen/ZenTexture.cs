@@ -95,7 +95,7 @@ internal static class ZenTexture
             if (4L * mip.Width * mip.Height > remaining) throw new InputException("limit");
             var data = mip.Payload.ReadBytes(bytes, sidecars, size);
             if (data != null) return TexturePixels.Decode(data, format, mip.Width, mip.Height, first + i,
-                settings.Srgb, settings.NormalMap);
+                settings.Srgb, settings.NormalMap, "");
         }
         throw new InputException("mip-unavailable");
     }
