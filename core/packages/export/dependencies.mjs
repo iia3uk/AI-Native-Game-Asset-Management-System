@@ -40,8 +40,9 @@ function relationships(assets, document, archive) {
   } else if (Array.isArray(document.entries)) {
     const byObject = new Map(assets.map(row => [objectKey(row), row]))
     for (const info of document.entries) {
-      const target = byObject.get(objectKey(info.to))
-      add(byObject.get(objectKey(info.from)), target, { ...info, status: target?.artifact ? 'resolved' : 'missing' })
+      const target = info.status === undefined || info.status === 'resolved' ? byObject.get(objectKey(info.to)) : null
+      const status = info.status && info.status !== 'resolved' ? info.status : target?.artifact ? 'resolved' : 'missing'
+      add(byObject.get(objectKey(info.from)), target?.artifact ? target : null, { ...info, status })
     }
   }
   return links

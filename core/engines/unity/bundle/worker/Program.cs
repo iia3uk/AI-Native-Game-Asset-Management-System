@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AssetViewer.UnityBundle.Objects.Materials;
 using AssetViewer.UnityBundle.Serialized;
 using AssetViewer.UnityBundle.UnityFs;
 
@@ -6,7 +7,7 @@ namespace AssetViewer.UnityBundle;
 
 internal static class Program
 {
-    public const int DecoderRevision = 8;
+    public const int DecoderRevision = 9;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { MaxDepth = 10 };
 
     public static int Main(string[] args)
@@ -49,7 +50,7 @@ internal sealed record Asset(string Member, string PathId, int ClassId, string? 
     int? Width = null, int? Height = null, int? Output = null, string? Format = null,
     int? Vertices = null, int? Triangles = null, int? Bytes = null,
     string? TextureEncoding = null, string? TextureStorage = null, SpriteSource? Sprite = null, AudioSource? Audio = null,
-    string? TextureColorSpace = null);
+    string? TextureColorSpace = null, MaterialSource? Material = null, MeshBindings? MeshMaterials = null);
 internal sealed record Product(string Name, string Format, byte[] Bytes,
     int? Width = null, int? Height = null, int? Vertices = null, int? Triangles = null,
     string? TextureEncoding = null, string? TextureStorage = null, SpriteSource? Sprite = null, AudioSource? Audio = null,

@@ -32,6 +32,7 @@ public static class AssetViewerBundleFixture
         var textures = BundleFixtureTextures.Create(root);
         var sprites = BundleFixtureSprites.Create(root);
         var audio = BundleFixtureAudio.Create(root);
+        var materials = BundleFixtureMaterials.Create(root, mesh);
         AssetDatabase.SaveAssets();
 
         var output = Path.GetFullPath(Path.Combine(Application.dataPath, "../..", "Bundles"));
@@ -44,6 +45,7 @@ public static class AssetViewerBundleFixture
         var mappings = new[] { mapping,
             new AssetBundleBuild { assetBundleName = "sprites.bundle", assetNames = sprites },
             new AssetBundleBuild { assetBundleName = "audio.bundle", assetNames = audio },
+            new AssetBundleBuild { assetBundleName = "materials.bundle", assetNames = materials },
         };
         if (BuildPipeline.BuildAssetBundles(output, mappings,
             BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.StrictMode,

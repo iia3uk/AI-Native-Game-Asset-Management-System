@@ -1,6 +1,8 @@
 import { basename } from 'node:path'
 
-export async function verifyUnityBundle(webContents, waitFor, fixture, { standalone = false } = {}) {
+export async function verifyUnityBundle(webContents, waitFor, fixture, { standalone = false, materials = false } = {}) {
+  const mesh = materials ? 'Painted' : 'Triangle'
+  const preview = 'Mesh-' + mesh + '.glb'
   await webContents.executeJavaScript(`
     if (!document.querySelector('#index-dialog').open) document.querySelector('#index-mode').click()
     document.querySelector('#package-importer').open = true
@@ -9,7 +11,7 @@ export async function verifyUnityBundle(webContents, waitFor, fixture, { standal
   `)
   const label = standalone ? 'Бинарный файл Unity' : 'UnityFS 8'
   await waitFor(`document.querySelector('#package-plans').textContent.includes(${JSON.stringify(label)})`)
-  await waitFor("document.querySelector('#package-plans').textContent.includes('Triangle ·')")
+  await waitFor(`document.querySelector('#package-plans').textContent.includes('${mesh} ·')`)
   const compressed = await webContents.executeJavaScript("document.querySelector('#package-plans').textContent.includes('StreamedDXT5 · DXT5')")
   await webContents.executeJavaScript("document.querySelector('#package-plans button').click()")
   const row = `Array.from(document.querySelector('#package-jobs').children)
@@ -20,17 +22,22 @@ export async function verifyUnityBundle(webContents, waitFor, fixture, { standal
     bundle.querySelector('details').open = true
     Array.from(bundle.querySelectorAll('button')).find(button => button.textContent === 'Показать файлы').click()
   }`)
-  await waitFor(`(${row})?.textContent.includes('Mesh-Triangle.glb')`)
-  if (!standalone) await waitFor(`(${row})?.textContent.includes('Texture-Albedo.png')`)
+  await waitFor(`(${row})?.textContent.includes('${preview}')`)
+  if (materials) {
+    await waitFor(`(${row})?.textContent.includes('Материалы восстановлены в GLB') &&
+      (${row})?.textContent.includes('Разные префабы назначают этому мешу разные материалы') &&
+      (${row})?.textContent.includes('Material-Front.json')`)
+  } else if (!standalone) await waitFor(`(${row})?.textContent.includes('Texture-Albedo.png')`)
   if (compressed) {
     await waitFor(`(${row})?.textContent.includes('Texture-InlineDXT1.png') && (${row})?.textContent.includes('Texture-StreamedDXT5.png')`)
   }
   await webContents.executeJavaScript(`Array.from((${row}).querySelectorAll('button'))
     .find(button => button.textContent === 'Показать в индексе').click()`)
-  await waitFor("document.querySelector('#index-results').textContent.includes('Mesh-Triangle.glb')")
+  await waitFor(`document.querySelector('#index-results').textContent.includes('${preview}')`)
   await webContents.executeJavaScript(`Array.from(document.querySelectorAll('#index-results button'))
-    .find(button => button.textContent.startsWith('Mesh-Triangle.glb')).click()`)
-  await waitFor("document.querySelector('#index-name').textContent === 'Mesh-Triangle.glb' && !document.querySelector('#index-preview').disabled")
+    .find(button => button.textContent.startsWith('${preview}')).click()`)
+  await waitFor(`document.querySelector('#index-name').textContent === '${preview}' && !document.querySelector('#index-preview').disabled`)
   await webContents.executeJavaScript("document.querySelector('#index-preview').click()")
   await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('2 треугольника')")
+  if (materials) await waitFor("document.querySelector('#color-source').textContent.includes('с текстурой 2')")
 }

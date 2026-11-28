@@ -27,9 +27,10 @@ internal static class SerializedFile
         {
             var file = manager.LoadAssetsFile(input, Member, false);
             var assets = new List<Asset>();
+            var materialBudget = 8192;
             using var resources = new CompanionResources(companions);
             SerializedObjects.Read(manager, file, Member, input.Length, resources, inspectOnly,
-                assets, ref outputLimit, PlayerLayout.Supports(file.file));
+                assets, ref outputLimit, ref materialBudget, PlayerLayout.Supports(file.file));
             return new Report(1, Program.DecoderRevision, "completed", header.Version,
                 file.file.Metadata.UnityVersion, assets);
         }

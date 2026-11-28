@@ -34,7 +34,9 @@ For streamed texture data, the worker accepts a reference to the serialized owne
 
 Sprite decoding follows Texture2D and SpriteAtlas references only within the validated serialized member. It verifies the declared object classes, checks the full atlas key for an exact match and rejects duplicate keys. It bounds the crop by the source texture, the offset by the output canvas and the RGBA canvas by the remaining output budget. A reader retains at most one source texture and one atlas map for repeated crops.
 
-UnityFS and binary Unity cleanup requires converted artifacts for every reported resource object. The standard bundle metadata and an atlas referenced by converted sprites have no separate artifact. A failed or unsupported resource keeps the binary source out of the recycle plan.
+Unity material binding reads bounded type-tree fields and follows loadable MeshFilter, MeshRenderer, GameObject, Material and Texture2D references within the same serialized member. External reference identifiers are recorded as metadata. The GLB stage embeds only published local PNGs for matching slots and limits added texture bytes to 32 MiB per model and 128 MiB per import.
+
+UnityFS and binary Unity cleanup requires converted artifacts for every reported resource object. The standard bundle metadata and an atlas referenced by converted sprites have no separate artifact. Failed or unsupported resources and material descriptions keep the binary source out of the recycle plan.
 
 Audio decoding reads a bounded range of the owner's internal `.resource` entry. Inspection reads the bank and sample headers. Export checks their layout, matches the clip metadata, limits each WAV to 32 MiB and checks the remaining worker output budget before allocation. Publication verifies the WAV header, expected size and data chunk length. The browser uses the existing scoped local-file and byte-range routes for playback.
 

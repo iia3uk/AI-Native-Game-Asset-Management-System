@@ -10,7 +10,7 @@ export function unityBinaryReadyForCleanup(assets) {
     if (sprite?.packed) usedAtlases.add(atlasId(member, sprite.packed.atlasPathId))
   }
   return assets.every(asset => {
-    if (converted(asset)) return true
+    if (converted(asset)) return asset.classId !== 21
     if (asset?.status !== 'unsupported') return false
     if (asset.classId === 142) return asset.issue === 'unity-bundle-class-unsupported'
     return asset.classId === 687078895 && asset.issue === 'unity-bundle-sprite-atlas-container' &&

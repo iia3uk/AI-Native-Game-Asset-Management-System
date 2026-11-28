@@ -1,10 +1,11 @@
 import { isSerializedVersion } from '../serialized/header.mjs'
+import { materialSource, meshMaterialSlots } from './material-protocol.mjs'
 
 const issuePattern = /^unity-bundle-[a-z0-9-]{1,64}$/
 const versionPattern = /^\d{1,4}\.\d{1,3}\.\d{1,4}[abfp]\d{1,4}$/
 const memberPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,119}$/
 const pathIdPattern = /^-?\d{1,19}$/
-export const bundleDecoderRevision = 8
+export const bundleDecoderRevision = 9
 const pixelDimension = value => Number.isInteger(value) && value >= 1 && value <= 2048
 const validCount = (value, max) => Number.isSafeInteger(value) && value > 0 && value <= max
 const cropCoordinate = (value, length, limit = 2048) => Number.isInteger(value) && value >= 0 && value + length <= limit
@@ -31,6 +32,7 @@ export function bundleResult(report, inspectOnly, serialized = false) {
       !Array.isArray(report.assets) || report.assets.length > 10_000) return null
   const classes = new Map()
   const assets = []
+  let materialBudget = 8192
   for (const [index, asset] of report.assets.entries()) {
     if (!asset || typeof asset.member !== 'string' || !memberPattern.test(asset.member) ||
         (serialized && asset.member !== 'input.assets') ||
@@ -44,6 +46,14 @@ export function bundleResult(report, inspectOnly, serialized = false) {
     const row = { member, pathId, classId, status }
     if (status === 'unsupported' && output === null && typeof issue === 'string' && issuePattern.test(issue)) {
       assets.push({ ...row, ...(typeof name === 'string' && name.length <= 160 && { name }), issue })
+      continue
+    }
+    if (typeof name !== 'string' || name.length > 160 || issue !== null ||
+        status !== (inspectOnly ? 'available' : 'decoded')) return null
+    if (classId === 21 && asset.format === 'material' && output === null) {
+      const material = materialSource(asset.material)
+      if (!material || (materialBudget -= material.textures.length + 1) < 0) return null
+      assets.push({ ...row, name, material, format: 'json' })
       continue
     }
     let format, metrics, size
@@ -67,6 +77,11 @@ export function bundleResult(report, inspectOnly, serialized = false) {
         validCount(triangles, 200_000)) {
       format = 'glb'
       metrics = { vertices, triangles }
+      if (asset.meshMaterials != null) {
+        const slots = meshMaterialSlots(asset.meshMaterials)
+        if (!slots || (materialBudget -= slots.slots?.length ?? 0) < 0) return null
+        metrics.meshMaterials = slots
+      }
       size = asset.bytes
       if (!inspectOnly && (!validCount(size, 16 * 1024 ** 2) || size < 52)) return null
     } else if (classId === 83 && asset.format === 'wav' && [1, 2].includes(audio?.channels) &&
@@ -78,8 +93,7 @@ export function bundleResult(report, inspectOnly, serialized = false) {
       size = 44 + channels * frames * 2
       if (size > 32 * 1024 ** 2 || (!inspectOnly && asset.bytes !== size)) return null
     } else return null
-    if (typeof name !== 'string' || name.length > 160 || issue !== null ||
-        (inspectOnly ? status !== 'available' || output !== null : status !== 'decoded' || output !== index)) return null
+    if (output !== (inspectOnly ? null : index)) return null
     const product = inspectOnly ? {} : { file: output + '.' + format, size }
     assets.push({ ...row, name, ...metrics, ...product, format: format === 'rgba' ? 'png' : format })
   }

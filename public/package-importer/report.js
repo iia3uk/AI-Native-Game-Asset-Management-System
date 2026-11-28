@@ -295,9 +295,19 @@ export function assetLabel(asset) {
   const atlas = asset.sprite?.packed && `, атлас #${asset.sprite.packed.atlasPathId}`
   const sprite = asset.sprite && `Спрайт ${asset.width} × ${asset.height} (текстура #${asset.sprite.texturePathId}${atlas || ''})`
   const audio = asset.audio && `PCM 16 бит, ${asset.audio.sampleRate} Гц, ${asset.audio.channels} кан.`
-  return asset.sourcePath ?? asset.path ?? [asset.name, sprite, audio, asset.textureEncoding?.toUpperCase(),
+  const material = asset.material && (asset.material.profile === 'standard' ? 'Материал Standard' : 'Привязки материала')
+  return asset.sourcePath ?? asset.path ?? [asset.name, sprite, audio, material, asset.textureEncoding?.toUpperCase(),
     asset.textureStorage === 'companion' && 'Внешние данные',
     [asset.member, asset.pathId].filter(Boolean).join(' #')].filter(Boolean).join(' · ')
+}
+
+const unityPreviewMaterials = {
+  bound: 'Материалы восстановлены в GLB',
+  partial: 'Материалы восстановлены в GLB частично',
+  ambiguous: 'Разные префабы назначают этому мешу разные материалы',
+  unresolved: 'Ссылки Unity на материалы не удалось прочитать',
+  unavailable: 'Для этих материалов нет поддерживаемого предпросмотра',
+  'slot-count': 'Число материалов не совпадает с числом частей меша',
 }
 
 export function appendManifest({ details, record, json, element, button, assetStatus, selectAsset }) {
@@ -324,6 +334,8 @@ export function appendManifest({ details, record, json, element, button, assetSt
           const { path, shader } = asset.materialDescription
           row.append(element('p', ['Привязки материала', shader, path].filter(Boolean).join(' · ')))
         }
+        const materialPreview = unityPreviewMaterials[asset.materialPreview]
+        if (materialPreview) row.append(element('p', materialPreview))
         if (asset.soundCue) row.append(element('p', 'Связанных WAV · ' + asset.soundCue.linkedWaves))
         const artifacts = [asset.artifact, ...(asset.exports ?? [])].filter(item => item && item.format !== 'meta')
         if (artifacts.length) {

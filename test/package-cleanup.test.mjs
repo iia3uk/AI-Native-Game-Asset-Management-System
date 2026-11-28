@@ -87,6 +87,7 @@ test('Unity binary cleanup retains packages with undecoded objects', () => {
   assert.equal(unityBinaryReadyForCleanup([sprite, { ...atlas, member: 'CAB-2' }, bundle]), false)
   assert.equal(unityBinaryReadyForCleanup([sprite, atlas, bundle, { status: 'unsupported', classId: 114 }]), false)
   assert.equal(unityBinaryReadyForCleanup([sprite, atlas, bundle, { status: 'converted', artifact: null }]), false)
+  assert.equal(unityBinaryReadyForCleanup([sprite, atlas, bundle, { ...sprite, classId: 21 }]), false)
 })
 
 test('compaction retains usable files and provenance, and leaves changed or unsupported data alone', async t => {

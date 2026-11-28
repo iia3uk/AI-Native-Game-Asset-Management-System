@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { convertBatchModel } from '../../engines/blender/batch.mjs'
 import { modelArtifact } from '../artifacts.mjs'
 import { bundleIdentity } from './bundle-names.mjs'
+import { applyBundleMaterials } from './materials/bundle-glb.mjs'
 
 async function exportFbx(source, relative, stage, store, options, signal) {
   const format = 'fbx'
@@ -31,10 +32,15 @@ async function exportFbx(source, relative, stage, store, options, signal) {
   }
 }
 
-export async function saveBundleMesh(asset, stage, store, { method, converterVersion }, fbx, signal) {
+export async function saveBundleMesh(asset, stage, store, { method, converterVersion }, fbx, { objects, budget }, signal) {
   const { file: staged, size, ...entry } = asset
-  const file = await modelArtifact(stage, staged, 'glb', signal)
+  let file = await modelArtifact(stage, staged, 'glb', signal)
   if (!file || file.info.size !== size) return { ...entry, status: 'failed', issue: 'unity-bundle-mesh-output' }
+  const materialPreview = entry.meshMaterials && await applyBundleMaterials(file, entry, store.root, objects, budget, signal)
+  if (materialPreview === 'bound' || materialPreview === 'partial') {
+    file = await modelArtifact(stage, staged, 'glb', signal)
+    if (!file) return { ...entry, status: 'failed', issue: 'unity-bundle-mesh-output' }
+  }
   const { id, label } = bundleIdentity(entry)
   const filename = label ? 'Mesh-' + label : 'Mesh'
   const artifact = await store.save('Previews/' + id + '/' + filename + '.glb', file, {
@@ -42,5 +48,6 @@ export async function saveBundleMesh(asset, stage, store, { method, converterVer
   })
   const outputs = fbx && artifact.status === 'converted' &&
     [await exportFbx(artifact.path, 'Models/' + id + '/' + filename + '.fbx', stage, store, fbx, signal)]
-  return { ...entry, id, status: artifact.status, artifact, ...(outputs && { exports: outputs }) }
+  return { ...entry, id, status: artifact.status, artifact, ...(materialPreview && { materialPreview }),
+    ...(outputs && { exports: outputs }) }
 }

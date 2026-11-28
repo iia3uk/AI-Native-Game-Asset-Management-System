@@ -18,6 +18,7 @@ import { buildUnityPlayerFixture } from './fixtures/unity-player/project.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 import { verifyBundleAudio } from './unity-bundle/audio.mjs'
 import { verifyBundleAtlas } from './unity-bundle/atlas.mjs'
+import { verifyBundleMaterials } from './unity-bundle/materials.mjs'
 import { readTexture } from './unity-bundle/png.mjs'
 import { verifyBcTextures } from './unity-bundle/bc-textures.mjs'
 import { verifyPlayerExports, verifyPlayerMalformed } from './unity-bundle/player.mjs'
@@ -108,6 +109,17 @@ test('UnityFS validates decoder reports and rejects non-bundle sources without t
   for (const invalid of [null, { ...audio.audio, channels: 6 }, { ...audio.audio, sampleRate: 0 },
     { ...audio.audio, frames: 0 }, { ...audio.audio, frames: 32 * 1024 ** 2 }, { ...audio.audio, frames: 101 }]) {
     assert.equal(bundleResult({ ...report, assets: [{ ...audio, audio: invalid }] }, false), null)
+  }
+  const shader = { fileId: 1, pathId: '46' }
+  const binding = { property: '_MainTex', texture: { fileId: 0, pathId: row.pathId }, scale: [1, 1], offset: [0, 0] }
+  const material = { profile: 'standard', shader, textures: [binding], numbers: { _Mode: 1 }, color: null }
+  const paint = { member: row.member, pathId: '-4', classId: 21, name: 'Paint', status: 'decoded',
+    issue: null, output: null, format: 'material', material }
+  assert.deepEqual(bundleResult({ ...report, assets: [row, paint] }, false).assets[1].material, material)
+  for (const bad of [{ ...material, shader: null }, { ...material, textures: [binding, binding] },
+    { ...material, textures: [{ ...binding, texture: { fileId: -1, pathId: '42' } }] },
+    { ...material, textures: [{ ...binding, texture: { fileId: 0, pathId: '9223372036854775808' } }] }]) {
+    assert.equal(bundleResult({ ...report, assets: [row, { ...paint, material: bad }] }, false), null)
   }
 })
 
@@ -286,6 +298,8 @@ test('Unity builds native UnityFS bundles and the independent worker indexes tex
   await verifyBundleSprites(root, spriteData, client(spriteData))
   const atlasData = join(root, 'atlas-data')
   await verifyBundleAtlas(root, atlasData, client(atlasData))
+  const materialData = join(root, 'material-data')
+  await verifyBundleMaterials(root, client(materialData))
   const audioData = join(root, 'audio-data')
   await verifyBundleAudio(root, audioData, client(audioData), worker)
   const standaloneData = join(root, 'standalone-data')

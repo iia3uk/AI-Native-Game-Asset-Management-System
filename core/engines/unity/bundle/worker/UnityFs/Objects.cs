@@ -17,6 +17,7 @@ internal static class BundleObjects
             BundleDirectory.Validate(bundle.file);
             var resources = new BundleResources(bundle.file);
             var entries = new List<Asset>();
+            var materialBudget = 8192;
             var files = bundle.file.BlockAndDirInfo.DirectoryInfos;
             for (var index = 0; index < files.Count; index++)
             {
@@ -27,7 +28,7 @@ internal static class BundleObjects
                 var member = manager.LoadAssetsFileFromBundle(bundle, index, false);
                 if (member == null) throw new BundleException("unity-bundle-serialized-file");
                 SerializedObjects.Read(manager, member, directory.Name, directory.DecompressedSize, resources,
-                    inspectOnly, entries, ref outputLimit);
+                    inspectOnly, entries, ref outputLimit, ref materialBudget);
             }
             return new Report(1, Program.DecoderRevision, "completed", header.Format, header.Version, entries);
         }

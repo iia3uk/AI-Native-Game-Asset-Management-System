@@ -10,7 +10,7 @@ export async function buildAssetBundleFixture(root, editor) {
   }
   const log = join(root, 'bundle-fixture-editor.log')
   await Promise.all([
-    ...['BuildFixture.cs', 'BuildTextures.cs', 'BuildSprites.cs', 'BuildAtlas.cs', 'BuildAudio.cs'].map(name =>
+    ...['BuildFixture.cs', 'BuildTextures.cs', 'BuildSprites.cs', 'BuildAtlas.cs', 'BuildAudio.cs', 'BuildMaterials.cs'].map(name =>
       copyFile(new URL('./' + name, import.meta.url), join(project, 'Assets', 'Editor', name))),
     writeFile(join(project, 'Packages', 'manifest.json'), JSON.stringify({
       dependencies: { 'com.unity.modules.audio': '1.0.0' },

@@ -7,6 +7,7 @@ import { ExportArtifacts, exportFolders } from '../../../conversion/artifacts.mj
 import { saveBundleAudio } from '../../../conversion/unity/bundle-audio.mjs'
 import { saveBundleMesh } from '../../../conversion/unity/bundle-mesh.mjs'
 import { saveBundleTexture } from '../../../conversion/unity/bundle-texture.mjs'
+import { bundleObjectKey, saveBundleMaterial } from '../../../conversion/unity/materials/bundle-material.mjs'
 import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
 import { bundleDecoderRevision, bundleResult } from '../../../engines/unity/bundle/protocol.mjs'
 import { assetsToolsVersion, locateBundleWorker, runBundleWorker, stageBundle } from '../../../engines/unity/bundle/run.mjs'
@@ -24,19 +25,31 @@ async function saveOutputs(workspace, source, fingerprint, recipe, report, { met
   const store = new ExportArtifacts(output, signal)
   const deadline = AbortSignal.timeout(5 * 60_000)
   const fbx = withFbx && { blender, deadline, signal: signal ? AbortSignal.any([signal, deadline]) : deadline }
-  const assets = []
-  const counts = {}
+  const assets = [...report.assets]
+  const objects = new Map()
+  const materials = { objects, budget: { remaining: 128 * 1024 ** 2 } }
   const decoder = { method, converterVersion: assetsToolsVersion }
-  for (const asset of report.assets) {
-    signal?.throwIfAborted()
-    let result = asset
-    if (asset.file && asset.format === 'glb') result = await saveBundleMesh(asset, results, store, decoder, fbx, signal)
-    if (asset.file && asset.format === 'png') result = await saveBundleTexture(asset, results, store, decoder, signal)
-    if (asset.file && asset.format === 'wav') result = await saveBundleAudio(asset, results, store, decoder)
-    assets.push(result)
-    counts[result.status] = (counts[result.status] ?? 0) + 1
-    onProgress?.(50 + Math.floor(40 * assets.length / report.assets.length))
+  const save = {
+    png: asset => saveBundleTexture(asset, results, store, decoder, signal),
+    wav: asset => saveBundleAudio(asset, results, store, decoder),
+    json: asset => saveBundleMaterial(asset, results, store, decoder, objects, signal),
+    glb: asset => saveBundleMesh(asset, results, store, decoder, fbx, materials, signal),
   }
+  const pending = Map.groupBy([...report.assets.entries()].filter(([, asset]) => asset.file || asset.material),
+    ([, asset]) => asset.format)
+  let processed = report.assets.filter(asset => !asset.file && !asset.material).length
+  // Material descriptions reference published textures. Mesh previews reuse both.
+  for (const [format, convert] of Object.entries(save)) {
+    for (const [index, asset] of pending.get(format) ?? []) {
+      signal?.throwIfAborted()
+      const result = await convert(asset)
+      assets[index] = result
+      objects.set(bundleObjectKey(result.member, result.pathId), result)
+      onProgress?.(50 + Math.floor(40 * ++processed / assets.length))
+    }
+  }
+  const counts = {}
+  for (const { status } of assets) counts[status] = (counts[status] ?? 0) + 1
   const converted = counts.converted ?? 0
   const summary = { status: converted ? 'completed' : 'no-compatible-inputs', method,
     converterVersion: assetsToolsVersion, format: report.format, unityVersion: report.unityVersion,
