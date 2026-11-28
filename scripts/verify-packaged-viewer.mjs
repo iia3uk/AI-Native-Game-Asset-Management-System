@@ -7,7 +7,7 @@ import { verifyUnrealWorker } from './packaging/verify-unreal-worker.mjs'
 
 const require = createRequire(import.meta.url)
 const builderRequire = createRequire(require.resolve('electron-builder'))
-const { statFile } = builderRequire('@electron/asar')
+const { extractFile, statFile } = builderRequire('@electron/asar')
 
 export default async function verifyPackagedViewer({ appOutDir, electronPlatformName }) {
   if (electronPlatformName !== 'win32') return
@@ -193,6 +193,13 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'node_modules/@threenative/raw-unreal/LICENSE',
   ]) {
     if (!statFile(archive, normalize(path)).size) throw new Error('Missing renderer dependency in app.asar: ' + path)
+  }
+  for (const [path, marker] of [
+    ['node_modules/three/build/three.core.js', 'get hasExtraSkinWeights()'],
+    ['node_modules/three/build/three.module.js', '#define VIEWER_EXTRA_SKIN_WEIGHTS'],
+    ['node_modules/three/examples/jsm/loaders/FBXLoader.js', "geo.setAttribute( 'weights_1',"],
+  ]) {
+    if (!extractFile(archive, normalize(path)).includes(marker)) throw new Error('Missing skinning patch in app.asar: ' + path)
   }
   await access(join(resources, 'app.asar.unpacked', 'scripts', 'export-blend.py'))
   for (const path of [

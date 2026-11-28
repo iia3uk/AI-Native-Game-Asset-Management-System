@@ -1,4 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
+import { extendedSkinningPatches } from './three/extended-skinning.mjs'
+import { fbxSkinningPatches } from './three/fbx-skinning.mjs'
 
 const fbx = [
   // Some exporters leave the normal layer header without a normal array.
@@ -23,13 +25,15 @@ const vtk = [
   ["meta[ 2 ].includes( 'ASCII' )", "meta[ 2 ]?.includes( 'ASCII' )"],
 ]
 const rhino = [['export { Rhino3dmLoader };', 'export { Rhino3dmLoader, Rhino3dmWorker };']]
-for (const [name, patches] of [['FBXLoader.js', fbx], ['PLYLoader.js', ply], ['VTKLoader.js', vtk], ['3DMLoader.js', rhino]]) {
-  const loader = new URL('../node_modules/three/examples/jsm/loaders/' + name, import.meta.url)
+const loaderPatches = [['FBXLoader.js', [...fbx, ...fbxSkinningPatches]], ['PLYLoader.js', ply], ['VTKLoader.js', vtk], ['3DMLoader.js', rhino]]
+  .map(([name, patches]) => ['examples/jsm/loaders/' + name, patches])
+for (const [name, patches] of [...loaderPatches, ...extendedSkinningPatches]) {
+  const loader = new URL('../node_modules/three/' + name, import.meta.url)
   const original = await readFile(loader, 'utf8')
   let source = original
   for (const [before, after] of patches) {
     if (source.includes(after)) continue
-    if (!source.includes(before)) throw new Error('Review the ' + name + ' patches for this version of three.js')
+    if (!source.includes(before)) throw new Error('Review the ' + name + ' patch for ' + before.split('\n')[0].trim())
     source = source.replace(before, after)
   }
   if (source !== original) await writeFile(loader, source, 'utf8')

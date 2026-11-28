@@ -6,6 +6,8 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { Matrix4, Quaternion, Vector3 } from 'three'
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { encodeEditorSkeletalMesh } from '../core/conversion/unreal/skeletal-mesh/gltf.mjs'
 import { editorPackage } from '../core/engines/unreal/editor-package/tables.mjs'
 import { readUe4EditorSkeletalMesh, ue4EditorSkeletalMesh } from '../core/engines/unreal/skeletal-mesh/ue4-514.mjs'
@@ -105,6 +107,21 @@ test('loose UE4 import indexes the skinned GLB, preserves native inputs and veri
   const document = JSON.parse(bytes.toString('utf8', 20, 20 + length))
   const [section] = document.meshes[0].primitives
   assert.equal(values(document, bytes.subarray(28 + length), section.attributes.WEIGHTS_1)[0], 15)
+  const { scene } = await new GLTFLoader().parseAsync(Uint8Array.from(bytes).buffer, '')
+  const meshes = []
+  scene.traverse(node => { if (node.isSkinnedMesh) meshes.push(node) })
+  assert.equal(meshes.length, 2)
+  const [first] = meshes
+  assert.ok(meshes.every(mesh => mesh.hasExtraSkinWeights))
+  assert.equal(first.geometry.attributes.skinWeight.getX(0), 100 / 255)
+  assert.equal(first.geometry.attributes.weights_1.getX(0), 15 / 255)
+  scene.updateMatrixWorld(true)
+  const rest = first.getVertexPosition(0, new Vector3())
+  first.skeleton.bones[4].position.x += 34
+  scene.updateMatrixWorld(true)
+  assert.ok(Math.abs(first.getVertexPosition(0, new Vector3()).x - rest.x - 1) < 1e-6)
+  first.computeBoundingBox()
+  assert.ok(Math.abs(first.boundingBox.min.x - rest.x - 1) < 1e-6)
   if (nativeBlender) {
     assert.equal(report.unrealSourceMeshes.derivatives.fbx, 1)
     const fbx = asset.exports.find(item => item.format === 'fbx')
@@ -112,6 +129,16 @@ test('loose UE4 import indexes the skinned GLB, preserves native inputs and veri
     await copyFile(join(directory, fbx.path), shortPath)
     const [[triangles, uvChannels, colors]] = await readFbxGeometry([shortPath])
     assert.deepEqual([triangles, uvChannels, colors], [2, 2, 1])
+    const fbxScene = new FBXLoader().parse(Uint8Array.from(await readFile(shortPath)).buffer, '')
+    const fbxMesh = fbxScene.getObjectByProperty('isSkinnedMesh', true)
+    assert.ok(fbxMesh.hasExtraSkinWeights)
+    const fbxWeights = fbxMesh.geometry.attributes
+    for (let i = 0; i < 6; i++) {
+      const weights = ['skinWeight', 'weights_1'].flatMap(name =>
+        [0, 1, 2, 3].map(slot => fbxWeights[name].getComponent(i, slot))).filter(weight => weight > 0)
+      assert.equal(weights.length, 5)
+      assert.ok(Math.abs(weights.reduce((sum, weight) => sum + weight, 0) - 1) < 1e-6)
+    }
   }
   const { files } = await planPackageCleanup({ imports: join(data, 'imports'), protectedRoots: [data], job, source,
     signal: AbortSignal.timeout(15_000) })

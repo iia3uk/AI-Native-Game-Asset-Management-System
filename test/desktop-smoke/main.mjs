@@ -12,6 +12,7 @@ import { verifyPackageExport } from './package-export.mjs'
 import { verifyPackageCleanup } from './package-cleanup.mjs'
 import { verifyPackageFolder } from './package-folder.mjs'
 import { verifyPackageWatch } from './package-watch.mjs'
+import { verifySkinning } from './skinning.mjs'
 import { verifyStartupWithoutInterface } from './startup.mjs'
 import { verifyUnityAudio } from './unity-audio.mjs'
 import { verifyUnityBundle } from './unity-bundle.mjs'
@@ -74,6 +75,7 @@ void launchSmoke().then(async ({ window, origin }) => {
     })()
   `), { header: '/brand/asset-viewer.png', tab: '/brand/asset-viewer.ico', sourceWidth: 128, displayWidth: 36 })
   assert.equal(await webContents.executeJavaScript("typeof window.assetViewerDesktop.chooseFolder"), 'function')
+  await verifySkinning(webContents)
   await webContents.executeJavaScript("document.querySelector('#demo-mode').click()")
   await waitFor("document.querySelector('#animation-tools').hidden === false")
   await waitFor("document.querySelector('#model-stats').textContent.includes('252')")
