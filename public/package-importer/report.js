@@ -53,6 +53,7 @@ const packageIssues = {
   'unreal-source-mesh-invalid-model': 'Геометрия исходного меша UE4 не прошла проверку',
   'unreal-source-mesh-lods-need-build': 'В пакете отсутствует геометрия некоторых LOD',
   'unreal-source-mesh-material-graphs-not-extracted': 'Из исходного меша получены слоты и ссылки на материалы',
+  'unreal-source-material-time-budget': 'Достигнут лимит времени чтения материалов UE4',
   'unreal-viewer-no-versioned-ue4-inputs': 'Нет пакетов с поддерживаемой версией UE4',
   'unreal-viewer-space-limit': 'Недостаточно места для декодирования UE4',
   'unreal-viewer-failed': 'UE Viewer завершился с ошибкой',
@@ -121,7 +122,8 @@ export function appendManifest({ details, record, json, element, button, assetSt
         if (artifacts.length) {
           const results = element('ul')
           for (const item of artifacts) {
-            const label = artifactRoles[item.role] && [artifactRoles[item.role], item.name].filter(Boolean).join(' ')
+            const role = item.method === 'unreal-normal-map' ? 'Карта нормалей OpenGL' : artifactRoles[item.role]
+            const label = role && [role, item.name].filter(Boolean).join(' ')
             results.append(element('li', [
               item.format.toUpperCase(), label, artifactStatus[item.status] ?? item.status, item.path,
               item.width && item.height && `${item.width} × ${item.height}`,

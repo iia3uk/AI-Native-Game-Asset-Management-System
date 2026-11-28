@@ -20,10 +20,13 @@ export function bindViewerMaterials(document, lookup, modelPath, lookupPath) {
   const sources = new Set()
   const images = new Map()
   const usable = new Map()
+  const withNormals = new Map()
   for (const mesh of document.meshes ?? []) {
     for (const primitive of mesh.primitives ?? []) {
       const uv0 = Number.isSafeInteger(primitive.attributes?.TEXCOORD_0)
       usable.set(primitive.material, usable.get(primitive.material) !== false && uv0)
+      withNormals.set(primitive.material, withNormals.get(primitive.material) !== false &&
+        Number.isSafeInteger(primitive.attributes?.NORMAL))
     }
   }
   const image = path => {
@@ -50,7 +53,8 @@ export function bindViewerMaterials(document, lookup, modelPath, lookupPath) {
     const baseColorTexture = color && image(color)
     const emissiveTexture = emissive && image(emissive)
     const packedTexture = description.packedMap?.path && image(description.packedMap.path)
-    if (!baseColorTexture && !emissiveTexture && !packedTexture) continue
+    const normalTexture = withNormals.get(index) && description.normalMap?.path && image(description.normalMap.path)
+    if (!baseColorTexture && !emissiveTexture && !packedTexture && !normalTexture) continue
     const pbr = material.pbrMetallicRoughness
     if (baseColorTexture) {
       pbr.baseColorTexture = baseColorTexture
@@ -70,6 +74,7 @@ export function bindViewerMaterials(document, lookup, modelPath, lookupPath) {
       material.occlusionTexture = packedTexture
       pbr.metallicRoughnessTexture = packedTexture
     }
+    if (normalTexture) material.normalTexture = normalTexture
     pbr.metallicFactor = packedTexture ? 1 : (scalar(description, 'metallic', 1) ?? 0)
     pbr.roughnessFactor = packedTexture ? 1 : (scalar(description, 'roughness', 1) ?? .5)
   }

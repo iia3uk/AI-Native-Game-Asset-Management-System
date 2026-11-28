@@ -1,8 +1,9 @@
 import { editorPackage, requireLayout } from '../editor-package/tables.mjs'
 import { structArray, taggedProperties } from '../editor-package/properties.mjs'
 import { importedGameObject, softGameObject } from '../editor-package/references.mjs'
+import { directNormalInput } from './normal-input.mjs'
 
-export const sourceMaterialRevision = 1
+export const sourceMaterialRevision = 2
 const materials = new Set(['Material', 'MaterialInstanceConstant'])
 const textures = new Set(['Texture2D'])
 
@@ -81,5 +82,6 @@ export function readSourceMaterial(bytes) {
     scalars: parameters('Scalar', bytes, table, properties),
     vectors: parameters('Vector', bytes, table, properties),
     streaming: streamingData(bytes, table.nameAt, properties.get('TextureStreamingData')),
+    normalInput: object.type === 'Material' ? directNormalInput(bytes, table, object, properties) : null,
   }
 }

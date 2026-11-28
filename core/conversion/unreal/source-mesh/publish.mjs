@@ -18,13 +18,13 @@ export function sourceMaterialResolver(assets, root) {
     if (typeof path !== 'string' || !path.startsWith('/Game/')) return null
     const parts = path.slice(6).split('/')
     if (parts.some(part => !part || part === '.' || part === '..' || part.includes('\\'))) return null
-    for (let skip = 0; skip < parts.length - 1; skip++) {
+    if (parts.length === 1 && basename(root).toLowerCase() !== 'content') return null
+    for (let skip = 0; skip < parts.length; skip++) {
       if (skip && !selected.endsWith('/' + key(parts.slice(0, skip).join('/')))) continue
       const asset = byPath.get(key(parts.slice(skip).join('/') + '.uasset'))
       if (asset) return asset
     }
-    return parts.length === 1 && basename(root).toLowerCase() === 'content' ?
-      byPath.get(key(parts[0] + '.uasset')) ?? null : null
+    return null
   }
 }
 

@@ -44,6 +44,8 @@ The UE4 source-mesh reader takes SHA-256-verified staged package bytes. It confi
 
 The source material reader accepts SHA-256-verified staged packages up to 8 MiB. It checks the stock UE4 editor layout, export ranges, property bounds and row counts. Imported objects and serialized texture references must match typed package records or exact paths already present in the import. Parent traversal caps depth at 16 and detects cycles. Material metadata alone is insufficient evidence for source cleanup.
 
+Normal-map conversion verifies the staged texture package and extracted PNG hashes. The graph reader checks the expression owner and permits only a directly connected normal sampler with supported properties. Image conversion accepts noninterlaced 8-bit RGB and RGBA PNGs up to 64 MiB and 16 megapixels. Its fixed output paths derive from manifest IDs.
+
 Packed-channel reordering checks the PNG structure and chunk checksums, caps the input and inflated scanlines and requires noninterlaced 8-bit RGB or RGBA. The generated image is written through the managed artifact store.
 
 Explicit editor modes open eligible editor-format assets in a fresh project through the installed Python Script Plugin. The project stages known packages and matching sidecars under `/Game` and excludes source project configuration, plugins, code, maps and cooked packages. The bridge checks native Asset Registry classes and required dependencies before loading each package. Unreal parses binary input with the current account's OS permissions. Use editor export with trusted assets. Editor staging is limited to 2 GiB and 4,000 files, requires free disk space and uses a four-minute editor timeout. Verified artifacts publish from a private stage that is removed after the run.

@@ -26,7 +26,7 @@ async function publishTexture(asset, decoded, store, version, signal) {
   return !!artifact.path
 }
 
-export async function publishViewerMaterials({ targets, parameters, store, records, version, signal, cache = new Map() }) {
+export async function publishViewerMaterials({ targets, parameters, store, records, version, signal, cache = new Map(), normalMap }) {
   const decoded = parameters.output
   const byPath = new Map(targets.map(asset => [key(asset.sourcePath), asset]))
   const byName = Map.groupBy(targets, asset => key(posix.basename(asset.sourcePath).slice(0, -7)))
@@ -47,6 +47,7 @@ export async function publishViewerMaterials({ targets, parameters, store, recor
     if (!props || !slots) continue
     const properties = viewerMaterialProperties(props)
     const description = describeUnrealMaterial({ asset, properties, slots: viewerMaterialSlots(slots), resolve, version })
+    await normalMap?.(description, asset)
     description.packedMap = await publishPackedMap(description, { cache, resolve, store,
       workspace: parameters.workspace, version, signal, counts })
     const dir = 'Materials/' + asset.id + '/'
@@ -76,6 +77,10 @@ export async function publishViewerMaterials({ targets, parameters, store, recor
       const target = resolve(path)
       records.dependencies.push({ source: asset.id, target: target?.id ?? null, path, type,
         status: target ? 'resolved' : 'missing', ...(parameter && { parameter }) })
+    }
+    if (description.normalMap && !textures.some(({ path }) => resolve(path)?.id === description.normalMap.textureId)) {
+      records.dependencies.push({ source: asset.id, target: description.normalMap.textureId, path: description.normalMap.sourcePath,
+        type: 'unreal-material-texture', status: 'resolved' })
     }
   }
   const publishedMaterial = asset => {

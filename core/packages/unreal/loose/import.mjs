@@ -3,7 +3,7 @@ import { renameSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { exportRecipe, verifyExports } from '../../../conversion/cache.mjs'
-import { publishSourceMaterials } from '../../../conversion/unreal/source-material/publish.mjs'
+import { prepareSourceMaterials, publishSourceMaterials } from '../../../conversion/unreal/source-material/publish.mjs'
 import { recoverUnrealMedia } from '../../../conversion/unreal/source-media/extract.mjs'
 import { publishSourceMeshes } from '../../../conversion/unreal/source-mesh/publish.mjs'
 import { publishTexturedViewerModels } from '../../../conversion/unreal/viewer/bind-materials.mjs'
@@ -101,9 +101,11 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     const media = await recoverUnrealMedia(records, { output, workspace, signal,
       onProgress: progress => onProgress?.(79 + Math.floor(progress * 0.04)) })
     const packedMapCache = new Map()
+    const sourceMaterialInput = sourceMeshes && await prepareSourceMaterials({ records, output, workspace, signal,
+      store: sourceMeshes.store, resolve: sourceMeshes.resolveMaterial })
     const materialByPath = decoded ? await recoverLooseViewerMaterials({ decoded, viewer, records, output, workspace, signal,
-      cache: packedMapCache }) : null
-    const sourceMaterials = sourceMeshes && await publishSourceMaterials({ records, output, workspace, signal,
+      cache: packedMapCache, normalMap: sourceMaterialInput?.normalMap }) : null
+    const sourceMaterials = sourceMeshes && await publishSourceMaterials({ records, signal, sourceMaterials: sourceMaterialInput,
       store: sourceMeshes.store, resolve: sourceMeshes.resolveMaterial, cache: packedMapCache })
     if (sourceMeshes?.models.length) {
       await publishTexturedViewerModels({ ...sourceMeshes, counts: unrealSourceMeshes, records, output, workspace, signal,

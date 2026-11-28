@@ -129,20 +129,25 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
         details.append(element('p', [formatLabel(packageFormat), engineVersion].filter(Boolean).join(' · ')))
       }
       if (isUnrealLoose(record.result.report.packageFormat)) {
-        const { packageFormat, engineVersion, unreal, media, unrealViewer, unrealSourceMeshes } = record.result.report
+        const { packageFormat, engineVersion, unreal, media, unrealViewer, unrealSourceMeshes, unrealSourceMaterials } = record.result.report
         const gltf = (unrealViewer?.gltf ?? 0) + (unrealSourceMeshes?.gltf ?? 0)
         const textured = (unrealViewer?.materials?.texturedGltf ?? 0) + (unrealSourceMeshes?.texturedGltf ?? 0)
+        const materials = (unrealViewer?.materials?.materialJson ?? 0) + (unrealSourceMaterials?.materialJson ?? 0)
+        const packed = (unrealViewer?.materials?.packedMaterials ?? 0) + (unrealSourceMaterials?.packedMaterials ?? 0)
+        const normals = unrealSourceMaterials?.normalMaterials
         const fbx = (unrealViewer?.derivatives?.fbx ?? 0) + (unrealSourceMeshes?.derivatives?.fbx ?? 0)
         const glb = (unrealViewer?.derivatives?.glb ?? 0) + (unrealSourceMeshes?.derivatives?.glb ?? 0)
         details.append(element('p', [formatLabel(packageFormat), engineVersion || unreal?.editorVersion,
           media?.png && media.png + ' PNG', media?.wav && media.wav + ' WAV',
           unrealSourceMeshes?.meshes && 'Статических моделей UE4 · ' + unrealSourceMeshes.meshes,
           gltf && gltf + ' glTF', unrealViewer?.psa && unrealViewer.psa + ' PSA',
-          unrealViewer?.materials?.materialJson && unrealViewer.materials.materialJson + ' материалов',
-          unrealViewer?.materials?.packedMaterials && unrealViewer.materials.packedMaterials + ' материалов с картой AO/roughness/metallic',
+          materials && 'Описаний материалов · ' + materials,
+          packed && 'С картой AO/roughness/metallic · ' + packed,
+          normals && 'С картой нормалей · ' + normals,
           textured && textured + ' glTF с текстурами',
           fbx && fbx + ' FBX', glb && glb + ' GLB',
           unrealSourceMeshes?.issue && describeIssue(unrealSourceMeshes.issue),
+          unrealSourceMaterials?.issue && describeIssue(unrealSourceMaterials.issue),
           unrealViewer?.issue && describeIssue(unrealViewer.issue),
           unreal?.issue && describeIssue(unreal.issue)].filter(Boolean).join(' · ')))
       }

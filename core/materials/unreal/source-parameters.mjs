@@ -8,6 +8,7 @@ export function sourceMaterialParameters(asset, parsed, resolve) {
   const used = new Map(kinds.map(kind => [kind, new Set()]))
   const seen = new Set()
   let parentStatus = leaf.parentStatus
+  let normalInput
   for (let current = asset; current; ) {
     if (seen.size >= 16 || seen.has(current.id)) {
       parentStatus = 'invalid-lineage'
@@ -29,6 +30,9 @@ export function sourceMaterialParameters(asset, parsed, resolve) {
       }
     }
     if (current !== asset) parentStatus = material.parentStatus === 'base' ? 'resolved' : material.parentStatus
+    if (material.parentStatus === 'base' && material.normalInput) {
+      normalInput = { ...material.normalInput, definedIn: current.sourcePath }
+    }
     if (!material.parent) break
     current = resolve(material.parent)
     if (!current) parentStatus = 'missing'
@@ -41,5 +45,12 @@ export function sourceMaterialParameters(asset, parsed, resolve) {
   if (!['resolved', 'base'].includes(parentStatus)) {
     for (const kind of kinds) effective[kind] = effective[kind].filter(row => row.definedIn === asset.sourcePath)
   }
-  return { ...effective, parentStatus, corroborate }
+  let normal = null
+  if (normalInput) {
+    const parameter = normalInput.parameter && key(normalInput.parameter)
+    const override = parameter && used.get('textures').has(parameter)
+    const path = override ? effective.textures.find(row => key(row.name) === parameter)?.path : normalInput.path
+    if (path && corroborate(path)) normal = { ...normalInput, path }
+  }
+  return { ...effective, parentStatus, corroborate, normal }
 }
