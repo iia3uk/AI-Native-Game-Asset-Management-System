@@ -7,6 +7,7 @@ import { animationTotalsMatch } from '../../../conversion/unreal/animation/cache
 import { createEditorAnimationPublisher } from '../../../conversion/unreal/animation/publish.mjs'
 import { collisionTotalsMatch } from '../../../conversion/unreal/collision/cache.mjs'
 import { cookedMaterialRevision } from '../../../conversion/unreal/cooked-material/publish.mjs'
+import { cookedSkeletalTotalsMatch } from '../../../conversion/unreal/cooked-mesh/cache.mjs'
 import { publishLooseCooked } from '../../../conversion/unreal/loose-cooked/publish.mjs'
 import { skeletonTotalsMatch } from '../../../conversion/unreal/skeleton/cache.mjs'
 import { createSkeletonPublisher } from '../../../conversion/unreal/skeleton/publish.mjs'
@@ -70,6 +71,7 @@ async function cachedResult(root, name, hash, source, recipe, signal) {
         !Array.isArray(data.assets) || !collisionTotalsMatch(data.assets.filter(asset => asset.storage === 'cooked'),
           report.unrealCooked?.meshes?.collision) ||
         !editorSkeletalTotalsMatch(data.assets, report.unrealSourceMeshes) ||
+        !cookedSkeletalTotalsMatch(data.assets, report.unrealCooked?.meshes) ||
         !skeletonTotalsMatch(data.assets, report.unrealSkeletons, dependencyRecords) ||
         !animationTotalsMatch(data.assets, report.unrealEditorAnimations, dependencyRecords) ||
         !await verifyExports(directory, await availablePackageAssets(directory, data.assets, signal), signal)) {

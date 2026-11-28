@@ -5,7 +5,7 @@ import { convertBatchModel } from '../../../engines/blender/batch.mjs'
 import { editorSkeletalMeshMethod } from '../../../engines/unreal/source-mesh/run.mjs'
 import { modelArtifact } from '../../artifacts.mjs'
 import { editorAnimationBindingMethod } from '../animation/binding.mjs'
-import { cookedMeshMethod } from '../cooked-mesh/geometry.mjs'
+import { cookedMeshMethod, cookedSkeletalMeshMethod } from '../cooked-mesh/geometry.mjs'
 import { publishDirectMeshPreview } from '../source-mesh/preview.mjs'
 import { animationBindingMethod } from './actorx/publish.mjs'
 
@@ -34,8 +34,8 @@ export async function createViewerDerivatives({ models, store, blender, output, 
     const requireAnimation = animated?.method === editorAnimationBindingMethod
     let input = animated ?? asset.exports.find(item => item.path && materialMethods.has(item.method) &&
       item.from === artifact.path) ?? artifact
-    const directPreview = artifact.sourceFormat === 'FRawMesh' ||
-      artifact.method === cookedMeshMethod || artifact.method === editorSkeletalMeshMethod
+    const verifySkin = artifact.method === editorSkeletalMeshMethod || artifact.method === cookedSkeletalMeshMethod
+    const directPreview = artifact.sourceFormat === 'FRawMesh' || artifact.method === cookedMeshMethod || verifySkin
     if (requested.includes('glb') && directPreview && Date.now() < deadline) {
       const preview = { asset, artifact, output, workspace, store, signal }
       let direct = await publishDirectMeshPreview({ ...preview, input })
@@ -73,7 +73,7 @@ export async function createViewerDerivatives({ models, store, blender, output, 
         })
       }
       const intact = result.metrics?.bones >= input.metrics.bones && result.metrics?.animations >= input.metrics.animations &&
-        (artifact.method !== editorSkeletalMeshMethod || result.metrics.triangles === input.metrics.triangles)
+        (!verifySkin || result.metrics.triangles === input.metrics.triangles)
       for (const format of requested) {
         const description = describe(format)
         const path = 'model.' + format

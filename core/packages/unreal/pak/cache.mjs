@@ -20,7 +20,8 @@ export const pakRecipe = (formats, blender) => exportRecipe(formats, blender,
   [2, cue4parseVersion, pakTextureRevision, cookedMaterialRevision, looseMeshRevision, cookedAudioRevision,
     cookedCollisionRevision, ue4SkeletonRevision])
 export const pakMethod = 'cue4parse-pak'
-const roles = new Set(['texture', 'material', 'model', 'model-buffer', 'audio', 'collision-shapes', 'collision-preview', ...skeletonRoles])
+const roles = new Set(['texture', 'material', 'model', 'skeletal-model', 'model-buffer', 'audio', 'collision-shapes',
+  'collision-preview', ...skeletonRoles])
 
 export async function readPakCache(root, hash, recipe, sourceName, signal) {
   const output = join(root, hash + '-' + recipe)

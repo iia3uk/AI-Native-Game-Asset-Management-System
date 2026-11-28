@@ -11,14 +11,14 @@ const bytes = Buffer.from(input.buffer, input.byteOffset, input.byteLength)
 async function readSkeletalMesh() {
   const { editorPackage } = await import('../editor-package/tables.mjs')
   const { ue4EditorSkeletalMesh, readUe4EditorSkeletalMesh } = await import('../skeletal-mesh/ue4-514.mjs')
-  const { encodeEditorSkeletalMesh } = await import('../../../conversion/unreal/skeletal-mesh/gltf.mjs')
+  const { encodeSkeletalMesh } = await import('../../../conversion/unreal/skeletal-mesh/gltf.mjs')
   const table = editorPackage(bytes, workerData.version)
   const object = ue4EditorSkeletalMesh(bytes, workerData.version, table)
   if (!object) return null
   try {
     const data = readUe4EditorSkeletalMesh(bytes, table, object)
     if (data.issue) return { issue: data.issue }
-    const model = encodeEditorSkeletalMesh(data, workerData.stem + '.bin')
+    const model = encodeSkeletalMesh(data, workerData.stem + '.bin', 'Asset Viewer Unreal editor skeletal mesh')
     return { meshes: [{ lod: 0, ...model, influences: data.influences }] }
   } catch (error) {
     if (!(error instanceof RangeError)) throw error

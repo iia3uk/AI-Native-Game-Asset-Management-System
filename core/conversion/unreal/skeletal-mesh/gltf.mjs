@@ -49,7 +49,7 @@ function positionBounds(positions) {
   return { min, max }
 }
 
-export function encodeEditorSkeletalMesh({ rig, materials, sections, fields }, bin) {
+export function encodeSkeletalMesh({ rig, materials, sections, fields }, bin, generator) {
   const { append, finish } = meshBuffer()
   const { positions, normals, tangents, color, uvs, joints, weights } = fields
   const used = [...new Set(sections.map(section => section.slot))]
@@ -74,7 +74,7 @@ export function encodeEditorSkeletalMesh({ rig, materials, sections, fields }, b
   const inverseBindMatrices = append(inverse, 16, 5126)
   const { layout, buffer } = finish(bin)
   const document = {
-    asset: { version: '2.0', generator: 'Asset Viewer Unreal editor skeletal mesh' },
+    asset: { version: '2.0', generator },
     scene: 0, scenes: [{ nodes: [0, 1] }],
     nodes: [{ name: rig.object, mesh: 0, skin: 0 }, ...nodes],
     meshes: [{ name: rig.object, primitives }],

@@ -64,7 +64,7 @@ export async function verifyUnrealLoose(webContents, waitFor, root) {
       row.textContent.includes('Cooked UE4.27') && row.textContent.includes('Текстуры · 1 PNG') &&
       row.textContent.includes('Описания материалов · 1'))`)
     await waitFor(`Array.from(document.querySelectorAll('#package-jobs li p')).some(row =>
-      row.textContent.includes('Статические модели cooked UE4.27') && row.textContent.includes('LOD · 2'))`)
+      row.textContent.includes('Модели cooked UE4.27') && row.textContent.includes('LOD · 2'))`)
     await waitFor("document.querySelector('#package-jobs').textContent.includes('Аудио из cooked-ресурсов · Готово 1')")
   }
   await webContents.executeJavaScript(`{

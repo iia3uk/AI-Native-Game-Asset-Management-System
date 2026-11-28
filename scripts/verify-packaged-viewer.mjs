@@ -161,6 +161,7 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'core/conversion/unreal/gltf-buffer.mjs',
     'core/conversion/unreal/skeletal-mesh/gltf.mjs',
     'core/conversion/unreal/skeletal-mesh/cache.mjs',
+    'core/conversion/unreal/skeletal-mesh/cooked-data.mjs',
     'core/engines/inventory.mjs',
     'core/engines/blender/preview.mjs',
     'core/engines/unity/bundle/run.mjs',

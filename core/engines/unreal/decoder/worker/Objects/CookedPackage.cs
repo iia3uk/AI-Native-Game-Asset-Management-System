@@ -17,13 +17,17 @@ internal static class CookedPackage
     public static TResult? Read<TExport, TResult>(CookedInput? input, CookedInput? exports, CookedInput? bulk,
         CookedInput? optional, string className, string issuePrefix, Func<TExport, Package, TResult> decode)
         where TExport : UObject
-        => ReadCore(input, exports, bulk, optional, className, issuePrefix, (package, selected, _, _) =>
-            package.ExportsLazy[selected].Value is TExport asset
-                ? decode(asset, package) : throw new InputException(issuePrefix + "-layout"));
+        => Read(input, exports, bulk, optional, [className], issuePrefix, (asset, package) =>
+            asset is TExport typed ? decode(typed, package) : throw new InputException(issuePrefix + "-layout"));
+
+    public static TResult? Read<TResult>(CookedInput? input, CookedInput? exports, CookedInput? bulk,
+        CookedInput? optional, string[] classes, string issuePrefix, Func<UObject, Package, TResult> decode)
+        => ReadCore(input, exports, bulk, optional, classes, issuePrefix, (package, selected, _, _) =>
+            decode(package.ExportsLazy[selected].Value, package));
 
     public static TResult? ReadRaw<TResult>(CookedInput? input, CookedInput? exports,
         string className, string issuePrefix, Func<byte[], FAssetArchive, TResult> decode)
-        => ReadCore(input, exports, null, null, className, issuePrefix, (package, selected, header, data) =>
+        => ReadCore(input, exports, null, null, [className], issuePrefix, (package, selected, header, data) =>
         {
             var export = package.ExportMap[selected];
             var source = data ?? header;
@@ -35,7 +39,7 @@ internal static class CookedPackage
         });
 
     private static TResult? ReadCore<TResult>(CookedInput? input, CookedInput? exports, CookedInput? bulk,
-        CookedInput? optional, string className, string issuePrefix, Func<Package, int, FByteArchive, FByteArchive?, TResult> decode)
+        CookedInput? optional, string[] classes, string issuePrefix, Func<Package, int, FByteArchive, FByteArchive?, TResult> decode)
     {
         if (input is not { Size: >= 64 and <= MaxFile } || !HasStockHeader(input)) return default;
         try
@@ -51,7 +55,7 @@ internal static class CookedPackage
             {
                 var export = package.ExportMap[i];
                 if (export.OuterIndex?.Index != 0 || export.ClassIndex is not { } classIndex ||
-                    !IsNativeClass(package, classIndex.Index, className)) continue;
+                    !IsNativeClass(package, classIndex.Index, classes)) continue;
                 if (selected >= 0) throw new InputException(issuePrefix + "-ambiguous");
                 var minimum = package.Summary.TotalHeaderSize;
                 var maximum = data == null ? header.Length : minimum + data.Length;
@@ -106,14 +110,14 @@ internal static class CookedPackage
     private static FByteArchive? Archive(string name, CookedInput? input, VersionContainer version) =>
         input is { Size: > 0 and <= MaxFile } ? new FByteArchive(name, File.ReadAllBytes(input.Path), version) : null;
 
-    private static bool IsNativeClass(Package package, int index, string className)
+    private static bool IsNativeClass(Package package, int index, string[] classes)
     {
         var i = -1L - index;
         if (index >= 0 || i >= package.ImportMap.Length) return false;
         var type = package.ImportMap[i];
         if (type.OuterIndex is not { } typeOwner) return false;
         var outer = -1L - typeOwner.Index;
-        if (type.ClassName.Text != "Class" || type.ObjectName.Text != className || outer < 0 || outer >= package.ImportMap.Length) return false;
+        if (type.ClassName.Text != "Class" || !classes.Contains(type.ObjectName.Text) || outer < 0 || outer >= package.ImportMap.Length) return false;
         var owner = package.ImportMap[outer];
         return owner.ClassName.Text == "Package" && owner.ObjectName.Text == "/Script/Engine" && owner.OuterIndex?.Index == 0;
     }

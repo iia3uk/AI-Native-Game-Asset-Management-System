@@ -44,7 +44,7 @@ export async function verifyUnrealPak(webContents, waitFor, fixtures) {
     (${row})?.textContent.includes('Pak-Tint.png · 2 × 2 · Мип 0')`)
   await waitFor(`(${row})?.textContent.includes('Материалы из cooked-ресурсов · Готово 1') &&
     (${row})?.textContent.includes('Pak-Paint.material.json')`)
-  await waitFor(`(${row})?.textContent.includes('Статические модели cooked UE4.27 · Моделей · 1 · LOD · 2') &&
+  await waitFor(`(${row})?.textContent.includes('Модели cooked UE4.27 · Моделей · 1 · LOD · 2') &&
     (${row})?.textContent.includes('2 GLB') && (${row})?.textContent.includes('Форм коллизии · 4')`)
   await waitFor(`(${row})?.textContent.includes('Скелеты UE4 · Скелетов · 1 · Поз мешей · 1 · Подтверждённых связей · 1') &&
     (${row})?.textContent.includes('Исходная поза меша') && (${row})?.textContent.includes('Костей 2')`)

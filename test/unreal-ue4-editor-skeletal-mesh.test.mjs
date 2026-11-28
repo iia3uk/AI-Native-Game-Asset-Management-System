@@ -8,7 +8,7 @@ import { promisify } from 'node:util'
 import { Matrix4, Quaternion, Vector3 } from 'three'
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { encodeEditorSkeletalMesh } from '../core/conversion/unreal/skeletal-mesh/gltf.mjs'
+import { encodeSkeletalMesh } from '../core/conversion/unreal/skeletal-mesh/gltf.mjs'
 import { editorPackage } from '../core/engines/unreal/editor-package/tables.mjs'
 import { readUe4EditorSkeletalMesh, ue4EditorSkeletalMesh } from '../core/engines/unreal/skeletal-mesh/ue4-514.mjs'
 import { planPackageCleanup } from '../core/packages/cleanup/plan.mjs'
@@ -40,7 +40,7 @@ function values(document, bytes, accessor) {
 test('UE4 editor skeletal meshes preserve section palettes, all weights, tangent orientation and inverse bind matrices', () => {
   for (const indexWidth of [2, 4]) {
     const mesh = decode(fixture({ indexWidth }))
-    const { document, buffer, materialPaths } = encodeEditorSkeletalMesh(mesh, 'test.bin')
+    const { document, buffer, materialPaths } = encodeSkeletalMesh(mesh, 'test.bin', 'Asset Viewer Unreal editor skeletal mesh')
     assert.equal(mesh.influences, 5)
     assert.deepEqual(materialPaths, ['/Game/Characters/MI_Paint'])
     assert.deepEqual(document.materials[0].extras, { unrealMaterialSlot: 0, unrealImportedMaterialSlot: 'ImportedPaint',

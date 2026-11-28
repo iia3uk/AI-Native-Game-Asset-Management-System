@@ -7,11 +7,11 @@ import { cue4parseVersion, runUnrealDecoder, stageUnrealInputs } from '../../../
 import { readBoundedText } from '../../../files/asset-files.mjs'
 import { publishCookedCollision } from '../collision/cooked.mjs'
 import { publishTexturedViewerModels } from '../viewer/bind-materials.mjs'
-import { cookedMeshMethod, publishCookedLod } from './geometry.mjs'
+import { cookedMeshMethod, cookedSkeletalMeshMethod, publishCookedLod } from './geometry.mjs'
 
 const format = 'loose-meshes'
 const converterVersion = cue4parseVersion + '-mesh-' + looseMeshRevision
-const classes = new Set(['StaticMesh'])
+const classes = new Set(['StaticMesh', 'SkeletalMesh'])
 const modelMethod = 'unreal-cooked-mesh-material-binding'
 const maxMeshes = 128
 
@@ -27,8 +27,11 @@ async function candidates(inputs, { output, scratch, store, summary, signal, ske
     } catch (error) {
       if (!(error instanceof RangeError)) throw error
     }
-    if (!mesh) {
+    if (mesh?.type !== 'StaticMesh') {
       if (table && skeletons) await skeletons.publishCooked(input, table)
+      if (mesh?.type === 'SkeletalMesh' && !input.asset.exports.some(item => item.role === 'skeletal-model' && item.path && item.lod === 0)) {
+        found.push({ ...input, skeletal: true, rig: skeletons?.reference(input.asset) })
+      }
       continue
     }
     if (collisionCount++ < maxMeshes) {
@@ -39,9 +42,10 @@ async function candidates(inputs, { output, scratch, store, summary, signal, ske
   return found
 }
 
-function recordSkip(asset, issue, summary) {
+function recordSkip({ asset, skeletal }, issue, summary) {
   asset.issues.push(issue)
-  asset.exports.push({ method: cookedMeshMethod, converterVersion, from: asset.output, role: 'model', format: 'gltf', status: 'skipped', issue })
+  asset.exports.push({ method: skeletal ? cookedSkeletalMeshMethod : cookedMeshMethod, converterVersion, from: asset.output,
+    role: skeletal ? 'skeletal-model' : 'model', format: 'gltf', status: 'skipped', issue })
   summary.skipped++
 }
 
@@ -73,7 +77,12 @@ export async function publishCookedMeshes(inputs, { records, decoder, output, wo
       summary.issue = 'unreal-loose-meshes-unavailable'
       return resultStage
     }
-    const { selected, size, files, limited } = boundedCookedBatch(found, maxMeshes)
+    const readable = found.filter(input => {
+      if (!input.skeletal || input.rig) return true
+      recordSkip(input, 'unreal-cooked-mesh-reference-unavailable', summary)
+      return false
+    })
+    const { selected, size, files, limited } = boundedCookedBatch(readable, maxMeshes)
     if (limited) summary.issue = 'unreal-loose-meshes-budget'
     const count = selected.length
     if (!count) return resultStage
@@ -86,9 +95,14 @@ export async function publishCookedMeshes(inputs, { records, decoder, output, wo
     }
     for (const [index, row] of result.entries.entries()) {
       signal?.throwIfAborted()
-      const { asset } = selected[index]
+      const input = selected[index]
+      const { asset, rig, skeletal } = input
       if (!row.lods) {
-        recordSkip(asset, row.issue ?? 'unreal-cooked-mesh-layout', summary)
+        recordSkip(input, row.issue ?? 'unreal-cooked-mesh-layout', summary)
+        continue
+      }
+      if (skeletal ? row.boneCount !== rig.bones.length : row.boneCount !== undefined) {
+        recordSkip(input, 'unreal-cooked-mesh-reference-mismatch', summary)
         continue
       }
       if (row.limited) summary.issue = 'unreal-cooked-mesh-limit'
@@ -97,7 +111,7 @@ export async function publishCookedMeshes(inputs, { records, decoder, output, wo
       const prior = models.length
       for (const product of row.lods) {
         const { artifact, issue, materialPaths } = await publishCookedLod(asset, product, {
-          root: join(scratch, 'output'), scratch, store, folder: 'unreal-cooked', converterVersion, signal,
+          root: join(scratch, 'output'), scratch, store, folder: 'unreal-cooked', converterVersion, signal, rig,
         })
         if (!artifact?.path) {
           asset.issues.push(issue ?? artifact.issue)
@@ -112,7 +126,10 @@ export async function publishCookedMeshes(inputs, { records, decoder, output, wo
             type: 'unreal-model-material', status: target ? 'resolved' : 'missing', lod: product.lod })
         }
       }
-      if (models.length > prior) summary.meshes++
+      if (models.length > prior) {
+        summary.meshes++
+        if (skeletal) summary.skeletalMeshes = (summary.skeletalMeshes ?? 0) + 1
+      }
     }
   } finally {
     await rm(scratch, { recursive: true, force: true, maxRetries: 3 })

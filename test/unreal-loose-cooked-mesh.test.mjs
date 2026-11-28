@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { setTimeout } from 'node:timers/promises'
-import { looseMeshResult } from '../core/engines/unreal/decoder/mesh-protocol.mjs'
+import { looseMeshResult, looseMeshRevision } from '../core/engines/unreal/decoder/mesh-protocol.mjs'
 import { readFbxGeometry } from './fixtures/blender-model.mjs'
 import { cookedMaterial } from './fixtures/unreal-cooked-material.mjs'
 import { cookedStaticMesh } from './fixtures/unreal-cooked-static-mesh.mjs'
@@ -48,7 +48,7 @@ test('cooked mesh worker metadata can only address bounded numbered geometry and
   const section = { slot: 0, firstIndex: 0, triangles: 1, name: null, material: '/Game/Panel', collision: true }
   const lod = { lod: 0, vertices: 3, uvs: 1, colors: false, indices: 3, size: 156, tangentsQuantized: false,
     file: '../outside', sections: [section] }
-  const report = { protocol: 1, status: 'completed', meshDecoder: 1,
+  const report = { protocol: 1, status: 'completed', meshDecoder: looseMeshRevision,
     entries: [{ index: 0, issue: null, mesh: { lods: [lod], missing: [] } }] }
   assert.equal(looseMeshResult(report, 1).entries[0].lods[0].file, '00000-0.mesh')
   assert.equal(looseMeshResult(report, 2), null)

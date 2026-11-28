@@ -1,4 +1,4 @@
-export const looseMeshRevision = 1
+export const looseMeshRevision = 2
 export const ioStoreMeshRevision = 1
 const MiB = 1024 ** 2
 const issueCode = value => typeof value === 'string' && /^unreal-[a-z0-9-]{1,70}$/.test(value)
@@ -9,11 +9,13 @@ const boundedText = (value, max) => typeof value === 'string' && value.length >=
 const packagePath = value => boundedText(value, 320) && value.startsWith('/') &&
   value.slice(1).split('/').every(part => part && part !== '.' && part !== '..' && !part.includes('\\'))
 
-function meshLod(row, prefix) {
+function meshLod(row, prefix, boneCount) {
+  const influences = row?.influences ?? 0
+  if (boneCount ? influences !== 4 && influences !== 8 : influences !== 0) return null
   if (!lodIndex(row?.lod) || !natural(row.vertices, 3, 1_000_000) || !natural(row.indices, 3, 3_000_000) ||
       !natural(row.uvs, 1, 8) || typeof row.colors !== 'boolean' || typeof row.tangentsQuantized !== 'boolean' ||
       !Array.isArray(row.sections) || !natural(row.sections.length, 1, 128) ||
-      row.size !== row.vertices * (40 + row.uvs * 8 + (row.colors ? 4 : 0)) + row.indices * 4 ||
+      row.size !== row.vertices * (40 + row.uvs * 8 + (row.colors ? 4 : 0) + 3 * influences) + row.indices * 4 ||
       row.size > 96 * MiB) return null
   const sections = []
   for (const section of row.sections) {
@@ -23,15 +25,22 @@ function meshLod(row, prefix) {
         (section.material !== null && !packagePath(section.material))) return null
     const endIndex = section.firstIndex + 3 * section.triangles
     if (endIndex > row.indices || sections.some(other => section.firstIndex < other.endIndex && other.firstIndex < endIndex)) return null
-    const { slot, firstIndex, triangles, name, material, collision } = section
-    sections.push({ slot, firstIndex, endIndex, triangles, name, material, collision })
+    const { slot, firstIndex, triangles, name, material, collision, vertexCount, baseVertex = 0 } = section
+    if (boneCount ? collision || !natural(baseVertex, 0, row.vertices - 3) ||
+        !natural(vertexCount, 3, row.vertices - baseVertex) ||
+        sections.some(other => baseVertex < other.baseVertex + other.vertices && other.baseVertex < baseVertex + vertexCount) :
+        vertexCount !== undefined || section.baseVertex !== undefined) return null
+    sections.push({ slot, firstIndex, endIndex, triangles, name, material, collision,
+      ...(boneCount && { baseVertex, vertices: vertexCount }) })
   }
   const { lod, vertices, indices, uvs, colors, size, tangentsQuantized } = row
-  return { lod, vertices, indices, uvs, colors, size, tangentsQuantized, sections, file: prefix + '-' + lod + '.mesh' }
+  return { lod, vertices, indices, uvs, colors, size, tangentsQuantized, sections, file: prefix + '-' + lod + '.mesh',
+    ...(boneCount && { boneCount, influences }) }
 }
 
-export function meshProduct(value, prefix) {
-  const { lods, missing, limited = false } = value ?? {}
+export function meshProduct(value, prefix, allowSkin = false) {
+  const { lods, missing, limited = false, boneCount = 0 } = value ?? {}
+  if (boneCount !== 0 && (!allowSkin || !natural(boneCount, 1, 2048))) return null
   if (!Array.isArray(lods) || !Array.isArray(missing) || !natural(lods.length, 1, 8) ||
       lods.length + missing.length > 8 || !missing.every(lodIndex) ||
       typeof limited !== 'boolean' || (limited && !missing.length)) return null
@@ -39,13 +48,13 @@ export function meshProduct(value, prefix) {
   if (levels.size !== missing.length) return null
   const products = []
   for (const lod of lods) {
-    const product = meshLod(lod, prefix)
+    const product = meshLod(lod, prefix, boneCount)
     if (!product || levels.has(product.lod)) return null
     levels.add(product.lod)
     products.push(product)
   }
   if ([...levels].some(level => level >= levels.size)) return null
-  return { lods: products, missing, ...(limited && { limited }) }
+  return { lods: products, missing, ...(limited && { limited }), ...(boneCount && { boneCount }) }
 }
 
 export function looseMeshResult(raw, count) {
@@ -61,7 +70,7 @@ export function looseMeshResult(raw, count) {
       entries.push({ issue: row.issue })
       continue
     }
-    const mesh = meshProduct(row.mesh, String(index).padStart(5, '0'))
+    const mesh = meshProduct(row.mesh, String(index).padStart(5, '0'), true)
     if (row.issue || !mesh) return null
     bytes += mesh.lods.reduce((sum, lod) => sum + lod.size, 0)
     if (bytes > 256 * MiB) return null
