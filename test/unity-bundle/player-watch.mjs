@@ -52,7 +52,7 @@ export async function verifyPlayerWatch(root, files, plan, server) {
   await copyFile(files.audio, audio)
   const second = await waitForVersion(server, 2)
   assert.equal(second.sourceKey, plan.hash)
-  assert.equal(second.result.report.converted, 6)
+  assert.equal(second.result.report.converted, 10)
   assert.deepEqual((await manifestOf(second)).source.resources, plan.resources)
 
   const clip = join(root, 'PlayerProject', 'Assets', 'Resources', 'StereoPcm.wav')
@@ -74,6 +74,6 @@ export async function verifyPlayerWatch(root, files, plan, server) {
   await writeFile(texture, bytes)
   const fourth = await waitForVersion(server, 4)
   assert.notEqual(fourth.sourceKey, third.sourceKey)
-  assert.equal(fourth.result.report.converted, 6)
+  assert.equal(fourth.result.report.converted, 10)
   assert.deepEqual(await readFile(primary), await readFile(files.primary))
 }

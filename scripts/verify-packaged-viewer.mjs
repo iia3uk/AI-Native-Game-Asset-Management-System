@@ -207,6 +207,8 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
   await access(join(resources, 'app.asar.unpacked', 'scripts', 'export-blend.py'))
   for (const path of [
     'AssetViewer.UnityBundle.exe', 'AssetViewer.UnityBundle.dll', 'AssetsTools.NET.dll', 'coreclr.dll',
+    'BCnEncoder.dll', 'CommunityToolkit.HighPerformance.dll', 'Notices/BCnEncoder-LICENSE.txt',
+    'Notices/CommunityToolkit-LICENSE.md', 'Notices/CommunityToolkit-NOTICE.txt',
     'Notices/AssetsTools.NET.LICENSE.txt', 'Notices/LICENSE.TXT', 'Notices/THIRD-PARTY-NOTICES.TXT',
   ]) {
     await access(join(resources, 'unity-bundle', path))

@@ -11,9 +11,15 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../../formats/dotnet/BlockCompression.cs" Link="Formats/BlockCompression.cs" />
+    <Compile Include="../../../formats/dotnet/Bc7Texture.cs" Link="Formats/Bc7Texture.cs" />
     <PackageReference Include="AssetsTools.NET" Version="[3.0.5]" />
+    <PackageReference Include="BCnEncoder.Net" Version="[2.3.0]" />
+    <PackageReference Include="CommunityToolkit.HighPerformance" Version="[8.4.2]" GeneratePathProperty="true" />
     <RuntimeHostConfigurationOption Include="System.GC.HeapHardLimit" Value="402653184" />
     <None Update="Notices/AssetsTools.NET.LICENSE.txt" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../../formats/dotnet/Notices/BCnEncoder-LICENSE.txt" Link="Notices/BCnEncoder-LICENSE.txt" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(PkgCommunityToolkit_HighPerformance)/License.md" Link="Notices/CommunityToolkit-LICENSE.md" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(PkgCommunityToolkit_HighPerformance)/ThirdPartyNotices.txt" Link="Notices/CommunityToolkit-NOTICE.txt" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="CopyRuntimeNotices" AfterTargets="Publish" Condition="'$(SelfContained)' == 'true'">
     <ItemGroup>

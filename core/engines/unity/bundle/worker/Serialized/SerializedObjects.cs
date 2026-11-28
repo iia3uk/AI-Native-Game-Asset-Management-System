@@ -93,6 +93,7 @@ internal static class SerializedObjects
         }
         var available = row with { Name = product.Name, Format = product.Format, Width = product.Width, Height = product.Height,
             TextureEncoding = product.TextureEncoding, TextureStorage = product.TextureStorage, Sprite = product.Sprite,
+            TextureColorSpace = product.TextureColorSpace,
             Vertices = product.Vertices, Triangles = product.Triangles, Audio = product.Audio, Status = "available", Issue = null };
         if (inspectOnly) return available;
         if (product.Bytes.Length > outputLimit) return row with { Issue = "unity-bundle-output-limit" };

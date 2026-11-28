@@ -52,14 +52,15 @@ internal static class PlayerLayout
         reader.Skip(4); // m_StreamingMipmapsPriority
         var count = reader.Int32();
         var dimension = reader.Int32();
-        reader.Skip(32); // m_TextureSettings, m_LightmapFormat, m_ColorSpace
+        reader.Skip(28); // m_TextureSettings, m_LightmapFormat
+        var colorSpace = reader.Int32();
         reader.Bytes(); // m_PlatformBlob
         var data = reader.Bytes();
         var offset = reader.UInt64();
         var size = reader.UInt32();
         var path = reader.String(1024);
         reader.RequireEnd();
-        return new TextureInput(name, width, height, dimension, count, format, data,
+        return new TextureInput(name, width, height, dimension, count, format, colorSpace, data,
             new ResourceReference(path, offset, size));
     }
 

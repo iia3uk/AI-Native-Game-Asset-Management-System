@@ -17,7 +17,9 @@ export async function saveBundleTexture(asset, stage, store, { method, converter
     const from = (height - 1 - row) * stride
     pixels.copy(scanlines, row * (stride + 1) + 1, from, from + stride)
   }
-  const png = encodePngScanlines(width, height, scanlines, { alpha: true })
+  const png = encodePngScanlines(width, height, scanlines, {
+    alpha: true, linear: entry.textureColorSpace === 'linear', srgb: entry.textureColorSpace === 'srgb',
+  })
   const { id, label } = bundleIdentity(entry)
   const target = join(stage, id + '.png')
   await writeFile(target, png, { signal, flag: 'wx' })

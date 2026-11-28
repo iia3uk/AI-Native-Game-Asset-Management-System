@@ -39,6 +39,7 @@ internal sealed class SpriteReader(string member, SerializedResources resources,
         var name = field["m_Name"].AsString;
         return new Product(name.Length > 160 ? name[..160] : name, "rgba", bytes, Width: frame.Width, Height: frame.Height,
             TextureEncoding: cachedTexture.TextureEncoding, TextureStorage: cachedTexture.TextureStorage,
+            TextureColorSpace: cachedTexture.TextureColorSpace,
             Sprite: new SpriteSource(pathId.ToString(CultureInfo.InvariantCulture), frame.X, frame.Y, packed));
     }
 

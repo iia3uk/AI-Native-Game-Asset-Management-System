@@ -6,7 +6,7 @@ namespace AssetViewer.UnityBundle;
 
 internal static class Program
 {
-    public const int DecoderRevision = 7;
+    public const int DecoderRevision = 8;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { MaxDepth = 10 };
 
     public static int Main(string[] args)
@@ -48,10 +48,12 @@ internal sealed record Request(int Protocol, bool InspectOnly, long OutputLimit,
 internal sealed record Asset(string Member, string PathId, int ClassId, string? Name, string Status, string? Issue,
     int? Width = null, int? Height = null, int? Output = null, string? Format = null,
     int? Vertices = null, int? Triangles = null, int? Bytes = null,
-    string? TextureEncoding = null, string? TextureStorage = null, SpriteSource? Sprite = null, AudioSource? Audio = null);
+    string? TextureEncoding = null, string? TextureStorage = null, SpriteSource? Sprite = null, AudioSource? Audio = null,
+    string? TextureColorSpace = null);
 internal sealed record Product(string Name, string Format, byte[] Bytes,
     int? Width = null, int? Height = null, int? Vertices = null, int? Triangles = null,
-    string? TextureEncoding = null, string? TextureStorage = null, SpriteSource? Sprite = null, AudioSource? Audio = null);
+    string? TextureEncoding = null, string? TextureStorage = null, SpriteSource? Sprite = null, AudioSource? Audio = null,
+    string? TextureColorSpace = null);
 internal sealed record SpriteSource(string TexturePathId, int X, int Y, PackedSprite? Packed = null);
 internal sealed record PackedSprite(string AtlasPathId, int Width, int Height, int OffsetX, int OffsetY, int Rotation);
 internal sealed record AudioSource(int Channels, int SampleRate, int Frames);

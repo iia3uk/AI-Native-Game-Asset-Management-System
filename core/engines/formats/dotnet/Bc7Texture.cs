@@ -1,22 +1,21 @@
 using System.Runtime.InteropServices;
-using AssetViewer.Formats;
 using BCnEncoder.Decoder;
 using BCnEncoder.Shared;
 
-namespace AssetViewer.UnrealDecode.Objects;
+namespace AssetViewer.Formats;
 
 internal static class Bc7Texture
 {
     private const int BlockPixels = 4;
     private const int BlockBytes = 16;
 
-    public static byte[] Decode(ReadOnlySpan<byte> input, int width, int height, string issuePrefix)
+    public static byte[]? Decode(ReadOnlySpan<byte> input, int width, int height)
     {
         if (input.Length != BlockCompression.Size(width, height, true))
-            throw new InputException(issuePrefix + "bc7-length");
+            return null;
         for (var offset = 0; offset < input.Length; offset += BlockBytes)
         {
-            if (input[offset] == 0) throw new InputException(issuePrefix + "bc7-mode");
+            if (input[offset] == 0) return null;
         }
 
         var decoder = new BcDecoder();

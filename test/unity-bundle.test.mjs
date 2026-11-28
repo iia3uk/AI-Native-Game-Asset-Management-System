@@ -19,6 +19,7 @@ import { startServer, testDirectory } from './server-fixture.mjs'
 import { verifyBundleAudio } from './unity-bundle/audio.mjs'
 import { verifyBundleAtlas } from './unity-bundle/atlas.mjs'
 import { readTexture } from './unity-bundle/png.mjs'
+import { verifyBcTextures } from './unity-bundle/bc-textures.mjs'
 import { verifyPlayerExports, verifyPlayerMalformed } from './unity-bundle/player.mjs'
 import { verifyPlayerWatch } from './unity-bundle/player-watch.mjs'
 import { verifyStandaloneUnity } from './unity-bundle/serialized.mjs'
@@ -73,8 +74,11 @@ test('UnityFS validates decoder reports and rejects non-bundle sources without t
   const report = { protocol: 1, decoderRevision: bundleDecoderRevision, status: 'completed', format: 8,
     unityVersion: '6000.3.10f1', assets: [row] }
   assert.equal(bundleResult(report, false).assets[0].file, '0.rgba')
+  const bc5 = { ...row, textureEncoding: 'bc5', textureColorSpace: 'linear' }
+  assert.equal(bundleResult({ ...report, assets: [bc5] }, false).assets[0].textureColorSpace, 'linear')
   for (const invalid of [{ ...row, member: '../CAB' }, { ...row, output: 4 }, { ...row, width: 3000 },
-    { ...row, textureStorage: 'sidecar' }, { ...row, textureEncoding: 'other' }, { ...row, bytes: 63 }]) {
+    { ...row, textureStorage: 'sidecar' }, { ...row, textureEncoding: 'other' }, { ...row, bytes: 63 },
+    { ...row, textureColorSpace: 'other' }, { ...bc5, textureColorSpace: 'srgb' }, { ...bc5, textureColorSpace: null }]) {
     assert.equal(bundleResult({ ...report, assets: [invalid] }, false), null)
   }
   assert.equal(bundleResult({ ...report, decoderRevision: bundleDecoderRevision - 1 }, false), null)
@@ -125,7 +129,7 @@ test('Unity builds native UnityFS bundles and the independent worker indexes tex
   assert.equal(inspection.status, 'completed', JSON.stringify(inspection))
   assert.equal(inspection.unityVersion, version)
   assert.equal(inspection.format, 8)
-  assert.equal(inspection.total, 6)
+  assert.equal(inspection.total, 10)
   assert.equal(inspection.decoderRevision, bundleDecoderRevision)
   const texture = inspection.assets.find(asset => asset.name === 'Albedo')
   assert.deepEqual([texture.status, texture.width, texture.height], ['available', 4, 4])
@@ -135,7 +139,7 @@ test('Unity builds native UnityFS bundles and the independent worker indexes tex
   await assert.rejects(readdir(data), { code: 'ENOENT' })
 
   const output = await query('unity-bundle', input, '--fbx')
-  assert.equal(output.converted, 5, JSON.stringify(output))
+  assert.equal(output.converted, 9, JSON.stringify(output))
   assert.equal(output.skipped, 1)
   const manifest = JSON.parse(await readFile(join(output.output, 'manifest.json'), 'utf8'))
   assert.equal(manifest.source.sha256, createHash('sha256').update(before).digest('hex'))
@@ -164,6 +168,8 @@ test('Unity builds native UnityFS bundles and the independent worker indexes tex
   assert.equal(assets.length, 1)
   assert.equal(assets[0].ext, 'png')
   assert.equal((await query('search', 'StreamedDXT5', '--library', output.library.id)).assets[0].ext, 'png')
+  await verifyBcTextures(manifest, output.output, 'assetstools-unityfs', 'bundle-member')
+  assert.equal((await query('search', 'StreamedBC7', '--library', output.library.id)).assets[0].ext, 'png')
 
   const model = manifest.assets.find(asset => asset.pathId === mesh.pathId)
   const readProduct = async product => Uint8Array.from(await readFile(join(output.output, product.path))).buffer
@@ -198,6 +204,17 @@ test('Unity builds native UnityFS bundles and the independent worker indexes tex
   assert.deepEqual(await readdir(join(output.output, '..')), [output.output.split(/[\\/]/).at(-1)])
 
   const uncompressed = await readFile(join(root, 'Bundles', 'uncompressed', 'fixture.bundle'))
+  const invalidBc7 = Buffer.from(uncompressed)
+  const block = invalidBc7.indexOf(Buffer.from('c04884c56232b55a00000000000000004097cb62f9fd4e270000000000000000', 'hex'))
+  assert.ok(block > 0)
+  invalidBc7[block] = 0
+  const badBc7 = join(root, 'bad-bc7.bundle')
+  await writeFile(badBc7, invalidBc7)
+  const partial = await query('unity-bundle', badBc7)
+  assert.equal(partial.converted, 8, JSON.stringify(partial))
+  const partialManifest = JSON.parse(await readFile(join(partial.output, 'manifest.json'), 'utf8'))
+  const invalidTexture = partialManifest.assets.find(asset => asset.name === 'InlineBC7')
+  assert.deepEqual([invalidTexture.status, invalidTexture.issue], ['unsupported', 'unity-bundle-texture-bc7-mode'])
   const streamPath = /archive:\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+\.resS/.exec(uncompressed.toString('latin1'))
   assert.ok(streamPath, 'Unity should write an internal resource reference')
   assert.equal(uncompressed.readUInt32LE(streamPath.index - 4), streamPath[0].length)
@@ -232,7 +249,7 @@ test('Unity builds native UnityFS bundles and the independent worker indexes tex
     assert.equal(cached.result.reused, true)
     assert.equal(cached.result.library.id, output.library.id)
     assert.equal(cached.result.report.packageFormat, 'unityfs')
-    assert.deepEqual(cached.result.report.counts, { converted: 5, unsupported: 1 })
+    assert.deepEqual(cached.result.report.counts, { converted: 9, unsupported: 1 })
     assert.equal((await waitForJob(server, cached.result.scanJobId)).status, 'completed')
     const page = await (await server.request('/api/index/jobs/' + cached.id + '/manifest')).json()
     assert.deepEqual(page.assets, manifest.assets)

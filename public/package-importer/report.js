@@ -20,6 +20,7 @@ const packageIssues = {
   'unity-bundle-texture-format': 'Кодек текстуры Unity не поддерживается',
   'unity-bundle-texture-shape': 'Поддерживаются одиночные двумерные текстуры до 2048 × 2048',
   'unity-bundle-texture-size': 'Данных текстуры недостаточно',
+  'unity-bundle-texture-bc7-mode': 'Некорректный блок текстуры BC7',
   'unity-bundle-texture-stream-path': 'Текстура ссылается на недопустимый источник данных',
   'unity-bundle-texture-stream-missing': 'Источник данных текстуры отсутствует',
   'unity-bundle-texture-stream-range': 'Данные текстуры выходят за границы источника',
