@@ -31,8 +31,7 @@ export async function verifyPackageCleanup(webContents, waitFor) {
         const manifest = JSON.parse(await readFile(join(directory, 'manifest.json'), 'utf8'))
         assert.equal(manifest.export?.processedOnly, sharedOutput ? undefined : true)
         if (options.checkboxLabel.includes('Unity')) {
-          const prefab = manifest.assets.find(asset => asset.id === ids.prefab)
-          assert.equal(prefab.output, null)
+          if (!sharedOutput) assert.equal(manifest.assets.find(asset => asset.id === ids.prefab).output, null)
           const model = manifest.assets.find(asset => asset.id === ids.model)
           assert.equal(await readFile(join(directory, model.output), 'utf8'), fixtureModel)
         } else {
@@ -81,6 +80,9 @@ export async function verifyPackageCleanup(webContents, waitFor) {
     assert.equal(unauthorized.status, 'unavailable')
     const quickButton = "document.querySelector('#package-process-folder-quick')"
     const indexDialog = "document.querySelector('#index-dialog')"
+    const sourceInput = "document.querySelector('#package-process-source')"
+    const destinationInput = "document.querySelector('#package-process-destination')"
+    const startButton = "document.querySelector('#package-process-cleanup')"
     await webContents.executeJavaScript(indexDialog + '.close()')
     assert.equal(await webContents.executeJavaScript(quickButton + '.hidden'), false)
     let picks = 0
@@ -104,7 +106,11 @@ export async function verifyPackageCleanup(webContents, waitFor) {
       return { canceled: false, filePaths: [firstFolder] }
     }
     await webContents.executeJavaScript(quickButton + '.click()')
-    await waitFor(indexDialog + ".open && document.querySelector('#package-source-cleanup').open")
+    await waitFor(indexDialog + ".open && document.querySelector('#package-source-cleanup').open && " +
+      sourceInput + '.value === ' + JSON.stringify(firstFolder))
+    assert.equal(await webContents.executeJavaScript(destinationInput + '.value'), '')
+    assert.deepEqual(prompts, [])
+    await webContents.executeJavaScript(startButton + '.click()')
     await waitFor("document.querySelector('#package-cleanup-status').textContent === 'Исходники оставлены.'")
     assert.equal(picks, 2)
     assert.deepEqual(await readFile(first), input)
@@ -256,7 +262,17 @@ export async function verifyPackageCleanup(webContents, waitFor) {
     const sharedSource = join(sharedFolder, 'Step.uasset')
     await Promise.all([mkdir(exportRoot), mkdir(sharedFolder)])
     await writeFile(sharedSource, input)
-    await submit(sharedFolder, exportRoot, true, true)
+    await webContents.executeJavaScript(indexDialog + '.close()')
+    const directories = [sharedFolder, exportRoot]
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directories.shift()] })
+    await webContents.executeJavaScript(quickButton + '.click()')
+    await waitFor(sourceInput + '.value === ' + JSON.stringify(sharedFolder))
+    assert.equal(await webContents.executeJavaScript(destinationInput + '.value'), '')
+    await webContents.executeJavaScript("document.querySelector('#package-process-destination-pick').click()")
+    await waitFor(destinationInput + '.value === ' + JSON.stringify(exportRoot))
+    assert.equal(await webContents.executeJavaScript("document.querySelector('#package-process-shared').checked"), true)
+    assert.equal(prompts.length, 8)
+    await webContents.executeJavaScript("document.querySelector('#package-process-compact').checked = true; " + startButton + '.click()')
     await waitFor("document.querySelector('#package-cleanup-status').textContent.includes('Удалено служебных копий 1') && document.querySelector('#package-process-output').textContent.startsWith('Библиотека · ')")
     assert.equal(prompts.length, 9)
     assert.deepEqual(moved, [first, second, unitySource, mixedUnity, compactSource, sharedSource])
@@ -271,6 +287,27 @@ export async function verifyPackageCleanup(webContents, waitFor) {
       assert.deepEqual(await readdir(exportRoot), [basename(run.storagePath)])
       assert.deepEqual(await readFile(join(item.directory, 'Audio', 'Step.wav')), sourceWave())
       await assert.rejects(readFile(join(item.directory, 'Source', 'Content', 'Step.uasset')), { code: 'ENOENT' })
+
+      const nextFolder = join(root, 'Shared Unity')
+      await mkdir(nextFolder)
+      const nextSource = await writeUnityFixture(join(nextFolder, 'Next.unitypackage'))
+      confirm = false
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [nextFolder] })
+      await webContents.executeJavaScript(indexDialog + '.close(); ' + quickButton + '.click()')
+      await waitFor(sourceInput + '.value === ' + JSON.stringify(nextFolder))
+      assert.equal(await webContents.executeJavaScript(destinationInput + '.value'), exportRoot)
+      await webContents.executeJavaScript(startButton + '.click()')
+      await waitFor("document.querySelector('#package-cleanup-status').textContent === 'Исходники оставлены.'")
+      assert.equal(prompts.length, 10)
+      assert.match(prompts[9].checkboxLabel, /Unity/)
+      assert.ok(prompts[9].detail.includes(nextSource))
+      assert.ok((await readFile(nextSource)).length)
+      const nextRun = sharedIndex.folderRuns.get()
+      assert.equal(nextRun.storagePath, run.storagePath)
+      assert.equal(nextRun.options.shared, true)
+      assert.notEqual(nextRun.items[0].directory, item.directory)
+      assert.deepEqual(await readdir(exportRoot), [basename(run.storagePath)])
+      assert.deepEqual(await readFile(join(item.directory, 'Audio', 'Step.wav')), sourceWave())
     } finally { await sharedIndex.close() }
   } finally {
     dialog.showMessageBox = ask

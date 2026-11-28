@@ -19,6 +19,7 @@ function statusMessage(run) {
 export function mountFolderProcessing({ get, bridge, json, post, importOptions, refresh, openIndex, runLocked }) {
   if (!bridge?.cleanupFolderRun || !bridge.chooseFolder) return
   const section = get('source-cleanup')
+  const index = section.closest('dialog')
   const source = get('process-source')
   const destination = get('process-destination')
   const shared = get('process-shared')
@@ -27,6 +28,7 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
   const destinationPick = get('process-destination-pick')
   const process = get('process-cleanup')
   const quick = get('process-folder-quick')
+  const quickOptions = get('process-quick-options')
   const restore = get('restore-confirmation')
   const review = get('review-folder-cleanup')
   const leave = get('leave-folder-cleanup')
@@ -135,55 +137,77 @@ export function mountFolderProcessing({ get, bridge, json, post, importOptions, 
     updateControls()
   })
 
-  function showProgress() {
+  function openFolderPanel() {
     section.open = true
-    get('importer').open = true
     openIndex()
     section.querySelector('summary').focus()
   }
 
-  function start(quickImport) {
+  function showProgress() {
+    get('importer').open = true
+    openFolderPanel()
+  }
+
+  index.addEventListener('close', () => {
+    if (!index.open) quickOptions.hidden = true
+  })
+
+  quick.addEventListener('click', () => void runLocked(async () => {
+    if (isActive(run)) return showProgress()
+    quick.disabled = true
+    try {
+      const path = await bridge.chooseFolder()
+      if (isActive(run)) return showProgress()
+      if (!path) return
+      source.value = path
+      destination.value = run?.shared ? run.destination : ''
+      shared.checked = Boolean(destination.value)
+      compact.checked = shared.checked && run.compact
+      quickOptions.hidden = false
+      output.textContent = ''
+      setStatus('')
+      openFolderPanel()
+    } catch (error) {
+      openFolderPanel()
+      setStatus(error.message)
+    } finally { updateControls() }
+  }))
+
+  get('process-folder-form').addEventListener('submit', event => {
+    event.preventDefault()
+    if (process.disabled) return
     void runLocked(async () => {
-      if (isActive(run)) {
-        if (quickImport) showProgress()
-        return
-      }
+      const quickSetup = !quickOptions.hidden
       submitting = true
       submission++
       updateControls()
       let started
       try {
-        const path = (!quickImport && source.value.trim()) || await bridge.chooseFolder()
+        const path = source.value.trim() || await bridge.chooseFolder()
         if (!path) return
-        if (quickImport) showProgress()
         source.value = path
         output.textContent = ''
         setStatus('Запуск обработки папки…')
-        const { mode, formats, editorVersion: unityVersion } = quickImport
+        const { mode, formats, editorVersion: unityVersion } = quickSetup
           ? { mode: 'auto', formats: ['fbx', 'glb'] }
           : importOptions('unitypackage')
-        const unrealVersion = quickImport ? undefined : importOptions('unreal-content').editorVersion
-        const target = quickImport ? '' : destination.value.trim()
+        const unrealVersion = quickSetup ? undefined : importOptions('unreal-content').editorVersion
+        const target = destination.value.trim()
         const response = await json(route, post({ path, destination: target, compact: Boolean(target && compact.checked),
           shared: Boolean(target && shared.checked),
           mode, formats, unityVersion, unrealVersion }))
         started = response.run
-      } catch (error) {
-        if (quickImport) showProgress()
-        setStatus(error.message)
-      }
+      } catch (error) { setStatus(error.message) }
       finally {
         submitting = false
-        if (started) { display(started); void poll() }
-        else updateControls()
+        if (started) {
+          if (quickSetup && index.open) showProgress()
+          quickOptions.hidden = true
+          display(started)
+          void poll()
+        } else updateControls()
       }
     })
-  }
-
-  quick.addEventListener('click', () => start(true))
-  get('process-folder-form').addEventListener('submit', event => {
-    event.preventDefault()
-    if (!process.disabled) start(false)
   })
 
   for (const [button, action] of [[review, 'review'], [leave, 'leave']]) {
