@@ -202,7 +202,9 @@ The independent worker handles stored and Zlib-compressed entries from supported
 
 Select a `.utoc` or one of its `.ucas` files in **Импорт пакетов Unity и Unreal**. Keep all numbered partitions beside the TOC. Folder search lists one entry for each TOC, and **Импорт UE / Unity…** can process those entries with the folder workflow. The inspection lists the files used to build the import fingerprint. The worker handles directory-indexed, unencrypted and unsigned TOC versions 2 to 8 with stored or Zlib blocks. Unsupported codecs appear in the report.
 
-Supported embedded WAV, PNG, FBX and GLB files keep their bytes and enter the normal library. Named cooked packages, bulk data and embedded AssetRegistry files are retained in `Source/` as raw IoStore chunks. The manifest records their chunk IDs, paths and hashes. Converting Zen objects to models or textures and resolving their cross-container dependencies remain pending. The source set stays in place.
+Supported embedded WAV, PNG, FBX and GLB files keep their bytes and enter the normal library. Named cooked packages, bulk data and embedded AssetRegistry files are retained in `Source/` as raw IoStore chunks. The manifest records their chunk IDs, paths and hashes.
+
+Stock UE5.3 and 5.4 Zen `Texture2D` packages with versioned properties can also produce indexed PNGs. The worker reads BGRA8, RGBA8, G8, DXT1 and DXT5 pixels from the package or its matching bulk chunk in the same container. It exports the first readable mip within 4,096 pixels per side and records its level, dimensions and color space. The job report shows how many PNGs were converted and why recognized textures were skipped. Use **Показать в индексе** to open the exported PNG. Selective package export includes the PNG and its native inputs. The source set stays in place. Unversioned properties, virtual textures, models and dependencies spanning multiple containers remain pending.
 
 ```sh
 npm run cli -- package-inspect "/absolute/path/example.utoc" --json

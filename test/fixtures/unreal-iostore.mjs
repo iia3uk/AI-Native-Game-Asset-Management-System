@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import { wavTone } from './unreal-pak.mjs'
+import { zenFixtureId, zenTexturePackage } from './unreal-zen-texture.mjs'
 
 const end = 0xffffffff
 const blockSize = 512
@@ -37,14 +38,24 @@ const digests = {
   asset: 'a1ae18bc4ff89b9874adf795f9195f33430242e9',
   bulk: 'b65a643fb272bf481a01ce14408f987a5de068f9',
 }
+const textureDigests = {
+  inline: '104b725a32b3ea27cc1755a2034077432ed97f1c',
+  external: 'ac00bca73d5e9f97217515e409bed2748d74c919',
+  broken: '4217cdd0a155f69174b97efa3d34c67d2810b15c',
+  bulk: '4a46cfa5f7fa028f90e6b62e4dc490525bd139a1',
+}
 
 export function makeIoStore({ version = 8, flags = 9, soundName = 'IoStore-Tone.wav', cycle = false,
-  secondPartition = version >= 3, unsupportedCodec = false, audioOffset = 27 } = {}) {
-  const { audio, asset, bulk } = ioStorePayloads()
+  secondPartition = version >= 3, unsupportedCodec = false, audioOffset = 27, texture } = {}) {
+  const { audio, ...original } = ioStorePayloads()
+  const { asset, bulk } = texture ? zenTexturePackage({ mode: texture }) : original
+  const packageId = texture ? zenFixtureId : 2n
   const files = [
     { content: audio, digest: digests.audio, id: 1n, type: 7, offset: audioOffset, compressed: true },
-    { content: asset, digest: digests.asset, id: 2n, type: version >= 4 ? 1 : 2, offset: 5 * blockSize, compressed: false },
-    { content: bulk, digest: digests.bulk, id: 2n, type: version >= 4 ? 2 : 3, offset: 6 * blockSize, compressed: true },
+    { content: asset, digest: texture ? textureDigests[texture] : digests.asset, id: packageId,
+      type: version >= 4 ? 1 : 2, offset: 5 * blockSize, compressed: false },
+    { content: bulk, digest: texture ? textureDigests.bulk : digests.bulk, id: packageId,
+      type: version >= 4 ? 2 : 3, offset: (5 + Math.ceil(asset.length / blockSize)) * blockSize, compressed: true },
   ]
   const offsets = []
   const ids = []
@@ -87,7 +98,7 @@ export function makeIoStore({ version = 8, flags = 9, soundName = 'IoStore-Tone.
     unrealString('../../../Fixture/Content/'), words(2),
     words(end, 1, end, 0), words(0, cycle ? 1 : end, end, 1),
     words(3), words(1, end, 0), words(2, 2, 1), words(3, end, 2),
-    words(4), unrealString('Vérification', true), unrealString(soundName),
+    words(4), unrealString(texture ? 'Verification' : 'Vérification', true), unrealString(soundName),
     unrealString('Sample.uasset'), unrealString('Sample.ubulk'),
   ])
   const header = Buffer.alloc(144)

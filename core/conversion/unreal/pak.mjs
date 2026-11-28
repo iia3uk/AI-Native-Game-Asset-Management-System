@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileInfo } from '../../files/asset-files.mjs'
 import { inspectUnrealFile } from '../../packages/unreal/inspect.mjs'
-import { containerFileFolders, pngMetrics, validateContainerFile } from './container-files.mjs'
+import { containerFileFolders, validateContainerFile } from './container-files.mjs'
+import { publishContainerTexture } from './container-texture.mjs'
 const companions = new Set(['uexp', 'ubulk', 'uptnl'])
 
 async function validatedArtifact(root, entry, signal) {
@@ -14,22 +15,6 @@ async function validatedArtifact(root, entry, signal) {
   if (companions.has(entry.format)) return file
   const info = await inspectUnrealFile(root, { file, name: entry.path, type: entry.format }, signal)
   return ['editor', 'cooked', 'unversioned'].includes(info.storage) ? file : null
-}
-
-async function publishTexture(root, store, { texture, textureIssue }, artifact, id, path, converterVersion, signal) {
-  const details = { role: 'texture', format: 'png', method: 'cue4parse-cooked-texture', converterVersion,
-    from: artifact.path }
-  if (textureIssue) return { ...details, status: 'skipped', issue: textureIssue }
-  const { file: input, size, ...image } = texture
-  const file = await fileInfo(root, input)
-  const destination = 'Textures/' + id + '/' + posix.basename(path).slice(0, -7) + '.png'
-  if (file?.info.size === size) {
-    const metrics = await pngMetrics(root, file, destination, signal)
-    if (metrics.width === image.width && metrics.height === image.height) {
-      return store.save(destination, file, { ...details, ...image, status: 'converted' })
-    }
-  }
-  return { ...details, status: 'failed', issue: 'unreal-cooked-texture-output' }
 }
 
 export async function publishPakEntries(entries, root, store, backendVersion, signal) {
@@ -69,7 +54,8 @@ export async function publishPakEntries(entries, root, store, backendVersion, si
       status: 'extracted', format: entry.format, method: 'cue4parse-pak', converterVersion: backendVersion,
     })
     const exports = artifact.path && (texture || textureIssue) ?
-      [await publishTexture(root, store, row, artifact, id, path, backendVersion, signal)] : undefined
+      [await publishContainerTexture(root, store, row, artifact, id, { method: 'cue4parse-cooked-texture',
+        converterVersion: backendVersion, outputIssue: 'unreal-cooked-texture-output' }, signal)] : undefined
     published.push({ ...entry, id, status: artifact.status, artifact, ...(exports && { exports }) })
   }
   return published

@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { promisify } from 'node:util'
 import { writeIoStoreFixture } from '../fixtures/unreal-iostore.mjs'
+import { assertZenPng } from '../fixtures/unreal-zen-texture.mjs'
 import { testDirectory } from '../server-fixture.mjs'
 
 const run = promisify(execFile)
@@ -16,7 +17,7 @@ test('The packaged Windows importer verifies and indexes a multi-partition Unrea
   const root = await testDirectory(t)
   const source = join(root, 'Incoming IoStore')
   await mkdir(source)
-  const { path, partitionPaths, payloads } = await writeIoStoreFixture(source, 'Installed')
+  const { path, partitionPaths, payloads } = await writeIoStoreFixture(source, 'Installed', { texture: 'external' })
   const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', ASSET_VIEWER_CUE4PARSE: '',
     ASSET_VIEWER_DATA_DIR: join(root, 'data') }
   const cli = async (...args) => JSON.parse((await run(executable, [script, ...args, '--json'],
@@ -30,9 +31,12 @@ test('The packaged Windows importer verifies and indexes a multi-partition Unrea
   assert.equal(job.sourceKey, plan.hash)
   const { directory, report } = job.result
   assert.deepEqual(report.extractedTypes, { package: 1, bulk: 1, file: 1, registry: 0 })
+  assert.equal(report.textures.converted, 1)
   const { entries } = JSON.parse(await readFile(join(directory, 'manifest.json'), 'utf8'))
   const sound = entries.find(row => row.kind === 'file')
   assert.deepEqual(await readFile(join(directory, sound.artifact.path)), payloads.audio)
+  const asset = entries.find(row => row.kind === 'package')
+  assertZenPng(await readFile(join(directory, asset.exports[0].path)), false)
   const cached = await cli('package-import', path)
   assert.equal(cached.job.result.reused, true)
   assert.equal(cached.job.result.directory, directory)

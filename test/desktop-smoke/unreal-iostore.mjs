@@ -2,7 +2,7 @@ import { dirname } from 'node:path'
 import { writeIoStoreFixture } from '../fixtures/unreal-iostore.mjs'
 
 export async function verifyUnrealIoStore(webContents, waitFor, fixtures) {
-  const fixture = await writeIoStoreFixture(dirname(fixtures), 'SmokeIoStore')
+  const fixture = await writeIoStoreFixture(dirname(fixtures), 'SmokeIoStore', { texture: 'external' })
   await webContents.executeJavaScript(`
     if (!document.querySelector('#index-dialog').open) document.querySelector('#index-mode').click()
     document.querySelector('#package-importer').open = true
@@ -15,6 +15,7 @@ export async function verifyUnrealIoStore(webContents, waitFor, fixtures) {
     .find(item => item.firstElementChild.textContent.startsWith('SmokeIoStore.utoc · '))`
   await waitFor(`(${row})?.firstElementChild.textContent.includes('В индексе')`)
   await waitFor(`(${row})?.textContent.includes('Готовых файлов · 1 · Блоков в формате IoStore · 2')`)
+  await waitFor(`(${row})?.textContent.includes('Текстур из Zen-пакетов · 1 PNG')`)
   await webContents.executeJavaScript(`Array.from((${row}).querySelectorAll('button'))
     .find(button => button.textContent === 'Показать в индексе').click()`)
   await waitFor("document.querySelector('#index-results').textContent.includes('IoStore-Tone.wav')")
@@ -32,4 +33,12 @@ export async function verifyUnrealIoStore(webContents, waitFor, fixtures) {
     return audio.play()
   })()`, true)
   await waitFor("document.querySelector('#stage-audio').ended")
+  await webContents.executeJavaScript(`Array.from(document.querySelectorAll('#index-results button'))
+    .find(button => button.textContent.startsWith('Sample.png')).click()`)
+  await waitFor("document.querySelector('#index-name').textContent === 'Sample.png' && !document.querySelector('#index-preview').disabled")
+  await webContents.executeJavaScript("document.querySelector('#index-preview').click()")
+  await waitFor(`(() => {
+    const image = document.querySelector('#stage-image')
+    return !image.hidden && image.currentSrc.endsWith('Sample.png') && image.naturalWidth === 2 && image.naturalHeight === 2
+  })()`)
 }

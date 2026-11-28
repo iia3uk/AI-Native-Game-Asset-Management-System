@@ -8,7 +8,7 @@ internal static class Png
 {
     public static long MaximumSize(int pixelBytes, int height) => pixelBytes + height + 64 * 1024L;
 
-    public static void Write(Stream output, int width, int height, ReadOnlySpan<byte> rgba)
+    public static void Write(Stream output, int width, int height, ReadOnlySpan<byte> rgba, bool? srgb = null)
     {
         output.Write([137, 80, 78, 71, 13, 10, 26, 10]);
         Span<byte> header = stackalloc byte[13];
@@ -18,6 +18,13 @@ internal static class Png
         header[8] = 8;
         header[9] = 6;
         Chunk(output, "IHDR"u8, header);
+        if (srgb == true) Chunk(output, "sRGB"u8, [0]);
+        if (srgb == false)
+        {
+            Span<byte> gamma = stackalloc byte[4];
+            BinaryPrimitives.WriteInt32BigEndian(gamma, 100000);
+            Chunk(output, "gAMA"u8, gamma);
+        }
         using var compressed = new MemoryStream();
         using (var zlib = new ZLibStream(compressed, CompressionLevel.Fastest, leaveOpen: true))
         {

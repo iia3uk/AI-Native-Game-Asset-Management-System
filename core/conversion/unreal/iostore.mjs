@@ -2,13 +2,16 @@ import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileInfo } from '../../files/asset-files.mjs'
 import { containerFileFolders, validateContainerFile } from './container-files.mjs'
+import { publishContainerTexture } from './container-texture.mjs'
 
 export const ioStoreMethod = 'cue4parse-iostore'
+export const zenTextureMethod = 'cue4parse-iostore-zen-texture'
 
 export async function publishIoStoreEntries(entries, root, store, version, signal) {
   const results = []
-  for (const { file: input, ...entry } of entries) {
+  for (const row of entries) {
     signal?.throwIfAborted()
+    const { file: input, texture, textureIssue, ...entry } = row
     if (!input) {
       results.push(entry)
       continue
@@ -26,7 +29,10 @@ export async function publishIoStoreEntries(entries, root, store, version, signa
     const artifact = await store.save(destination, file, { status: 'extracted', format: entry.format,
       role: entry.kind === 'file' ? 'embedded-file' : 'iostore-' + entry.kind + '-chunk',
       method: ioStoreMethod, converterVersion: version })
-    results.push({ ...entry, id, status: artifact.status, artifact })
+    const exports = artifact.path && (texture || textureIssue) ?
+      [await publishContainerTexture(root, store, row, artifact, id, { method: zenTextureMethod,
+        converterVersion: version, outputIssue: 'unreal-iostore-texture-output' }, signal)] : undefined
+    results.push({ ...entry, id, status: artifact.status, artifact, ...(exports && { exports }) })
   }
   return results
 }

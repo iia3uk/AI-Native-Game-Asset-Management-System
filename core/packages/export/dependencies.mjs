@@ -16,7 +16,7 @@ function relationships(assets, document, archive) {
   }
   if (archive) {
     const groups = Map.groupBy(assets.filter(row => row.artifact && unrealCompanions.test(row.path)),
-      row => JSON.stringify([unrealKey(row.path), row.chunkId?.slice(0, 16)]))
+      row => JSON.stringify([unrealKey(row.path), row.chunkId?.slice(0, 22)]))
     const include = (source, target) => add(source, target,
       { type: 'unreal-package-companion', source: source.path, path: target.path, status: 'resolved' })
     for (const [first, ...companions] of groups.values()) {

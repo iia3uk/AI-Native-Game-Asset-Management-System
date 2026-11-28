@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using AssetViewer.Formats;
 using CUE4Parse.UE4.Assets;
 using CUE4Parse.UE4.Assets.Exports.Texture;
 using CUE4Parse.UE4.Objects.Engine;
@@ -12,7 +11,6 @@ internal sealed record CookedInput(string Path, long Size);
 
 internal static class CookedTexture
 {
-    private const int MaxSide = 4096;
     private const int MaxHeader = 16 * 1024 * 1024;
     private const int MaxFile = 64 * 1024 * 1024;
 
@@ -102,7 +100,7 @@ internal static class CookedTexture
     }
 
     private static bool ValidDimensions(FTexture2DMipMap level) =>
-        level.SizeX is > 0 and <= MaxSide && level.SizeY is > 0 and <= MaxSide && level.SizeZ == 1;
+        level.SizeX is > 0 and <= TexturePixels.MaxSide && level.SizeY is > 0 and <= TexturePixels.MaxSide && level.SizeZ == 1;
 
     private static (byte[] Data, TextureExport Export) GetPixels(UTexture2D texture, long remaining)
     {
@@ -110,7 +108,7 @@ internal static class CookedTexture
         var format = texture.Format;
         if (platform.VTData != null || platform.PackedData != 1 || platform.Mips.Length is < 1 or > 16 ||
             platform.FirstMipToSerialize is < 0 or > 15 || platform.PixelFormat != format.ToString() ||
-            format is not (EPixelFormat.PF_B8G8R8A8 or EPixelFormat.PF_R8G8B8A8 or EPixelFormat.PF_G8 or EPixelFormat.PF_DXT1 or EPixelFormat.PF_DXT5))
+            !TexturePixels.Supports(format))
             throw new InputException("unreal-cooked-texture-format");
         for (var i = 0; i < platform.Mips.Length; i++)
         {
@@ -118,48 +116,17 @@ internal static class CookedTexture
             if (!ValidDimensions(mip) || mip.BulkData is not { } bulk || bulk.Header.ElementCount == 0) continue;
             var width = mip.SizeX;
             var height = mip.SizeY;
-            var count = checked(width * height);
-            var length = 4 * count;
-            var expected = format switch
-            {
-                EPixelFormat.PF_DXT1 => BlockCompression.Size(width, height, false),
-                EPixelFormat.PF_DXT5 => BlockCompression.Size(width, height, true),
-                EPixelFormat.PF_G8 => count,
-                _ => length,
-            };
+            var length = 4 * width * height;
+            var expected = TexturePixels.Size(format, width, height);
             if (bulk.Header.ElementCount != expected || bulk.Header.SizeOnDisk is 0 or > MaxFile)
                 throw new InputException("unreal-cooked-texture-mip");
             if (length > remaining) throw new InputException("unreal-cooked-texture-limit");
             if (bulk.Data is not { Length: > 0 } bytes) continue;
             if (bytes.Length != expected) throw new InputException("unreal-cooked-texture-mip");
-            var result = format switch
-            {
-                EPixelFormat.PF_DXT1 => BlockCompression.Decode(bytes, width, height, false),
-                EPixelFormat.PF_DXT5 => BlockCompression.Decode(bytes, width, height, true),
-                EPixelFormat.PF_B8G8R8A8 => Swizzle(bytes),
-                EPixelFormat.PF_G8 => ExpandGray(bytes),
-                _ => bytes,
-            };
+            var result = TexturePixels.Decode(bytes, format, width, height);
             return (result, new TextureExport(width, height, platform.FirstMipToSerialize + i, format.ToString(), texture.SRGB));
         }
         throw new InputException("unreal-cooked-texture-mip");
     }
 
-    private static byte[] Swizzle(byte[] bytes)
-    {
-        for (var i = 0; i < bytes.Length; i += 4) (bytes[i], bytes[i + 2]) = (bytes[i + 2], bytes[i]);
-        return bytes;
-    }
-
-    private static byte[] ExpandGray(byte[] bytes)
-    {
-        var pixels = new byte[bytes.Length * 4];
-        for (var i = 0; i < bytes.Length; i++)
-        {
-            var at = 4 * i;
-            pixels[at] = pixels[at + 1] = pixels[at + 2] = bytes[i];
-            pixels[at + 3] = 255;
-        }
-        return pixels;
-    }
 }

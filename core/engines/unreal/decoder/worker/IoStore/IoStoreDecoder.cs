@@ -1,11 +1,12 @@
 using Blake3;
+using AssetViewer.UnrealDecode.IoStore.Zen;
 
 namespace AssetViewer.UnrealDecode.IoStore;
 
 internal sealed record IoStoreEntry(string Path, long Size, string Status, string? Issue, int? Output, string ChunkId,
-    string? Kind = null);
+    string? Kind = null, TextureExport? Texture = null, string? TextureIssue = null);
 internal sealed record IoStoreReport(int Protocol, string Status, int ContainerVersion, int Chunks, int Partitions,
-    IReadOnlyList<IoStoreEntry> Entries);
+    IReadOnlyList<IoStoreEntry> Entries, int TextureDecoder);
 
 internal static class IoStoreDecoder
 {
@@ -43,13 +44,16 @@ internal static class IoStoreDecoder
             var actual = Hasher.Hash(payload);
             if (!actual.AsSpan()[..20].SequenceEqual(toc.ChunkHash(file.Chunk)))
                 throw new InputException("unreal-iostore-chunk-hash");
-            var outputPath = Path.Combine("output", products.ToString("D5") + ".bin");
+            var outputPath = OutputPath(products, "bin");
             using (var output = File.Open(outputPath, FileMode.CreateNew, FileAccess.Write)) output.Write(payload);
             entries.Add(new(file.Path, size, "extracted", null, products++, identifier, kind));
             unpacked += size;
         }
-        return new(1, "completed", version, resource.ChunkIds.Length, (int)resource.Header.PartitionCount, entries);
+        if (!request.InspectOnly && version >= 5) IoStoreTextures.Decode(entries, request.MaxOutputBytes - unpacked);
+        return new(1, "completed", version, resource.ChunkIds.Length, (int)resource.Header.PartitionCount, entries, 1);
     }
+
+    internal static string OutputPath(int index, string extension) => Path.Combine("output", index.ToString("D5") + "." + extension);
 
     private static string? Kind(string path, byte type, int version)
     {

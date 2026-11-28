@@ -175,12 +175,13 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
         if (textures?.converted) details.append(element('p', 'Текстур из cooked-ресурсов · ' + textures.converted + ' PNG'))
       }
       if (record.result.report.packageFormat === 'unreal-iostore') {
-        const { containerVersion, extracted, extractedTypes, total } = record.result.report
+        const { containerVersion, extracted, extractedTypes, textures, total } = record.result.report
         details.append(element('p', 'Unreal IoStore ' + containerVersion + ' · Извлечено ' + extracted + ' из ' + total))
         if (extractedTypes) details.append(element('p', [
           'Готовых файлов · ' + extractedTypes.file,
           'Блоков в формате IoStore · ' + (extractedTypes.package + extractedTypes.bulk + extractedTypes.registry),
         ].join(' · ')))
+        if (textures?.converted) details.append(element('p', 'Текстур из Zen-пакетов · ' + textures.converted + ' PNG'))
       }
       if (record.result.report.export) {
         details.append(element('p', 'Моделей сконвертировано · ' + record.result.report.converted))
