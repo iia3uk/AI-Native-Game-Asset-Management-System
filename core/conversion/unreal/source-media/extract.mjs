@@ -3,7 +3,7 @@ import { mkdir, open, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ExportArtifacts } from '../../artifacts.mjs'
 import { checkedPath, fileInfo, sameFile } from '../../../files/asset-files.mjs'
-import { sourceNormalSettings } from '../../../engines/unreal/source-material/texture-properties.mjs'
+import { sourceNormalSettings, sourceTextureSettings } from '../../../engines/unreal/source-material/texture-properties.mjs'
 import { unrealSourceMedia } from './payload.mjs'
 
 const maxCandidateSize = 128 * 1024 ** 2
@@ -43,12 +43,13 @@ export async function recoverUnrealMedia(records, { output, workspace, signal, o
     const media = input && unrealSourceMedia(input, signal)
     if (!media) continue
     const { bytes, ...metadata } = media
-    const normalSettings = media.role === 'texture' && sourceNormalSettings(input)
-    if (normalSettings && createHash('sha256').update(input).digest('hex') !== asset.hash) {
-      throw new Error('Staged Unreal normal package changed during texture extraction')
+    const sampling = media.role === 'texture' ? sourceTextureSettings(input) : null
+    const normalSettings = sourceNormalSettings(sampling)
+    if (sampling && createHash('sha256').update(input).digest('hex') !== asset.hash) {
+      throw new Error('Staged Unreal texture package changed during extraction')
     }
     const details = { ...metadata, status: 'converted', method: 'unreal-editor-source-media', from: asset.output,
-      ...(normalSettings && { normalSettings }) }
+      ...(sampling && { sampling }), ...(normalSettings && { normalSettings }) }
     const error = await store.preflight(bytes.length)
     if (error) {
       asset.exports.push({ ...details, status: 'failed', issue: error })

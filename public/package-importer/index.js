@@ -135,6 +135,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
         const materials = (unrealViewer?.materials?.materialJson ?? 0) + (unrealSourceMaterials?.materialJson ?? 0)
         const packed = (unrealViewer?.materials?.packedMaterials ?? 0) + (unrealSourceMaterials?.packedMaterials ?? 0)
         const normals = unrealSourceMaterials?.normalMaterials
+        const masks = unrealSourceMaterials?.opacityMaterials
         const fbx = (unrealViewer?.derivatives?.fbx ?? 0) + (unrealSourceMeshes?.derivatives?.fbx ?? 0)
         const glb = (unrealViewer?.derivatives?.glb ?? 0) + (unrealSourceMeshes?.derivatives?.glb ?? 0)
         details.append(element('p', [formatLabel(packageFormat), engineVersion || unreal?.editorVersion,
@@ -144,6 +145,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
           materials && 'Описаний материалов · ' + materials,
           packed && 'С картой AO/roughness/metallic · ' + packed,
           normals && 'С картой нормалей · ' + normals,
+          masks && 'С маской прозрачности · ' + masks,
           textured && textured + ' glTF с текстурами',
           fbx && fbx + ' FBX', glb && glb + ' GLB',
           unrealSourceMeshes?.issue && describeIssue(unrealSourceMeshes.issue),

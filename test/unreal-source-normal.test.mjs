@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { bindViewerMaterials } from '../core/conversion/unreal/viewer/bind-materials.mjs'
 import { readSourceMaterial } from '../core/engines/unreal/source-material/properties.mjs'
-import { sourceNormalSettings } from '../core/engines/unreal/source-material/texture-properties.mjs'
+import { sourceNormalSettings, sourceTextureSettings } from '../core/engines/unreal/source-material/texture-properties.mjs'
 import { encodePngScanlines } from '../core/files/png.mjs'
 import { readPngRgb } from '../core/files/png-rgb.mjs'
 import { sourceMaterialParameters } from '../core/materials/unreal/source-parameters.mjs'
@@ -34,7 +34,7 @@ test('UE4 normal selection requires direct owned tangent-space color samples and
   assert.equal(sourceMaterialParameters(child, parsed, resolve).normal, null)
   parsed.set(base.id, readSourceMaterial(sourceNormalGraph({ uv: 1 })))
   assert.equal(sourceMaterialParameters(base, parsed, resolve).normal, null)
-  assert.equal(sourceNormalSettings(sourceNormalTexture({ srgb: true, png })), null)
+  assert.equal(sourceNormalSettings(sourceTextureSettings(sourceNormalTexture({ srgb: true, png }))), null)
 })
 
 test('UE4 normal import preserves source pixels and publishes only the needed green-channel conversion', async t => {

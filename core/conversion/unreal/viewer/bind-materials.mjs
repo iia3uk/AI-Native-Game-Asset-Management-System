@@ -48,7 +48,8 @@ export function bindViewerMaterials(document, lookup, modelPath, lookupPath) {
     const { asset, description } = match
     sources.add(asset)
     if (!usable.get(index) || !material.pbrMetallicRoughness) continue
-    const color = singleMap(description, 'baseColor')
+    const mask = description.opacityMask
+    const color = mask?.path ?? singleMap(description, 'baseColor')
     const emissive = singleMap(description, 'emissive')
     const baseColorTexture = color && image(color)
     const emissiveTexture = emissive && image(emissive)
@@ -59,6 +60,11 @@ export function bindViewerMaterials(document, lookup, modelPath, lookupPath) {
     if (baseColorTexture) {
       pbr.baseColorTexture = baseColorTexture
       pbr.baseColorFactor = [1, 1, 1, 1]
+      if (mask) {
+        material.alphaMode = mask.mode
+        material.alphaCutoff = mask.cutoff
+        material.doubleSided = mask.doubleSided
+      }
     }
     if (emissiveTexture) {
       material.emissiveTexture = emissiveTexture

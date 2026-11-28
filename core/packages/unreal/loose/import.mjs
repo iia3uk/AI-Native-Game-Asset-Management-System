@@ -104,7 +104,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     const sourceMaterialInput = sourceMeshes && await prepareSourceMaterials({ records, output, workspace, signal,
       store: sourceMeshes.store, resolve: sourceMeshes.resolveMaterial })
     const materialByPath = decoded ? await recoverLooseViewerMaterials({ decoded, viewer, records, output, workspace, signal,
-      cache: packedMapCache, normalMap: sourceMaterialInput?.normalMap }) : null
+      cache: packedMapCache, applySourceMaps: sourceMaterialInput?.applySourceMaps }) : null
     const sourceMaterials = sourceMeshes && await publishSourceMaterials({ records, signal, sourceMaterials: sourceMaterialInput,
       store: sourceMeshes.store, resolve: sourceMeshes.resolveMaterial, cache: packedMapCache })
     if (sourceMeshes?.models.length) {

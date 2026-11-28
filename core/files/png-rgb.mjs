@@ -2,6 +2,7 @@ import { inflateSync } from 'node:zlib'
 import { embeddedPng } from './png-structure.mjs'
 
 const bytesPerPixel = new Map([[2, 3], [6, 4]])
+const grayscale = new Map([[0, 1], [4, 2]])
 const pixelLimit = 16 * 1024 ** 2
 
 function paeth(left, above, corner) {
@@ -14,8 +15,15 @@ function paeth(left, above, corner) {
 }
 
 export function readPngRgb(bytes, signal) {
+  return readPixels(bytes, bytesPerPixel.get(bytes[25]), signal)
+}
+
+export function readPngPixels(bytes, signal) {
+  return readPixels(bytes, bytesPerPixel.get(bytes[25]) ?? grayscale.get(bytes[25]), signal)
+}
+
+function readPixels(bytes, channels, signal) {
   const info = embeddedPng(bytes, 0)
-  const channels = bytesPerPixel.get(bytes[25])
   if (!info || info.end !== bytes.length || !channels || bytes[24] !== 8 || bytes[28] !== 0 ||
       info.width * info.height > pixelLimit) return null
   const idat = []

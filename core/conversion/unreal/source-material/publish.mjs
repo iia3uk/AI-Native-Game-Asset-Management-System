@@ -7,6 +7,7 @@ import { describeUnrealMaterial } from '../../../materials/unreal/describe.mjs'
 import { sourceMaterialParameters } from '../../../materials/unreal/source-parameters.mjs'
 import { publishPackedMap } from '../viewer/packed-maps.mjs'
 import { publishSourceNormal } from './normal-map.mjs'
+import { publishSourceOpacity } from './opacity-mask.mjs'
 
 const method = 'unreal-editor-material-properties'
 const maxPackageSize = 8 * 1024 ** 2
@@ -47,8 +48,8 @@ function addDependencies(records, asset, description, resolve) {
   for (const row of description.textureStreaming) {
     if (row.path && !links.some(link => link.path === row.path)) links.push({ path: row.path, type: 'unreal-material-texture' })
   }
-  if (description.normalMap && !links.some(link => link.path === description.normalMap.sourcePath)) {
-    links.push({ path: description.normalMap.sourcePath, type: 'unreal-material-texture' })
+  for (const path of [description.normalMap?.sourcePath, description.opacityMask?.sourcePath, description.opacityMask?.colorSourcePath]) {
+    if (path && !links.some(link => link.path === path)) links.push({ path, type: 'unreal-material-texture' })
   }
   for (const link of links) {
     const target = resolve(link.path)
@@ -60,37 +61,47 @@ function addDependencies(records, asset, description, resolve) {
 export async function prepareSourceMaterials({ records, output, workspace, signal, store, resolve }) {
   const { parsed, issue } = await readMaterials(records.assets, output, signal)
   const summary = { converterVersion: sourceMaterialRevision, materialJson: 0, packedMaterials: 0, repackedMaps: 0,
-    normalMaterials: 0, normalDerivatives: 0, ...(issue && { issue }) }
+    normalMaterials: 0, normalDerivatives: 0, opacityMaterials: 0, opacityDerivatives: 0, ...(issue && { issue }) }
   const scratch = join(workspace, 'unreal-source-material')
   await mkdir(scratch)
   const normalCache = new Map()
+  const opacityCache = new Map()
   const parameters = asset => parsed.has(asset.id) ? sourceMaterialParameters(asset, parsed, resolve) : null
-  const normalMap = async (description, asset, normal = parameters(asset)?.normal) => {
+  const applySourceMaps = async (description, asset, { normal, surface } = parameters(asset) ?? {}) => {
     const map = await publishSourceNormal(normal, { store, resolve, workspace: scratch, cache: normalCache,
       version: sourceMaterialRevision, signal, summary })
-    if (!map) return
-    description.normalMap = map
-    description.limitations = description.limitations.filter(issue => issue !== 'normal-orientation-unverified')
-    summary.normalMaterials++
+    if (map) {
+      description.normalMap = map
+      description.limitations = description.limitations.filter(issue => issue !== 'normal-orientation-unverified')
+      summary.normalMaterials++
+    }
+    if (surface) description.surface = surface
+    const opacity = await publishSourceOpacity(surface, { store, resolve, workspace: scratch, cache: opacityCache,
+      version: sourceMaterialRevision, signal, summary })
+    if (opacity) {
+      description.opacityMask = opacity
+      summary.opacityMaterials++
+      if (!opacity.colorImage) description.limitations.push('unreal-opacity-mask-neutral-color')
+    } else if (surface?.blend === 'BLEND_Masked') description.limitations.push('unreal-opacity-mask-unresolved')
   }
-  return { parsed, parameters, normalMap, scratch, summary }
+  return { parsed, parameters, applySourceMaps, scratch, summary }
 }
 
 export async function publishSourceMaterials({ records, signal, store, resolve, cache, sourceMaterials }) {
-  const { parsed, parameters, normalMap, scratch, summary } = sourceMaterials
+  const { parsed, parameters, applySourceMaps, scratch, summary } = sourceMaterials
   const published = new Map()
   for (const asset of records.assets) {
     signal?.throwIfAborted()
     const source = parsed.get(asset.id)
     if (!source || asset.exports.some(item => item.path && item.role === 'material' && item.format === 'json')) continue
-    const { parentStatus, corroborate, normal, ...effectiveParameters } = parameters(asset)
+    const { parentStatus, corroborate, normal, surface, ...effectiveParameters } = parameters(asset)
     const properties = { parent: source.parent, textures: effectiveParameters.textures.filter(row => row.path),
       scalars: effectiveParameters.scalars.filter(row => Number.isFinite(row.value)) }
     const description = describeUnrealMaterial({ asset, properties, resolve, method, version: sourceMaterialRevision, corroborate })
     const { textures, scalars, vectors } = source
     Object.assign(description, { materialClass: source.type, parentStatus, parameters: { textures, scalars, vectors },
       effectiveParameters, textureStreaming: source.streaming, ...(source.normalInput && { normalInput: source.normalInput }) })
-    await normalMap(description, asset, normal)
+    await applySourceMaps(description, asset, { normal, surface })
     description.packedMap = await publishPackedMap(description, { cache, resolve, store, workspace: scratch,
       version: sourceMaterialRevision, signal, counts: summary })
     const content = JSON.stringify(description, null, 2) + '\n'

@@ -73,6 +73,8 @@ const packageIssues = {
   'texture-color-space-from-parameter-role': 'Цветовое пространство определено по роли параметра',
   'normal-orientation-and-packed-channels-unverified': 'Ориентация нормалей и упаковка каналов требуют проверки',
   'normal-orientation-unverified': 'Ориентация карты нормалей требует проверки',
+  'unreal-opacity-mask-neutral-color': 'Маска прозрачности восстановлена с нейтральным цветом',
+  'unreal-opacity-mask-unresolved': 'Вход маски прозрачности не удалось связать с текстурой',
   'unreal-packed-shader-operations-unverified': 'Операции шейдера над каналами карты не восстановлены',
   'unreal-version-unavailable': 'Запрошенная версия Unreal недоступна',
   'unreal-editor-version-unsupported': 'Версия Unreal Editor не поддерживается',
@@ -122,7 +124,8 @@ export function appendManifest({ details, record, json, element, button, assetSt
         if (artifacts.length) {
           const results = element('ul')
           for (const item of artifacts) {
-            const role = item.method === 'unreal-normal-map' ? 'Карта нормалей OpenGL' : artifactRoles[item.role]
+            const role = item.method === 'unreal-normal-map' ? 'Карта нормалей OpenGL' :
+              item.method === 'unreal-opacity-mask' ? 'Текстура с маской прозрачности' : artifactRoles[item.role]
             const label = role && [role, item.name].filter(Boolean).join(' ')
             results.append(element('li', [
               item.format.toUpperCase(), label, artifactStatus[item.status] ?? item.status, item.path,

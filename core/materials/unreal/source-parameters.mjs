@@ -9,6 +9,9 @@ export function sourceMaterialParameters(asset, parsed, resolve) {
   const seen = new Set()
   let parentStatus = leaf.parentStatus
   let normalInput
+  let baseSurface
+  const surfaceOverrides = {}
+  let surfaceResolved = true
   for (let current = asset; current; ) {
     if (seen.size >= 16 || seen.has(current.id)) {
       parentStatus = 'invalid-lineage'
@@ -33,6 +36,12 @@ export function sourceMaterialParameters(asset, parsed, resolve) {
     if (material.parentStatus === 'base' && material.normalInput) {
       normalInput = { ...material.normalInput, definedIn: current.sourcePath }
     }
+    if (material.parentStatus === 'base') baseSurface = material.surface && { ...material.surface, definedIn: current.sourcePath }
+    else if (material.surface?.overrides) {
+      for (const [setting, value] of Object.entries(material.surface.overrides)) {
+        if (!Object.hasOwn(surfaceOverrides, setting)) surfaceOverrides[setting] = value
+      }
+    } else surfaceResolved = false
     if (!material.parent) break
     current = resolve(material.parent)
     if (!current) parentStatus = 'missing'
@@ -45,12 +54,21 @@ export function sourceMaterialParameters(asset, parsed, resolve) {
   if (!['resolved', 'base'].includes(parentStatus)) {
     for (const kind of kinds) effective[kind] = effective[kind].filter(row => row.definedIn === asset.sourcePath)
   }
-  let normal = null
-  if (normalInput) {
-    const parameter = normalInput.parameter && key(normalInput.parameter)
+  function samplePath(input) {
+    if (!input) return null
+    const parameter = input.parameter && key(input.parameter)
     const override = parameter && used.get('textures').has(parameter)
-    const path = override ? effective.textures.find(row => key(row.name) === parameter)?.path : normalInput.path
-    if (path && corroborate(path)) normal = { ...normalInput, path }
+    return (override ? effective.textures.find(row => key(row.name) === parameter)?.path : input.path) ?? null
   }
-  return { ...effective, parentStatus, corroborate, normal }
+  function surfaceSample(input) {
+    const path = samplePath(input)
+    return path && (!streaming.has(key(path)) || corroborate(path)) ? { ...input, path } : null
+  }
+  const normalPath = samplePath(normalInput)
+  const normal = normalPath && corroborate(normalPath) ? { ...normalInput, path: normalPath } : null
+  const surface = surfaceResolved && baseSurface?.settings && ['resolved', 'base'].includes(parentStatus) ? {
+    ...baseSurface.settings, ...surfaceOverrides, definedIn: baseSurface.definedIn,
+    mask: surfaceSample(baseSurface.mask), color: surfaceSample(baseSurface.color),
+  } : null
+  return { ...effective, parentStatus, corroborate, normal, surface }
 }
