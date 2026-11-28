@@ -1,9 +1,10 @@
 import { opendir } from 'node:fs/promises'
 import { posix } from 'node:path'
-import { checkedPath } from '../../../files/asset-files.mjs'
+import { checkedPath, fileInfo } from '../../../files/asset-files.mjs'
 import { validPackageSegment } from '../../../packages/source.mjs'
 import { viewerAnimation } from './animation.mjs'
 import { viewerModel } from './model.mjs'
+import { maxSettingsBytes } from './actorx/clips.mjs'
 
 const pathKey = path => path.normalize('NFC').toLowerCase()
 
@@ -12,6 +13,7 @@ export async function publishViewerOutputs({ targets, decoded, viewer, store, si
   const directories = new Set(targets.map(asset => posix.dirname(asset.sourcePath)))
   const counts = { gltf: 0, psa: 0, invalid: 0 }
   const models = []
+  const animations = []
   for (const folder of directories) {
     const path = await checkedPath(decoded, folder)
     if (!path) continue
@@ -39,10 +41,21 @@ export async function publishViewerOutputs({ targets, decoded, viewer, store, si
           asset.issues.push('unreal-viewer-invalid-animation')
           continue
         }
-        const artifact = await store.save('Animations/' + asset.id + '/' + name, animation.file,
-          { ...identity, format, role: 'animation', metrics: animation.metadata, issues: ['actorx-animation-requires-compatible-skeleton'] })
+        const prefix = 'Animations/' + asset.id + '/'
+        const settingsName = stem + '.config'
+        const settingsFile = await fileInfo(decoded, posix.join(folder, settingsName))
+        const settings = settingsFile?.info.size <= maxSettingsBytes ?
+          await store.save(prefix + settingsName, settingsFile, { ...identity, format: 'config', role: 'actorx-settings' }) : null
+        const artifact = await store.save(prefix + name, animation.file,
+          { ...identity, format, role: 'animation', metrics: animation.metadata,
+            ...(settingsFile && { settingsPath: prefix + settingsName }),
+            issues: ['actorx-animation-requires-compatible-skeleton'] })
         asset.exports.push(artifact)
-        if (artifact.path) counts.psa++
+        if (settings) asset.exports.push(settings)
+        if (artifact.path) {
+          animations.push({ asset, artifact, settings })
+          counts.psa++
+        }
       } else {
         const model = await viewerModel(decoded, key, signal)
         if (!model) {
@@ -73,5 +86,5 @@ export async function publishViewerOutputs({ targets, decoded, viewer, store, si
       if (asset.exports.some(item => item.path && item.format !== 'bin')) asset.status = 'converted'
     }
   }
-  return { counts, models }
+  return { counts, models, animations }
 }

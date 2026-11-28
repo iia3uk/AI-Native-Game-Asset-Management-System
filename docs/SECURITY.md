@@ -42,6 +42,8 @@ Source-media extraction reads staged UE4 packages up to 128 MiB. It validates PC
 
 Optional UE Viewer decoding requires an explicitly configured executable. It runs with the current account's OS permissions, uses fixed arguments and reads staged copies of versioned UE4 assets with known sidecars. Each export pass has a two-minute timeout. Publication matches output paths to source packages, validates glTF buffer ranges and PSA chunk sizes and applies a 4 GiB artifact budget. Use a trusted executable and trusted packages.
 
+ActorX binding verifies published PSA and settings checksums and validates key counts, timing and finite transforms. It reads PSA files up to 16 MiB and stages at most 64 MiB of generated tracks per import. Binding requires a single compatible skeleton. When a PSA has a settings companion, source cleanup verifies both published files.
+
 UE Viewer material dumps are bounded text. The importer resolves texture references against known packages from the same import and validates PNG dimensions and chunk checksums. Textured glTF variants derive image URIs from published artifact paths. The raw property text remains data in the export.
 
 The UE4 source-mesh reader takes SHA-256-verified staged package bytes. It confirms the Engine StaticMesh class and checks export ranges before decoding. It accepts packages up to 48 MiB, caps each expanded payload at 48 MiB and caps the combined payloads at 64 MiB per package. Decompression and geometry encoding run in a cancellable worker with per-package and import time limits. Material references resolve against known files in the import. Cleanup verifies both files of a glTF/BIN pair and the original source bytes.

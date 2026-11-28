@@ -30,6 +30,7 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'core/packages/cleanup/retired.mjs',
     'core/packages/storage/registry.mjs',
     'core/packages/storage/shared.mjs',
+    'core/conversion/unreal/viewer/actorx/publish.mjs',
     'public/package-importer/cleanup.js',
     'public/app.js',
     'public/catalog/classification.js',

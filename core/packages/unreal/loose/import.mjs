@@ -7,6 +7,7 @@ import { prepareSourceMaterials, publishSourceMaterials } from '../../../convers
 import { recoverUnrealMedia } from '../../../conversion/unreal/source-media/extract.mjs'
 import { publishSourceMeshes } from '../../../conversion/unreal/source-mesh/publish.mjs'
 import { publishTexturedViewerModels } from '../../../conversion/unreal/viewer/bind-materials.mjs'
+import { publishActorXAnimations } from '../../../conversion/unreal/viewer/actorx/publish.mjs'
 import { createViewerDerivatives } from '../../../conversion/unreal/viewer/derivatives.mjs'
 import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
 import { unrealBridgeVersion } from '../../../engines/unreal/bridge/project.mjs'
@@ -116,6 +117,9 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
           const target = sourceMeshes.resolveMaterial(path)
           return target ? materialByPath?.(target.sourcePath) ?? sourceMaterials.material(target) : null
         } })
+    }
+    if (decoded?.animations?.length) {
+      decoded.summary.animationBinding = await publishActorXAnimations({ ...decoded, output, workspace, records, signal })
     }
     const derivativeStages = [decoded, sourceMeshes].filter(stage => stage?.models.length)
     onProgress?.(85)

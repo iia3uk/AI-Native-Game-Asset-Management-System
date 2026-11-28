@@ -19,7 +19,11 @@ function unrealModelBackups(exports) {
   const backups = []
   for (const item of exports) {
     if (!methods.has(item.method)) continue
-    if (item.method === 'ue-viewer' && item.format === 'psa') backups.push(item)
+    if (item.method === 'ue-viewer' && item.format === 'psa') {
+      const config = item.settingsPath && exports.find(row => row.path === item.settingsPath &&
+        row.role === 'actorx-settings' && row.method === item.method)
+      if (!item.settingsPath || config) backups.push(item, ...(config ? [config] : []))
+    }
     if (item.format === 'gltf' && item.path.endsWith('.gltf')) {
       const buffer = buffers.get(item.path.slice(0, -5) + '.bin')
       if (buffer?.method === item.method) backups.push(item, buffer)

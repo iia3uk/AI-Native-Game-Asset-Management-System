@@ -20,11 +20,11 @@ export async function decodeLooseWithViewer({ viewer, records, output, workspace
   const version = /^4\.\d{1,2}/.exec(source.association ?? '')?.[0]
   const parameters = { input, output: decoded, workspace: directory, version, signal }
   const meshes = await runUnrealViewer(viewer, parameters)
-  const animations = await runUnrealViewer(viewer, { ...parameters, type: 'animations' })
-  const errors = { ...(meshes && { meshes }), ...(animations && { animations }) }
-  const error = meshes || animations
-  const { counts, models } = await publishViewerOutputs({ targets, decoded, viewer, store, signal })
-  return { models, store, parameters, targets, summary: { ...base, status: error ? 'partial' : counts.gltf || counts.psa ? 'completed' :
+  const animationError = await runUnrealViewer(viewer, { ...parameters, type: 'animations' })
+  const errors = { ...(meshes && { meshes }), ...(animationError && { animations: animationError }) }
+  const error = meshes || animationError
+  const { counts, models, animations } = await publishViewerOutputs({ targets, decoded, viewer, store, signal })
+  return { models, animations, store, parameters, targets, summary: { ...base, status: error ? 'partial' : counts.gltf || counts.psa ? 'completed' :
     'no-compatible-inputs', ...counts, ...(error && { issue: error, errors }) } }
 }
 

@@ -4,7 +4,7 @@ import { promisify } from 'node:util'
 import { executable } from '../../discovery-files.mjs'
 
 const execute = promisify(execFile)
-export const unrealViewerRevision = 5
+export const unrealViewerRevision = 6
 const toolOptions = { windowsHide: true, killSignal: 'SIGKILL' }
 const exportsByType = {
   meshes: ['-gltf', '-lods', '-noanim', '-png'],

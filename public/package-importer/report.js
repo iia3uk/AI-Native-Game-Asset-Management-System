@@ -60,6 +60,15 @@ const packageIssues = {
   'unreal-viewer-timeout': 'Истекло время декодирования UE4',
   'unreal-viewer-invalid-model': 'Модель UE Viewer не прошла проверку',
   'unreal-viewer-invalid-animation': 'Анимация UE Viewer не прошла проверку',
+  'actorx-animation-requires-compatible-skeleton': 'Для использования PSA нужен совместимый скелет',
+  'actorx-sampled-bone-tracks-only': 'Восстановлены ключи костей из PSA',
+  'unreal-actorx-no-compatible-skeleton': 'В пакете не найден скелет с подходящей позой привязки',
+  'unreal-actorx-ambiguous-skeleton': 'Клип подходит нескольким моделям с одинаковой позой привязки',
+  'unreal-actorx-unsupported-tracks': 'Ключи или настройки PSA нельзя безопасно привязать к скелету',
+  'unreal-actorx-duplicate-clip': 'Имя клипа уже используется в этой модели',
+  'unreal-actorx-animation-limit': 'Достигнут лимит ключей или клипов анимации',
+  'unreal-animation-model-size-limit': 'Модель с анимациями превышает лимит glTF',
+  'unreal-animated-derivative-fallback': 'Анимации сохранились в glTF. Blender экспортировал вариант без добавленных клипов.',
   'unreal-viewer-original-gltf-has-no-material-maps': 'Исходный glTF содержит только геометрию и данные меша',
   'unreal-viewer-texture-exported-from-decoded-mip': 'PNG восстановлен из доступного мип-уровня Unreal',
   'unreal-material-preview-approximate': 'Текстуры восстановлены по параметрам. Отображение может отличаться от Unreal.',
@@ -88,6 +97,7 @@ const artifactRoles = {
   animation: 'Анимация', texture: 'Текстура', material: 'Материал', audio: 'Аудио',
   model: 'Модель', 'skeletal-model': 'Модель со скелетом', skeleton: 'Скелет', 'material-source': 'Свойства материала',
   'preview-texture': 'Карта каналов для предпросмотра',
+  'actorx-settings': 'Настройки PSA', 'animation-buffer': 'Ключи анимации',
 }
 
 export const describeIssue = issue => packageIssues[issue] ?? issue

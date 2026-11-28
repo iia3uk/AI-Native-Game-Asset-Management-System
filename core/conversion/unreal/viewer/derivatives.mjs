@@ -3,6 +3,7 @@ import { basename, join } from 'node:path'
 import { analyzeAsset } from '../../../analysis/asset-analysis.mjs'
 import { convertBatchModel } from '../../../engines/blender/batch.mjs'
 import { modelArtifact } from '../../artifacts.mjs'
+import { animationBindingMethod } from './actorx/publish.mjs'
 
 const destination = { fbx: 'Models', glb: 'Previews' }
 
@@ -22,7 +23,9 @@ export async function createViewerDerivatives({ models, store, blender, output, 
     const requested = formats.filter(format => !asset.exports.some(item => item.path && item.format === format &&
       item.method === 'unreal-editor' && item.role === artifact.role && artifact.lod === 0))
     if (!requested.length) continue
-    let input = asset.exports.find(item => item.path && ['ue-viewer-material-binding', 'unreal-source-mesh-material-binding'].includes(item.method) &&
+    const animated = asset.exports.find(item => item.path && item.method === animationBindingMethod &&
+      item.sourceModel === artifact.path && item.format === 'gltf')
+    let input = animated ?? asset.exports.find(item => item.path && ['ue-viewer-material-binding', 'unreal-source-mesh-material-binding'].includes(item.method) &&
       item.from === artifact.path) ?? artifact
     const describe = format => ({ format, role: artifact.role, lod: artifact.lod, method: 'blender', from: input.path })
     const issue = !blender ? 'blender-unavailable' : Date.now() >= deadline ? 'converter-time-budget' :
@@ -47,12 +50,12 @@ export async function createViewerDerivatives({ models, store, blender, output, 
           source: join(output, input.path), root: output, workspace: converterOutput, formats: requested, signal,
         })
       }
-      const intact = result.metrics?.bones >= artifact.metrics.bones && result.metrics?.animations >= artifact.metrics.animations
+      const intact = result.metrics?.bones >= input.metrics.bones && result.metrics?.animations >= input.metrics.animations
       for (const format of requested) {
         const description = describe(format)
         const path = 'model.' + format
         const failure = result.error ?? result.outputs?.[format]
-        const file = intact && failure === 'written' && await checkDerivative(converterOutput, path, format, artifact, signal)
+        const file = intact && failure === 'written' && await checkDerivative(converterOutput, path, format, input, signal)
         if (!file) {
           asset.exports.push({ ...description, status: 'failed', issue: failure === 'written' ?
             'invalid-converter-output' : failure ?? 'invalid-converter-output' })
@@ -62,7 +65,8 @@ export async function createViewerDerivatives({ models, store, blender, output, 
         const target = [destination[format], asset.id, adapter, basename(artifact.path, '.gltf') + '.' + format].join('/')
         const saved = await store.save(target, file, { ...description, status: 'converted', converterVersion: result.version,
           sourceScene: result.metrics, issues: [...input.issues, ...(result.issues ?? []),
-            ...(converterOutput !== scratch ? ['unreal-material-conversion-fallback'] : [])] })
+            ...(converterOutput !== scratch ?
+              [animated ? 'unreal-animated-derivative-fallback' : 'unreal-material-conversion-fallback'] : [])] })
         asset.exports.push(saved)
         if (saved.path) counts[format]++
       }
