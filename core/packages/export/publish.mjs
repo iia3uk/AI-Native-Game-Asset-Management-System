@@ -9,6 +9,7 @@ import { checkedPath } from '../../files/asset-files.mjs'
 import { sameSource } from '../../files/hash.mjs'
 import { IndexConflictError, IndexInputError } from '../../index/index-errors.mjs'
 import { packageHashPattern } from '../source.mjs'
+import { isUnrealLoose } from '../unreal/loose/source.mjs'
 import { preparePackageExport, verifyExportDestination } from './plan.mjs'
 
 async function copyVerified(source, file, target, signal) {
@@ -59,7 +60,10 @@ export async function exportPackageResult(importDirectory, protectedRoots, job, 
   let prepared
   try {
     const format = job?.result?.report?.packageFormat
-    const roots = format === 'unity-project' || format === 'unity-upm' ? [...protectedRoots, jobSource] : protectedRoots
+    let sourceRoot
+    if (jobSource && (format === 'unity-project' || format === 'unity-upm')) sourceRoot = jobSource
+    if (jobSource && isUnrealLoose(format)) sourceRoot = job.result.report.selectedDirectory ? jobSource : dirname(jobSource)
+    const roots = sourceRoot ? [...protectedRoots, sourceRoot] : protectedRoots
     prepared = await preparePackageExport(importDirectory, roots, job, input, signal)
     if (!prepared || preview) return prepared?.plan ?? null
     if (prepared.plan.key !== input.key) throw new IndexConflictError('План изменился. Проверьте его перед экспортом.')

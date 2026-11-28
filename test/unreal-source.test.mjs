@@ -14,6 +14,7 @@ import { unrealEditorCommand } from '../core/engines/unreal/bridge/run.mjs'
 import { ioStoreHeader, pakFooter } from '../core/packages/unreal/containers.mjs'
 import { unrealPackageSummary } from '../core/packages/unreal/package-summary.mjs'
 import { unrealSource } from '../core/packages/unreal/source.mjs'
+import { packagePrefix } from './fixtures/unreal-loose.mjs'
 import { testDirectory } from './server-fixture.mjs'
 
 const run = promisify(execFile)
@@ -23,23 +24,6 @@ async function put(path, contents) {
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, contents)
   return path
-}
-
-function packagePrefix(layout, ue4, ue5, flags) {
-  // In-memory prefix for the bounded classifier. This is not an Unreal asset.
-  const bytes = Buffer.alloc(256)
-  const offset = layout <= -8 ? 24 : 20
-  const hashed = ue5 >= 1016
-  bytes.writeUInt32LE(0x9e2a83c1)
-  bytes.writeInt32LE(layout, 4)
-  bytes.writeInt32LE(ue4, 12)
-  if (layout <= -8) bytes.writeInt32LE(ue5, 16)
-  bytes.writeInt32LE(128, hashed ? offset + 20 : offset + 4)
-  const summary = offset + (hashed ? 28 : 8)
-  bytes.writeUInt32LE(flags, summary + 4)
-  bytes.writeInt32LE(1, summary + 8)
-  bytes.writeInt32LE(120, summary + 12)
-  return bytes
 }
 
 test('classifies bounded stock UE4 and UE5 package prefixes', () => {

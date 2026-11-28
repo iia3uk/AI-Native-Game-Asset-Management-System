@@ -48,6 +48,8 @@ Supported UnityFS audio clips have class ID 83 and publish 16-bit PCM WAV files 
 
 For a Pak archive, inspection returns `format: "unreal-pak"`, `containerVersion`, `hash`, `total` and up to 500 entries in `assets`. Import accepts `auto` or `engineless` with no export formats or editor version. Pak jobs extract supported originals and report `report.packageFormat: "unreal-pak"`. The manifest page includes archive paths, extracted file hashes and reasons for skipped entries.
 
+For a loose Unreal source, inspection returns `unreal-project`, `unreal-content` or `unreal-asset`, with a fingerprint covering supported originals and their companions, up to 500 assets and the project association when present. Pass the same path and hash to queue the import. A project or Content folder accepts optional `mode: "auto"` or `"engine-assisted"` and `editorVersion` for an installed version or registered build. Standalone assets use `engineless`. The conversion report records the editor outcome in `report.unreal` when editor use was requested. The dependency document links copied primary packages and their sidecars in both directions.
+
 Failed scans preserve the last committed index. Disconnection and removal of original files retain history. Search excludes disconnected and missing assets.
 
 Automatic scans use the same queue. An explicit scan request promotes the active automatic job to a manual job if the job is still available. Turning off folder watching and all automatic import formats cancels queued automatic scans and requests cancellation for a running automatic scan.

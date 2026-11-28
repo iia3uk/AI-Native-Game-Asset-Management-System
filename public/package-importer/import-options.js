@@ -1,12 +1,15 @@
 export function mountImportOptions($) {
   const mode = $('engine-mode')
   const editor = $('editor-version')
-  const sync = () => { $('editor-version-control').hidden = mode.value === 'engineless' }
+  const unreal = $('unreal-version')
+  function sync() {
+    $('editor-version-control').hidden = $('unreal-version-control').hidden = mode.value === 'engineless'
+  }
   mode.addEventListener('change', sync)
   sync()
-  return () => ({
+  return format => ({
     mode: mode.value,
     formats: ['fbx', 'glb'].filter(format => $('export-' + format).checked),
-    ...(mode.value !== 'engineless' && editor.value.trim() && { editorVersion: editor.value.trim() }),
+    ...(mode.value !== 'engineless' && { editorVersion: (format.startsWith('unreal-') ? unreal : editor).value.trim() }),
   })
 }

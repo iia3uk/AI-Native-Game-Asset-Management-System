@@ -4,15 +4,18 @@ import { checkedPath, fileInfo, sameFile } from '../files/asset-files.mjs'
 import { IndexInputError } from '../index/index-errors.mjs'
 import { pakFooter } from './unreal/containers.mjs'
 import { unityFolderFormat } from './unity/folder/layout.mjs'
+import { unrealLooseSource } from './unreal/loose/source.mjs'
 
 export const unityFsMagic = Buffer.from('UnityFS\0')
 
 export async function detectPackage(source, { signal } = {}) {
   signal?.throwIfAborted()
-  if (source.directory) return unityFolderFormat(source.root)
-  const format = await probePackageFormat(source, { signal })
+  const format = source.directory ? await unityFolderFormat(source.root) : await probePackageFormat(source, { signal })
   if (format) return format
-  throw new IndexInputError('Ожидается Unity Package, UnityFS, бинарный файл Unity или Unreal Pak.')
+  const loose = await unrealLooseSource(source, signal)
+  if (loose) return loose.format
+  if (source.directory) throw new IndexInputError('Выберите проект Unity, папку UPM, проект Unreal или папку Unreal Content.')
+  throw new IndexInputError('Ожидается Unity Package, UnityFS, бинарный файл Unity или Unreal Pak, .uasset, .umap либо .uproject.')
 }
 
 export async function probePackageFormat(source, { signal } = {}) {

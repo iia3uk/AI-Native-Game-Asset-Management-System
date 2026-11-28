@@ -177,16 +177,16 @@
     <details id="package-importer" class="index-analysis">
       <summary>Импорт пакетов Unity и Unreal</summary>
       <form id="package-form">
-        <label for="package-path">Полный путь к файлу пакета, проекту Unity или папке UPM</label>
+        <label for="package-path">Полный путь к файлу, проекту или пакету UPM</label>
         <div class="folder-path-row">
           <input id="package-path" maxlength="4096" autocomplete="off" spellcheck="false">
           <button id="package-pick" type="button" class="control" hidden>Выбрать файлы…</button>
-          <button id="package-pick-project" type="button" class="control" hidden>Выбрать проект или UPM…</button>
+          <button id="package-pick-project" type="button" class="control" hidden>Выбрать проект, UPM или Content…</button>
           <button class="control">Проанализировать</button>
         </div>
         <input id="package-files" type="file" multiple hidden>
       </form>
-      <p id="package-drop" class="notice" hidden>Перетащите .unitypackage, UnityFS, бинарные файлы Unity или Unreal Pak.</p>
+      <p id="package-drop" class="notice" hidden>Перетащите файл пакета Unity или Unreal, ресурс Unreal или .uproject.</p>
       <details class="index-analysis">
         <summary>Найти пакеты в папке</summary>
         <form id="package-folder-form">
@@ -212,13 +212,14 @@
         <button id="package-start-all" class="control" type="button" hidden>Обработать проанализированные пакеты</button>
       </div>
       <div class="index-toolbar">
-        <label for="package-engine-mode">Режим .unitypackage</label>
+        <label for="package-engine-mode">Режим обработки</label>
         <select id="package-engine-mode">
-          <option value="engineless">Без Unity</option>
+          <option value="engineless">Без редактора</option>
           <option value="auto">Авто</option>
-          <option value="engine-assisted">С Unity Editor</option>
+          <option value="engine-assisted">С редактором</option>
         </select>
         <label id="package-editor-version-control" hidden>Версия Unity <input id="package-editor-version" maxlength="32" placeholder="Авто"></label>
+        <label id="package-unreal-version-control" hidden>Версия Unreal <input id="package-unreal-version" maxlength="38" placeholder="Авто"></label>
       </div>
       <p id="package-status" class="notice" role="status"></p>
       <ul id="package-plans" class="index-results" aria-label="Содержимое выбранных пакетов"></ul>

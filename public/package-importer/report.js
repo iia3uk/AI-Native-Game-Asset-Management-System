@@ -44,11 +44,18 @@ const packageIssues = {
   'unreal-pak-orphan-companion': 'Отсутствует связанный пакет Unreal',
   'unreal-pak-unsupported-compression': 'Тип сжатия не поддерживается',
   'unreal-pak-unsupported-entry': 'Тип файла не поддерживается',
+  'unreal-editor-unavailable': 'Подходящий Unreal Editor не найден',
+  'unreal-version-unavailable': 'Запрошенная версия Unreal недоступна',
+  'unreal-editor-version-unsupported': 'Версия Unreal Editor не поддерживается',
+  'unreal-companion-orphan': 'Отсутствует связанный пакет Unreal',
+  'unreal-package-companion-ambiguous': 'Несколько исходных пакетов для одних файлов данных',
+  'unreal-use-container-import': 'Контейнер можно проанализировать отдельно',
 }
 
 const artifactRoles = {
   prefab: 'Префаб', component: 'Компонент', mesh: 'Меш',
   animation: 'Анимация', texture: 'Текстура', material: 'Материал', audio: 'Аудио',
+  model: 'Модель', 'skeletal-model': 'Модель со скелетом', skeleton: 'Скелет',
 }
 
 export const describeIssue = issue => packageIssues[issue] ?? issue

@@ -1,6 +1,6 @@
 import { mountEngineStatus } from './engine-status.js'
 import { mountPackageFolder } from './folder.js'
-import { formatLabel, isUnityBinary, isUnityFolder } from './formats.js'
+import { formatLabel, isUnityBinary, isUnityFolder, isUnrealLoose } from './formats.js'
 import { appendManifest, assetLabel, describeIssue } from './report.js'
 import { mountImportOptions } from './import-options.js'
 import { mountPackageExport } from './export.js'
@@ -125,6 +125,11 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
         const { packageFormat, engineVersion } = record.result.report
         details.append(element('p', [formatLabel(packageFormat), engineVersion].filter(Boolean).join(' · ')))
       }
+      if (isUnrealLoose(record.result.report.packageFormat)) {
+        const { packageFormat, engineVersion, unreal } = record.result.report
+        details.append(element('p', [formatLabel(packageFormat), engineVersion || unreal?.editorVersion,
+          unreal?.issue && describeIssue(unreal.issue)].filter(Boolean).join(' · ')))
+      }
       if (record.result.report.packageFormat === 'unreal-pak') {
         const { containerVersion, extracted, total } = record.result.report
         details.append(element('p', 'Unreal Pak ' + containerVersion + ' · Извлечено ' + extracted + ' из ' + total))
@@ -155,9 +160,12 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     })
   }
 
-  async function queuePlan(target, plan, options) {
+  async function queuePlan(target, plan, options = importOptions(plan.format)) {
     if (isUnityBinary(plan.format)) options = { mode: 'engineless', formats: options.formats }
     if (plan.format === 'unreal-pak') options = { mode: 'engineless' }
+    if (plan.format === 'unreal-asset' || (isUnrealLoose(plan.format) && options.mode === 'engineless')) {
+      options = { mode: 'engineless' }
+    }
     await json(packagesRoute + '/import', post({ ...target, hash: plan.hash, ...options }))
     const key = selectionKey(target)
     queuedPlans.get(key)?.row.remove()
@@ -168,9 +176,9 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
   startAll.addEventListener('click', async () => {
     if (busy) return
     busy = startAll.disabled = true
-    const options = importOptions()
     try {
-      for (const { target, plan, start } of queuedPlans.values()) {
+      const batch = [...queuedPlans.values()].map(item => ({ ...item, options: importOptions(item.plan.format) }))
+      for (const { target, plan, start, options } of batch) {
         start.disabled = true
         try { await queuePlan(target, plan, options) }
         catch (error) { showError(error); start.disabled = false }
@@ -189,6 +197,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     const shown = plan.assets.slice(0, 50)
     for (const asset of shown) {
       const status = plan.format === 'unreal-pak' && asset.status === 'available' ? 'Доступно для извлечения' :
+        isUnrealLoose(plan.format) && asset.status === 'extracted' ? 'Готово к копированию' :
         assetStatus[asset.status] ?? asset.status
       preview.append(element('li', [assetLabel(asset), status, asset.issue && describeIssue(asset.issue)].filter(Boolean).join(' · ')))
     }
@@ -209,13 +218,16 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
       details.insertBefore(element('p', [formatLabel(plan.format), plan.engineVersion,
         ...packages].filter(Boolean).join(' · ')), preview)
     }
+    if (isUnrealLoose(plan.format)) {
+      details.insertBefore(element('p', [formatLabel(plan.format), plan.engineVersion].filter(Boolean).join(' · ')), preview)
+    }
     if (plan.total > shown.length) details.append(element('p', 'Показано ' + shown.length + ' из ' + plan.total + ' записей.'))
     const start = button('Обработать и добавить в индекс', async () => {
       if (busy) return
       busy = true
       start.disabled = true
       try {
-        await queuePlan(target, plan, importOptions())
+        await queuePlan(target, plan)
         await refresh()
       } catch (error) {
         showError(error)

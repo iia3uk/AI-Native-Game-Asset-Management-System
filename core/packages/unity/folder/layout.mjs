@@ -33,7 +33,7 @@ export async function unityFolderFormat(root) {
   const project = await projectHeader(root)
   if (project) return 'unity-project'
   if (await packageManifest(root, root)) return 'unity-upm'
-  throw invalid('выберите корень проекта с Assets и ProjectSettings/ProjectVersion.txt или папку UPM с package.json.')
+  return null
 }
 
 async function projectHeader(root) {

@@ -14,6 +14,7 @@ import { verifyUnityAudio } from './unity-audio.mjs'
 import { verifyUnityBundle } from './unity-bundle.mjs'
 import { verifyUnityFolder } from './unity-folder.mjs'
 import { verifyUnitySprites } from './unity-sprites.mjs'
+import { verifyUnrealLoose } from './unreal-loose.mjs'
 import { verifyUnrealPak } from './unreal-pak.mjs'
 import { verifyUnityPreview } from './unity-preview.mjs'
 import { unityEntries, unityFixtureEntries, writeUnityFixture } from '../fixtures/unitypackage.mjs'
@@ -166,6 +167,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('1 треугольник')")
   await verifyPackageFolder(webContents, waitFor, join(process.env.ASSET_VIEWER_DATA_DIR, 'incoming-packages'))
   await verifyUnityFolder(webContents, waitFor, join(process.env.ASSET_VIEWER_DATA_DIR, 'unity-folder-fixture'))
+  await verifyUnrealLoose(webContents, waitFor, join(process.env.ASSET_VIEWER_DATA_DIR, 'unreal-loose-fixture'))
   const bundle = process.env.ASSET_VIEWER_SMOKE_BUNDLE
   const sprites = process.env.ASSET_VIEWER_SMOKE_SPRITES
   const audio = process.env.ASSET_VIEWER_SMOKE_AUDIO

@@ -16,7 +16,7 @@ Scans keep running if you close the index dialog. Open it and select the library
 
 ## Import a Unity package
 
-Open **Индекс → Импорт пакетов Unity и Unreal**. In the desktop app, select or drop up to 16 Unity packages, UnityFS containers, standalone binary Unity files or Unreal Pak archives. In the browser, enter the full local path and click **Проанализировать**. Expand a package to see its contents. Select **FBX** or **GLB-предпросмотр** to request Unity model exports, then choose **Обработать и добавить в индекс**. With multiple packages analyzed, **Обработать проанализированные пакеты** queues the remaining packages using settings supported by each format. The jobs list displays progress and offers cancellation or retry where available.
+Open **Индекс → Импорт пакетов Unity и Unreal**. In the desktop app, select or drop up to 16 files. Use **Выбрать проект, UPM или Content…** for direct folder imports. In the browser, enter the full local path and click **Проанализировать**. Expand a package to see its contents, then choose **Обработать и добавить в индекс**. With multiple packages analyzed, **Обработать проанализированные пакеты** queues the remaining packages using settings supported by each format. The jobs list displays progress and offers cancellation or retry where available.
 
 For one-time folder import, expand **Найти пакеты в папке** and choose the directory or enter its absolute path. Search checks nested files by header or trailer, including renamed files. A GZIP file is a Unity Package candidate until analysis checks its archive contents. Select files and click **Проанализировать выбранные**, then queue the analyzed packages. Each page contains up to 16 files. Queue a page before analyzing the next one. Use a smaller subfolder if the search reaches its limit of 500 candidates or 20,000 directory entries.
 
@@ -50,7 +50,7 @@ The default CLI command waits for extraction and indexing. Add `--queue` to hand
 
 ## Import a Unity project or local UPM package
 
-In **Импорт пакетов Unity и Unreal**, click **Выбрать проект или UPM…** or paste the absolute folder path. Use the project root that contains `Assets` and `ProjectSettings`, or the package root that contains `package.json`. Analyze the folder and click **Обработать и добавить в индекс**. The report includes the project's Unity version, included UPM packages, original paths and resolved GUID links. The input folder stays read-only.
+In **Импорт пакетов Unity и Unreal**, click **Выбрать проект, UPM или Content…** or paste the absolute folder path. Use the project root that contains `Assets` and `ProjectSettings`, or the package root that contains `package.json`. Analyze the folder and click **Обработать и добавить в индекс**. The report includes the project's Unity version, included UPM packages, original paths and resolved GUID links. The input folder stays read-only.
 
 Project import includes embedded packages and local folder dependencies contained in the project. Registry packages, project caches, external dependencies and UPM tarballs are outside this workflow. Select a separate local UPM folder directly to import it. For optional Editor conversion, the importer uses the project's declared Unity version when you leave the version field blank. [Unity package manifests](https://docs.unity.com/en-us/engine/6000.0/manual/packages-list/cus-pkg-development/upm-manifest-pkg).
 
@@ -135,6 +135,15 @@ The Unity check reports an exact project version if installed, or a candidate fr
 
 ## Inspect and export Unreal content
 
+Select an Unreal project root, a `.uproject` file, the `Content` folder or a loose `.uasset` or `.umap`. If a project root has several descriptors, select the matching `.uproject`. The default mode, **Без редактора**, copies eligible packages and their matching sidecars to `Source/Content`, records checksums and adds supported file types to the index. Use the job report to export a whole import or one package with its sidecars. Cooked and unversioned assets are preserved as original bytes when recognized. [Unreal project directory structure](https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-directory-structure).
+
+For a trusted project or Content folder, choose **С редактором** or **Авто** to request native conversion. Specify **Версия Unreal** when you want a particular installed version. With an available editor, FBX output can also produce GLB previews if Blender is installed. The job retains its direct copies if the editor is unavailable.
+
+```sh
+npm run cli -- package-import "/absolute/path/Project.uproject" --json
+npm run cli -- package-import "/absolute/path/Project.uproject" --mode engine-assisted --unreal-version 5.7 --export fbx,glb --json
+```
+
 Use `unreal-inspect` with a `.uproject`, its `Content` folder or an individual Unreal file. The inspection classifies supported loose package headers as editor, cooked, unversioned or unknown, recognizes standard Pak and IoStore headers and lists companion files. Project inspection reads up to 30,000 directory entries and returns counts and the first 500 matches. The command does not require Unreal Editor.
 
 ```sh
@@ -156,7 +165,7 @@ npm run cli -- package-import "/absolute/path/example.pak" --json
 npm run cli -- package-import "/absolute/path/example.pak" --queue --json
 ```
 
-The independent worker handles stored and Zlib-compressed entries from supported stock Pak layouts. Supported embedded FBX, GLB, PNG and WAV files retain their bytes. Valid loose Unreal packages and matching companions are saved to `Source/` with their archive-relative paths. The report records each result and source hash. Repeated imports reuse verified artifacts. The dedicated `unreal-extract` command remains available. Cooked object decoding, IoStore extraction, dependency resolution, new format conversion and folder watching for Pak remain pending.
+The independent worker handles stored and Zlib-compressed entries from supported stock Pak layouts. Supported embedded FBX, GLB, PNG and WAV files retain their bytes. Valid loose Unreal packages and matching companions are saved to `Source/` with their archive-relative paths. The report records each result and source hash. Repeated imports reuse verified artifacts. The dedicated `unreal-extract` command and Pak folder watching are also available. Cooked object decoding and IoStore extraction remain pending.
 
 Set `ASSET_VIEWER_UNITY` or `ASSET_VIEWER_BLENDER` to an absolute executable path. Set `ASSET_VIEWER_UNITY_ROOTS` or `ASSET_VIEWER_UNREAL_ROOTS` to absolute installation directories using the operating system's PATH separator. Start or restart the app with those settings.
 

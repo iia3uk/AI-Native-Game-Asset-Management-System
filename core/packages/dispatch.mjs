@@ -1,5 +1,6 @@
 import { packageExportFormats } from '../conversion/formats.mjs'
 import { unityImportOptions } from '../engines/unity/options.mjs'
+import { validateUnrealVersion } from '../engines/unreal/bridge/selection.mjs'
 import { IndexInputError } from '../index/index-errors.mjs'
 import { detectPackage } from './detect.mjs'
 import { processUnityBundle } from './unity/bundle/import.mjs'
@@ -7,6 +8,9 @@ import { stageUnityPackage } from './unity/import.mjs'
 import { inspectUnityPackage } from './unity/inspect.mjs'
 import { inspectUnityFolder } from './unity/folder/inspect.mjs'
 import { processUnrealPak } from './unreal/pak/import.mjs'
+import { inspectUnrealLoose } from './unreal/loose/inspect.mjs'
+import { stageUnrealLoose } from './unreal/loose/import.mjs'
+import { isUnrealLoose, unrealLooseSource } from './unreal/loose/source.mjs'
 
 function bundleError(issue, serialized) {
   const name = serialized ? 'Бинарный файл Unity' : 'UnityFS'
@@ -34,6 +38,7 @@ function pakError(issue) {
 
 export async function inspectPackage(source, { signal } = {}) {
   const format = await detectPackage(source, { signal })
+  if (isUnrealLoose(format)) return inspectUnrealLoose(await checkedUnrealSource(source, format, signal), { signal })
   if (source.directory) return inspectUnityFolder(source, { signal })
   if (format === 'unitypackage') return inspectUnityPackage(source, { signal })
   if (format === 'unreal-pak') {
@@ -48,9 +53,29 @@ export async function inspectPackage(source, { signal } = {}) {
   return { ...details, format, containerVersion }
 }
 
+async function checkedUnrealSource(source, format, signal) {
+  const loose = await unrealLooseSource(source, signal)
+  if (loose?.format !== format) throw new IndexInputError('Источник Unreal изменился. Проанализируйте его снова.')
+  return loose
+}
+
 export function packageOptions(format, input) {
-  const options = unityImportOptions(input?.mode, input?.editorVersion)
   const formats = packageExportFormats(input?.formats)
+  if (isUnrealLoose(format)) {
+    const { mode } = unityImportOptions(input?.mode)
+    const { editorVersion = '' } = input ?? {}
+    if (typeof editorVersion !== 'string') throw new IndexInputError('Укажите версию редактора Unreal.')
+    if (format === 'unreal-asset' && mode !== 'engineless') {
+      throw new IndexInputError('Для Unreal Editor выберите весь проект или папку Content.')
+    }
+    if (mode === 'engineless') {
+      if (editorVersion || formats) throw new IndexInputError('Для экспорта модели Unreal выберите режим с редактором.')
+      return { mode, editorVersion: '', formats: '' }
+    }
+    validateUnrealVersion(editorVersion === '' ? undefined : editorVersion)
+    return { mode, editorVersion, formats: formats || 'fbx,glb' }
+  }
+  const options = unityImportOptions(input?.mode, input?.editorVersion)
   if (format === 'unreal-pak') {
     if (options.mode === 'engine-assisted' || options.editorVersion || formats) {
       throw new IndexInputError('Для Unreal Pak выберите независимое извлечение исходных файлов.')
@@ -70,6 +95,10 @@ export async function stagePackage(directory, source, job, { signal, onProgress,
   const format = await detectPackage(source, { signal })
   if (expectedFormat && expectedFormat !== format) {
     throw new IndexInputError('Содержимое файла не соответствует формату автоимпорта (' + expectedFormat + ').')
+  }
+  if (isUnrealLoose(format)) {
+    packageOptions(format, { mode: job.engineMode, editorVersion: job.editorVersion, formats: job.exportFormats })
+    return stageUnrealLoose(directory, await checkedUnrealSource(source, format, signal), job, { signal, onProgress, publish })
   }
   if (format === 'unitypackage' || source.directory) {
     return stageUnityPackage(directory, source, job.sourceKey, {

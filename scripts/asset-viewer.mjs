@@ -34,7 +34,7 @@ const commands = {
   'package-folder': { args: ['absolute-folder'], options: { import: flag, export: string,
     mode: string, 'unity-version': string } },
   'package-import': { args: ['absolute-path'], options: { 'dry-run': flag, queue: flag, export: string,
-    mode: string, 'unity-version': string } },
+    mode: string, 'unity-version': string, 'unreal-version': string } },
   'package-export': { args: ['job-id', 'destination'], options: { asset: string, 'plan-key': string } },
   'unity-bundle': { args: ['absolute-path'], options: { inspect: flag, fbx: flag } },
   'unreal-inspect': { args: ['absolute-path'], options: {} },
@@ -239,8 +239,12 @@ async function main([command, ...args]) {
     const source = await importSource(input)
     const report = await inspectPackage(source, { signal: AbortSignal.timeout(120_000) })
     if (command === 'package-inspect') return print(report, values.json)
+    const unreal = report.format.startsWith('unreal-')
+    if (unreal ? values['unity-version'] : values['unreal-version']) {
+      throw new IndexInputError('Укажите версию редактора, соответствующего формату исходных данных.')
+    }
     const { formats: exportFormats, ...options } = packageOptions(report.format, {
-      mode: values.mode, editorVersion: values['unity-version'], formats: values.export?.split(','),
+      mode: values.mode, editorVersion: values[unreal ? 'unreal-version' : 'unity-version'], formats: values.export?.split(','),
     })
     if (values['dry-run']) return print({ dryRun: true, ...report, ...options,
       ...(exportFormats && { exportFormats: exportFormats.split(',') }) }, values.json)
