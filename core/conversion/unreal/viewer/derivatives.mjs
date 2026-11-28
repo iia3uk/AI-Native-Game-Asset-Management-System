@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { basename, join, posix } from 'node:path'
 import { analyzeAsset } from '../../../analysis/asset-analysis.mjs'
 import { convertBatchModel } from '../../../engines/blender/batch.mjs'
+import { editorSkeletalMeshMethod } from '../../../engines/unreal/source-mesh/run.mjs'
 import { modelArtifact } from '../../artifacts.mjs'
 import { cookedMeshMethod } from '../cooked-mesh/geometry.mjs'
 import { publishDirectMeshPreview } from '../source-mesh/preview.mjs'
@@ -30,7 +31,8 @@ export async function createViewerDerivatives({ models, store, blender, output, 
       item.sourceModel === artifact.path && item.format === 'gltf')
     let input = animated ?? asset.exports.find(item => item.path && materialMethods.has(item.method) &&
       item.from === artifact.path) ?? artifact
-    const directPreview = artifact.sourceFormat === 'FRawMesh' || artifact.method === cookedMeshMethod
+    const directPreview = artifact.sourceFormat === 'FRawMesh' ||
+      artifact.method === cookedMeshMethod || artifact.method === editorSkeletalMeshMethod
     if (requested.includes('glb') && directPreview && Date.now() < deadline) {
       const preview = { asset, artifact, output, workspace, store, signal }
       let direct = await publishDirectMeshPreview({ ...preview, input })
@@ -67,7 +69,8 @@ export async function createViewerDerivatives({ models, store, blender, output, 
           source: join(output, input.path), root: output, workspace: converterOutput, formats: requested, signal,
         })
       }
-      const intact = result.metrics?.bones >= input.metrics.bones && result.metrics?.animations >= input.metrics.animations
+      const intact = result.metrics?.bones >= input.metrics.bones && result.metrics?.animations >= input.metrics.animations &&
+        (artifact.method !== editorSkeletalMeshMethod || result.metrics.triangles === input.metrics.triangles)
       for (const format of requested) {
         const description = describe(format)
         const path = 'model.' + format

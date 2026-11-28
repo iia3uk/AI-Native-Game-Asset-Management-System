@@ -1,6 +1,7 @@
 import { basename, dirname } from 'node:path'
 import { containerFileFolders } from '../../conversion/unreal/container-files.mjs'
 import { unityDataFormats } from '../../files/formats.mjs'
+import { editorSkeletalMeshMethod } from '../../engines/unreal/source-mesh/run.mjs'
 import { unrealFileType } from '../unreal/source.mjs'
 import { isUnrealLoose, unrealLooseSource } from '../unreal/loose/source.mjs'
 import { unityFolderLayout } from '../unity/folder/layout.mjs'
@@ -64,6 +65,7 @@ export async function* cleanupCandidates(format, source, manifest, assets, selec
       const type = unrealFileType(path)
       if (unreal ? type !== 'uasset' || asset.storage === 'cooked' : !unityDataFormats.has(type)) continue
       const exports = exportsOf(asset)
+      if (unreal && exports.some(item => item.method === editorSkeletalMeshMethod)) continue
       const rendered = exports.filter(item => derivatives.has(item.format) && item.role !== 'collision-preview')
       if (unreal) rendered.push(...unrealModelBackups(exports))
       if (!rendered.length) continue

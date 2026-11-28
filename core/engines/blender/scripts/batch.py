@@ -51,7 +51,12 @@ def import_model(inputs):
         return bpy.ops.wm.obj_import(filepath=str(path), forward_axis="NEGATIVE_Z", up_axis="Y")
     if suffix in {".gltf", ".glb"}:
         path = inputs.gltf()
-        return bpy.ops.import_scene.gltf(filepath=str(path), import_pack_images=True)
+        importer = bpy.ops.import_scene.gltf
+        options = {}
+        if "disable_bone_shape" in importer.get_rna_type().properties:
+            # Blender's display mesh must stay out of batch FBX exports and their geometry metrics.
+            options["disable_bone_shape"] = True
+        return importer(filepath=str(path), import_pack_images=True, **options)
     if suffix == ".fbx":
         return import_fbx(inputs)
     raise InputIssue("model-format-unsupported")

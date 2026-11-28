@@ -1,7 +1,7 @@
 import { requireLayout } from '../../../engines/unreal/editor-package/tables.mjs'
+import { meshBuffer } from '../gltf-buffer.mjs'
 
 const componentType = { FLOAT: 5126, UNSIGNED_SHORT: 5123, UNSIGNED_INT: 5125 }
-const elementType = ['SCALAR', 'SCALAR', 'VEC2', 'VEC3', 'VEC4']
 const maximumVertices = 1_000_000
 const maximumTriangles = 1_000_000
 
@@ -121,29 +121,10 @@ function geometry(data) {
 
 export function encodeSourceMesh(data, { name, bin, materials: slots, generator = 'Asset Viewer Unreal source mesh' }) {
   const { count, triangles, min, max, fields, missingTangents } = geometry(data)
-  const parts = []
-  const bufferViews = []
-  const accessors = []
+  const { append, appendView, finish } = meshBuffer()
   const materials = []
   const primitives = []
   const materialPaths = new Set()
-  let size = 0
-  function appendView(values, target) {
-    const bytes = Buffer.from(values.buffer, values.byteOffset, values.byteLength)
-    const index = bufferViews.length
-    bufferViews.push({ buffer: 0, byteOffset: size, byteLength: bytes.length, ...(target && { target }) })
-    parts.push(bytes)
-    size += bytes.length
-    const padding = (4 - size % 4) % 4
-    if (padding) parts.push(Buffer.alloc(padding))
-    size += padding
-    return index
-  }
-  function append(values, components, type, target, bounds) {
-    const bufferView = appendView(values, target)
-    return accessors.push({ bufferView, componentType: type, count: values.length / components,
-      type: elementType[components], ...bounds }) - 1
-  }
   const attributes = {}
   for (const [semantic, values] of Object.entries(fields)) {
     if (!values) continue
@@ -180,13 +161,10 @@ export function encodeSourceMesh(data, { name, bin, materials: slots, generator 
   const unrealRawMesh = data.rawMesh && { ...data.rawMesh,
     ...(Object.keys(tangentAxes).length && { tangentAxes: { ...tangentAxes, componentType: 5126 } }),
     ...(missingTangents > 0 && { generatedTangentCorners: missingTangents }) }
+  const { layout, buffer } = finish(bin)
   const document = { asset: { version: '2.0', generator }, scene: 0,
     scenes: [{ nodes: [0] }], nodes: [{ mesh: 0, name }], meshes: [{ name, primitives,
       ...(unrealRawMesh && { extras: { unrealRawMesh } }) }],
-    materials, accessors, bufferViews, buffers: [{ uri: bin, byteLength: size }] }
-  // allocUnsafeSlow keeps the backing buffer transferable even for small meshes.
-  const buffer = Buffer.allocUnsafeSlow(size)
-  let offset = 0
-  for (const part of parts) offset += part.copy(buffer, offset)
+    materials, ...layout }
   return { document, buffer, materialPaths: [...materialPaths] }
 }

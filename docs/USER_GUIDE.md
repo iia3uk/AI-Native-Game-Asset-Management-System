@@ -183,6 +183,8 @@ Supported UE4 cutouts such as grass and foliage retain their mask, clipping thre
 
 For a trusted project or Content folder, choose **С редактором** or **Авто** to request native conversion. Specify **Версия Unreal** when you want a particular installed version. With an available editor, FBX output can also produce GLB previews if Blender is installed. The job retains its direct copies if the editor is unavailable.
 
+In **Без движка**, compatible UE4 editor skeletal meshes from the 514 layout export a single render LOD with the reference pose, skin weights, UV layers and material slots. Choose GLB for a self-contained preview with any verified texture bindings, or FBX to convert through installed Blender. Morph targets, cloth simulation and animation clips are outside this decoder's coverage. The original mesh stays available for selective export and is excluded from source cleanup.
+
 ```sh
 npm run cli -- package-import "/absolute/path/Project.uproject" --json
 npm run cli -- package-import "/absolute/path/Content" --export fbx,glb --json

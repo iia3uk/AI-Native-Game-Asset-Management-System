@@ -9,12 +9,15 @@ export const ue4SkeletonRevision = 2
 export const ue4EditorSkeletonVersions = new Set([514, 518, 522])
 const classes = new Set(['Skeleton', 'SkeletalMesh'])
 const skeletonClass = new Set(['Skeleton'])
+const materialClasses = new Set(['Material', 'MaterialInstance', 'MaterialInstanceConstant'])
 const prefixLimit = 2 * 1024 ** 2
 const versionIds = new Map([
   ['e4b068edf49442e9a231da0b2e46bb41', 'editor'],
   ['375ec13c06e448fbb50084f0262a717e', 'core'],
   ['12f88b9f88754afca67cd90c383abd29', 'rendering'],
   ['601d1886ac644f84aa16d3de0deac7d6', 'fortnite'],
+  ['d78a4a00e8584697baa819b5487d46b4', 'skeletal'],
+  ['5579f886933a4c1f83ba087b6361b92f', 'tangent'],
 ])
 
 export function ue4SkeletonVersions(bytes) {
@@ -32,17 +35,18 @@ export function ue4SkeletonVersions(bytes) {
   return versions
 }
 
-function materialEnd(bytes, at, nameAt, editor, versions) {
+function meshMaterials(bytes, at, nameAt, editor, versions, imported) {
   requireLayout(at + 34 <= bytes.length && Boolean(bytes[at] & 1) !== editor)
   at += 30 // Strip flags and the single-precision imported bounds.
   const count = bytes.readInt32LE(at)
   at += 4
   requireLayout(count >= 0 && count <= 256)
-  if (!count) return at
-  requireLayout(versions.editor >= 8 && versions.fortnite < 196)
+  const materials = []
+  if (count) requireLayout(versions.editor >= 8 && versions.fortnite < 196)
   for (let index = 0; index < count; index++) {
     requireLayout(at + 12 <= bytes.length)
-    nameAt(at + 4)
+    const path = imported && importedPackageObject(imported, bytes.readInt32LE(at), materialClasses)
+    const name = nameAt(at + 4)
     at += 12 // Material reference and slot FName.
     let importedName = editor
     if (versions.core >= 3) {
@@ -50,8 +54,9 @@ function materialEnd(bytes, at, nameAt, editor, versions) {
       importedName = bytes.readUInt32LE(at) === 1
       at += 4
     }
+    let original
     if (importedName) {
-      nameAt(at)
+      original = nameAt(at)
       at += 8
     }
     if (versions.rendering >= 10) {
@@ -59,26 +64,38 @@ function materialEnd(bytes, at, nameAt, editor, versions) {
       for (let offset = 8; offset < 24; offset += 4) requireLayout(Number.isFinite(bytes.readFloatLE(at + offset)))
       at += 24
     }
+    materials.push({ name, original, path })
   }
-  return at
+  return { end: at, materials }
 }
 
-function decode(bytes, table, object, editor, versions) {
+function decode(bytes, table, object, editor, versions, detailed = false) {
   const nameAt = at => table.nameAt(at, bytes)
   const { end, properties } = taggedProperties(bytes, 0, bytes.length, nameAt, table.layout.fileVersionUE4)
   requireLayout(end + 4 <= bytes.length && bytes.readUInt32LE(end) <= 1)
   let at = end + (bytes.readUInt32LE(end) ? 20 : 4)
   let skeletonPackage
+  let materials
   if (object.type === 'SkeletalMesh') {
-    at = materialEnd(bytes, at, nameAt, editor, versions)
+    const mesh = meshMaterials(bytes, at, nameAt, editor, versions, detailed && table.imported)
+    at = mesh.end
+    materials = mesh.materials
     const link = properties.get('Skeleton')
     if (link?.type === 'ObjectProperty' && link.size === 4) {
       skeletonPackage = importedPackageObject(table.imported, bytes.readInt32LE(link.start), skeletonClass)
     }
   }
-  const { bones } = readReferenceSkeleton(bytes, at, nameAt, editor)
-  return { object: object.name, objectClass: object.type, serialization: table.layout.fileVersionUE4,
-    ...(skeletonPackage && { skeletonPackage }), bones }
+  const reference = readReferenceSkeleton(bytes, at, nameAt, editor)
+  const rig = { object: object.name, objectClass: object.type, serialization: table.layout.fileVersionUE4,
+    ...(skeletonPackage && { skeletonPackage }), bones: reference.bones }
+  return detailed ? { rig, materials, properties, end: reference.end } : rig
+}
+
+const editorVersions = bytes => ({ core: 0, rendering: 0, fortnite: 0, ...ue4SkeletonVersions(bytes) })
+
+export function readEditorMeshReference(bytes, table, object) {
+  const payload = bytes.subarray(object.start, object.end)
+  return { payload, ...decode(payload, table, object, true, editorVersions(bytes), true) }
 }
 
 function inspect(decodeSkeleton) {
@@ -101,7 +118,7 @@ export function extractEditorSkeleton(bytes, version, tables) {
   }
   if (!object) return null
   return inspect(() => ({ rig: decode(bytes.subarray(object.start, Math.min(object.end, object.start + prefixLimit)), table,
-    object, true, { core: 0, rendering: 0, fortnite: 0, ...ue4SkeletonVersions(bytes) }) }))
+    object, true, editorVersions(bytes)) }))
 }
 
 export async function extractCookedSkeleton(root, { header, files }, table, signal) {

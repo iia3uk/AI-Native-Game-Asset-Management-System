@@ -9,6 +9,7 @@ import { publishLooseCooked } from '../../../conversion/unreal/loose-cooked/publ
 import { skeletonTotalsMatch } from '../../../conversion/unreal/skeleton/cache.mjs'
 import { createSkeletonPublisher } from '../../../conversion/unreal/skeleton/publish.mjs'
 import { publishSourceSoundCues } from '../../../conversion/unreal/source-audio/publish.mjs'
+import { editorSkeletalTotalsMatch } from '../../../conversion/unreal/skeletal-mesh/cache.mjs'
 import { prepareSourceMaterials, publishSourceMaterials } from '../../../conversion/unreal/source-material/publish.mjs'
 import { recoverUnrealMedia, sourceTextureRevision } from '../../../conversion/unreal/source-media/extract.mjs'
 import { publishSourceMeshes } from '../../../conversion/unreal/source-mesh/publish.mjs'
@@ -64,6 +65,7 @@ async function cachedResult(root, name, hash, source, recipe, signal) {
         !Number.isSafeInteger(report.written) ||
         !Array.isArray(data.assets) || !collisionTotalsMatch(data.assets.filter(asset => asset.storage === 'cooked'),
           report.unrealCooked?.meshes?.collision) ||
+        !editorSkeletalTotalsMatch(data.assets, report.unrealSourceMeshes) ||
         !skeletonTotalsMatch(data.assets, report.unrealSkeletons, JSON.parse(links).dependencies) ||
         !await verifyExports(directory, await availablePackageAssets(directory, data.assets, signal), signal)) {
       throw new Error('Invalid cached Unreal outputs')

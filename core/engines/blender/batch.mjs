@@ -7,13 +7,14 @@ import { runBlender } from './runner.mjs'
 const root = fileURLToPath(new URL('../../../', import.meta.url))
 const scriptRoot = basename(root) === 'app.asar' ? join(root, '..', 'app.asar.unpacked') : root
 const bundledScript = join(scriptRoot, 'core', 'engines', 'blender', 'scripts', 'batch.py')
+const batchRevision = 2
 
 export async function locateBatchBlender() {
   const [candidate] = await discoverBlender()
   if (!candidate) return null
   const binary = await stat(candidate.executable).catch(() => null)
   if (!binary?.isFile()) return null
-  return { ...candidate, identity: [candidate.executable, binary.size, binary.mtimeMs] }
+  return { ...candidate, identity: [candidate.executable, binary.size, binary.mtimeMs, batchRevision] }
 }
 
 export async function convertBatchModel(blender, { source, root, workspace, formats, signal }) {

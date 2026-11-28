@@ -156,6 +156,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
           soundCues?.graphs && 'Графов SoundCue · ' + soundCues.graphs,
           soundCues?.incomplete && 'Неполных SoundCue · ' + soundCues.incomplete,
           unrealSourceMeshes?.meshes && 'Статических моделей UE4 · ' + unrealSourceMeshes.meshes,
+          unrealSourceMeshes?.skeletalMeshes && 'Скелетных моделей UE4 · ' + unrealSourceMeshes.skeletalMeshes,
           collision?.shapes && 'Форм коллизии · ' + collision.shapes,
           collision?.incomplete && 'Пакетов с неполными коллизиями · ' + collision.incomplete,
           gltf && gltf + ' glTF', unrealViewer?.psa && unrealViewer.psa + ' PSA',

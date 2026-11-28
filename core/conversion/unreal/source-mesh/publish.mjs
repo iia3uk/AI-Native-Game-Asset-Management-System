@@ -3,8 +3,9 @@ import { join, posix } from 'node:path'
 import { unrealGameAssetResolver } from '../../../engines/unreal/editor-package/game-path.mjs'
 import { editorPackage } from '../../../engines/unreal/editor-package/tables.mjs'
 import { extractEditorSkeleton, ue4EditorSkeletonVersions } from '../../../engines/unreal/skeleton/ue4.mjs'
+import { ue4EditorSkeletalMesh } from '../../../engines/unreal/skeletal-mesh/ue4-514.mjs'
 import { staticMeshPackage, supportsSourceMeshVersion } from '../../../engines/unreal/source-mesh/package.mjs'
-import { decodeSourceMesh, sourceMeshFileLimit, sourceMeshRevision } from '../../../engines/unreal/source-mesh/run.mjs'
+import { decodeSourceMesh, editorSkeletalMeshMethod, sourceMeshFileLimit, sourceMeshRevision } from '../../../engines/unreal/source-mesh/run.mjs'
 import { fileInfo } from '../../../files/asset-files.mjs'
 import { readVerifiedFile } from '../../../files/read-verified.mjs'
 import { ExportArtifacts } from '../../artifacts.mjs'
@@ -13,12 +14,16 @@ import { publishUnrealGeometry } from '../mesh-artifact.mjs'
 
 const method = 'unreal-source-mesh'
 
-async function publishModel({ asset, scratch, store, lod, document, buffer, stem, signal, rawMesh }) {
-  const identity = { status: 'converted', converterVersion: sourceMeshRevision, method, from: asset.output, lod,
-    ...(rawMesh && { sourceFormat: 'FRawMesh' }) }
+async function publishModel({ asset, scratch, store, lod, document, buffer, stem, signal, rawMesh, influences }) {
+  const identity = { status: 'converted', converterVersion: sourceMeshRevision,
+    method: influences ? editorSkeletalMeshMethod : method, from: asset.output, lod,
+    ...(rawMesh && { sourceFormat: 'FRawMesh' }), ...(influences && { sourceFormat: 'FSoftSkinVertex', influences }) }
   const issues = ['unreal-source-mesh-material-graphs-not-extracted']
   if (rawMesh) issues.push('unreal-source-mesh-editor-build-not-applied')
-  return publishUnrealGeometry({ asset, scratch, store, stem, document, buffer, folder: 'unreal-source', identity, issues, signal })
+  if (influences) issues.push('unreal-source-skeletal-mesh-morphs-and-cloth-omitted')
+  const folder = influences ? 'unreal-source-skeletal' : 'unreal-source'
+  const role = influences ? 'skeletal-model' : 'model'
+  return publishUnrealGeometry({ asset, scratch, store, stem, document, buffer, folder, identity, issues, signal, role })
 }
 
 export async function publishSourceMeshes({ records, output, workspace, source, signal, skeletons,
@@ -27,7 +32,7 @@ export async function publishSourceMeshes({ records, output, workspace, source, 
   await mkdir(scratch)
   const resolveMaterial = unrealGameAssetResolver(records.assets, source.root)
   const models = []
-  const summary = { converterVersion: sourceMeshRevision, meshes: 0, gltf: 0, failed: 0, missingLods: 0, texturedGltf: 0 }
+  const summary = { converterVersion: sourceMeshRevision, meshes: 0, skeletalMeshes: 0, gltf: 0, failed: 0, missingLods: 0, texturedGltf: 0 }
   const collision = summary.collision = { assets: 0, shapes: 0, glb: 0, incomplete: 0 }
   const deadline = Date.now() + 90_000
   for (const asset of records.assets) {
@@ -45,21 +50,20 @@ export async function publishSourceMeshes({ records, output, workspace, source, 
     if (!file || file.info.size !== asset.size) throw changed()
     const { prefix, hash } = await readVerifiedFile(output, file, { capture: asset.size, changed, signal })
     if (hash !== asset.hash) throw changed()
-    let table, staticMesh
+    const render = !asset.exports.some(item => item.path && item.role === 'model' && item.format === 'gltf' && item.lod === 0)
+    let table, staticMesh, skeletal
     try {
       table = editorPackage(prefix, asset.ue4)
       staticMesh = staticMeshPackage(prefix, asset.ue4, table)
+      skeletal = !staticMesh && Boolean(ue4EditorSkeletalMesh(prefix, asset.ue4, table))
     } catch (error) {
       if (error instanceof RangeError) continue
       throw error
     }
-    if (!staticMesh) {
-      if (canReadSkeleton && table) await skeletons.publish(asset, extractEditorSkeleton(prefix, asset.ue4, table))
-      continue
-    }
+    if (!staticMesh && canReadSkeleton && table) await skeletons.publish(asset, extractEditorSkeleton(prefix, asset.ue4, table))
+    if (!staticMesh && !skeletal) continue
     const stem = posix.basename(asset.sourcePath).slice(0, -7).replace(/[#%]/g, '_')
-    const render = !asset.exports.some(item => item.path && item.role === 'model' && item.format === 'gltf' && item.lod === 0)
-    const result = await decodeSourceMesh(prefix, stem, { signal, render, version: asset.ue4,
+    const result = await decodeSourceMesh(prefix, stem, { signal, render, skeletal, version: asset.ue4,
       timeout: Math.min(12_000, Math.max(1, deadline - Date.now())) })
     if (!result) continue
     if (result.issue) {
@@ -109,7 +113,8 @@ export async function publishSourceMeshes({ records, output, workspace, source, 
     }
     if (published) {
       asset.status = 'converted'
-      summary.meshes++
+      if (skeletal) summary.skeletalMeshes++
+      else summary.meshes++
     }
   }
   return { models, store, summary, resolveMaterial }
