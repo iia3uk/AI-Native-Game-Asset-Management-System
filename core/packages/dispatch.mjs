@@ -69,8 +69,8 @@ export function packageOptions(format, input) {
       throw new IndexInputError('Для Unreal Editor выберите весь проект или папку Content.')
     }
     if (mode === 'engineless') {
-      if (editorVersion || formats) throw new IndexInputError('Для экспорта модели Unreal выберите режим с редактором.')
-      return { mode, editorVersion: '', formats: '' }
+      if (editorVersion) throw new IndexInputError('Для выбора версии Unreal нужен режим с редактором.')
+      return { mode, editorVersion: '', formats }
     }
     validateUnrealVersion(editorVersion === '' ? undefined : editorVersion)
     return { mode, editorVersion, formats: formats || 'fbx,glb' }

@@ -29,10 +29,10 @@ export async function convertLoosePackages({ records, selection, workspace, outp
       (asset.output && asset.type === 'uasset' && asset.storage === 'editor' ? bridge.summary.issue : undefined)
     if (issue && !asset.issues.includes(issue)) asset.issues.push(issue)
     if (!result) continue
-    asset.exports = await publishUnrealArtifacts(target.id, result, bridge, store, signal)
+    const editorArtifacts = await publishUnrealArtifacts(target.id, result, bridge, store, signal)
+    asset.exports.push(...editorArtifacts)
     if (formats.includes('glb')) {
-      const originals = [...asset.exports]
-      for (const artifact of originals) {
+      for (const artifact of editorArtifacts) {
         const preview = await unrealPreview(artifact, { blender, output, scratch: workspace, id: target.id, store, signal })
         if (preview) asset.exports.push(preview)
       }

@@ -143,10 +143,13 @@ Select an Unreal project root, a `.uproject` file, an asset folder or a loose `.
 
 Supported UE4 editor assets can yield the original PCM WAV or source PNG without an editor. Their output appears under `Audio/` and `Textures/`. Texture extraction skips package thumbnails. The report includes the count and file metadata for each recovered format.
 
+Set `ASSET_VIEWER_UE_VIEWER` to the absolute path of a trusted local UE Viewer executable, build 1590 or later, before launching Asset Viewer or its CLI. **Без редактора** then extracts supported versioned UE4 meshes as glTF with a companion BIN file and animation clips as separate ActorX PSA files. Select **FBX** or **GLB** for additional outputs through a locally installed Blender. The PSA clips need a compatible skeleton. Source cleanup verifies both files of each glTF/BIN pair before offering to recycle the source. Material graphs, texture bindings and collisions are outside this conversion path. [UE Viewer](https://www.gildor.org/en/projects/umodel).
+
 For a trusted project or Content folder, choose **С редактором** or **Авто** to request native conversion. Specify **Версия Unreal** when you want a particular installed version. With an available editor, FBX output can also produce GLB previews if Blender is installed. The job retains its direct copies if the editor is unavailable.
 
 ```sh
 npm run cli -- package-import "/absolute/path/Project.uproject" --json
+npm run cli -- package-import "/absolute/path/Content" --export fbx,glb --json
 npm run cli -- package-import "/absolute/path/Project.uproject" --mode engine-assisted --unreal-version 5.7 --export fbx,glb --json
 ```
 

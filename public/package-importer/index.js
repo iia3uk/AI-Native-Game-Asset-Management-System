@@ -128,9 +128,13 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
         details.append(element('p', [formatLabel(packageFormat), engineVersion].filter(Boolean).join(' · ')))
       }
       if (isUnrealLoose(record.result.report.packageFormat)) {
-        const { packageFormat, engineVersion, unreal, media } = record.result.report
+        const { packageFormat, engineVersion, unreal, media, unrealViewer } = record.result.report
         details.append(element('p', [formatLabel(packageFormat), engineVersion || unreal?.editorVersion,
           media?.png && media.png + ' PNG', media?.wav && media.wav + ' WAV',
+          unrealViewer?.gltf && unrealViewer.gltf + ' glTF', unrealViewer?.psa && unrealViewer.psa + ' PSA',
+          unrealViewer?.derivatives?.fbx && unrealViewer.derivatives.fbx + ' FBX',
+          unrealViewer?.derivatives?.glb && unrealViewer.derivatives.glb + ' GLB',
+          unrealViewer?.issue && describeIssue(unrealViewer.issue),
           unreal?.issue && describeIssue(unreal.issue)].filter(Boolean).join(' · ')))
       }
       if (record.result.report.packageFormat === 'unreal-pak') {
@@ -176,7 +180,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
     if (isUnityBinary(plan.format)) options = { mode: 'engineless', formats: options.formats }
     if (plan.format === 'unreal-pak') options = { mode: 'engineless' }
     if (plan.format === 'unreal-asset' || (isUnrealLoose(plan.format) && options.mode === 'engineless')) {
-      options = { mode: 'engineless' }
+      options = { mode: 'engineless', formats: options.formats }
     }
     const queued = await json(packagesRoute + '/import', post({ ...target, hash: plan.hash, ...options }))
     const key = selectionKey(target)

@@ -1,11 +1,14 @@
 import { lstat, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { renameSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { exportRecipe, verifyExports } from '../../../conversion/cache.mjs'
 import { recoverUnrealMedia } from '../../../conversion/unreal/source-media/extract.mjs'
+import { createViewerDerivatives } from '../../../conversion/unreal/viewer/derivatives.mjs'
 import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
 import { unrealBridgeVersion } from '../../../engines/unreal/bridge/project.mjs'
 import { locateUnrealBridge } from '../../../engines/unreal/bridge/selection.mjs'
+import { locateUnrealViewer, unrealViewerRevision } from '../../../engines/unreal/viewer/run.mjs'
 import { checkedPath, fileInfo } from '../../../files/asset-files.mjs'
 import { IndexInputError } from '../../../index/index-errors.mjs'
 import { readPackageDocument } from '../../manifest-page.mjs'
@@ -13,6 +16,7 @@ import { packageHashPattern } from '../../source.mjs'
 import { packageWorkspaceRoot } from '../../workspace.mjs'
 import { convertLoosePackages } from './convert.mjs'
 import { readUnrealLoose, unrealSourceChanged } from './inspect.mjs'
+import { decodeLooseWithViewer } from './viewer.mjs'
 
 const method = 'unreal-loose-direct'
 const version = 2
@@ -55,11 +59,15 @@ async function editorRecipe(selection, mode, preferred) {
 export async function stageUnrealLoose(directory, source, job, { signal, onProgress, publish }) {
   const { engineMode = 'engineless', editorVersion, exportFormats = [], sourceKey } = job
   if (!packageHashPattern.test(sourceKey)) throw new IndexInputError('Некорректный SHA-256 ресурсов Unreal.')
-  const [selection, blender] = await Promise.all([
+  const [selection, viewer] = await Promise.all([
     engineMode === 'engineless' ? null : locateUnrealBridge(source, editorVersion || undefined),
-    exportFormats.includes('glb') ? locateBatchBlender() : null,
+    locateUnrealViewer(),
   ])
-  const recipe = exportRecipe(exportFormats, blender, await editorRecipe(selection, engineMode, editorVersion))
+  const blender = (viewer && exportFormats.length || selection && exportFormats.includes('glb')) ?
+    await locateBatchBlender() : null
+  const editor = await editorRecipe(selection, engineMode, editorVersion)
+  const engineRecipe = viewer ? [editor, ['ue-viewer', unrealViewerRevision, ...viewer.identity]] : editor
+  const recipe = exportRecipe(exportFormats, blender, engineRecipe)
   const root = await packageWorkspaceRoot(directory, 'unreal-loose-v' + version, { sourceRoot: source.protectedRoot })
   const name = sourceKey + '-' + recipe
   const cached = await cachedResult(root, name, sourceKey, source, recipe, signal)
@@ -75,11 +83,20 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     await mkdir(join(output, 'Source', 'Content'), { recursive: true })
     const records = await readUnrealLoose(source, { output, signal, onProgress })
     if (records.hash !== sourceKey) throw unrealSourceChanged()
+    const decoded = viewer && records.written ?
+      await decodeLooseWithViewer({ viewer, records, output, workspace, source, signal }) : null
+    const unrealViewer = decoded?.summary ?? (exportFormats.length > 0 && !selection?.editor ?
+      { status: 'unavailable', issue: 'unreal-viewer-unavailable' } : undefined)
+    if (decoded) onProgress?.(65)
     const conversion = selection && records.written ?
       await convertLoosePackages({ records, selection, workspace, output, blender, formats: exportFormats, signal,
-        onProgress: progress => onProgress?.(60 + Math.floor((progress - 60) * 0.5)) }) : null
+        onProgress: progress => onProgress?.((decoded ? 65 : 60) + Math.floor((progress - 60) * 0.4)) }) : null
+    if (decoded && exportFormats.length) {
+      unrealViewer.derivatives = await createViewerDerivatives({ ...decoded, workspace, output, blender, formats: exportFormats, signal,
+        onProgress: progress => onProgress?.(79 + Math.floor(progress * 0.1)) })
+    }
     const media = await recoverUnrealMedia(records, { output, workspace, signal,
-      onProgress: progress => onProgress?.((selection ? 78 : 60) + Math.floor(progress * (selection ? 0.17 : 0.35))) })
+      onProgress: progress => onProgress?.(89 + Math.floor(progress * 0.06)) })
     const counts = Object.create(null)
     for (const asset of records.assets) counts[asset.status] = (counts[asset.status] ?? 0) + 1
     const metadata = { format: source.format, sha256: sourceKey, size: records.size, association: source.association ?? null,
@@ -88,11 +105,13 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     const report = { version, method, mode: engineMode, packageFormat: source.format,
       status: records.written ? 'completed' : 'no-compatible-inputs', counts, written: records.written, total: records.assets.length,
       engineVersion: source.association ?? null, ...conversion, converted: counts.converted ?? 0, media,
-      limitations: ['cooked-unreal-objects-preserved-as-source', 'dependency-resolution-requires-asset-registry', 'material-graphs-not-converted'] }
+      ...(unrealViewer && { unrealViewer }),
+      limitations: ['unsupported-cooked-unreal-objects-preserved-as-source', 'dependency-resolution-requires-asset-registry',
+        'material-graphs-not-converted', ...(decoded ? ['ue-viewer-material-graphs-and-collision-not-exported'] : [])] }
     await Promise.all(Object.entries({ manifest, dependencies: { version, dependencies: records.dependencies },
       'conversion-report': report }).map(([key, value]) =>
       writeFile(join(output, key + '.json'), JSON.stringify(value, null, 2) + '\n', { flag: 'wx', signal })))
-    const destination = join(root, name)
+    const destination = join(root, unrealViewer?.status === 'partial' ? name + '-' + randomUUID() : name)
     signal?.throwIfAborted()
     onProgress?.(95)
     return publish({ directory: destination, source: destination,

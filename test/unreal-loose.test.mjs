@@ -66,7 +66,7 @@ test('Unreal projects and loose packages share read-only import, indexing, compa
   assert.equal(single.format, 'unreal-asset')
   assert.deepEqual(single.assets.map(row => row.path), ['Fixture.UEXP', 'Fixture.uasset'])
   await post(packages + '/import', { path: singlePath, hash: single.hash, mode: 'engine-assisted' }, 400)
-  await post(packages + '/import', { path: project, hash: plan.hash, formats: ['fbx'] }, 400)
+  await post(packages + '/import', { path: project, hash: plan.hash, formats: ['invalid-format'] }, 400)
   await post(packages + '/import', { path: project, hash: plan.hash, mode: 'auto', editorVersion: 'bad-version' }, 400)
 
   const first = await enqueue(project, plan.hash)

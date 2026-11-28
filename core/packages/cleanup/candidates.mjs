@@ -12,6 +12,21 @@ const published = item => item?.path && ['converted', 'extracted', 'ready'].incl
 const original = asset => asset.output && { path: asset.output, size: asset.size, sha256: asset.hash }
 const exportsOf = asset => [asset.artifact, ...(asset.exports ?? [])].filter(published)
 
+function viewerBackups(exports) {
+  const buffers = new Map(exports.filter(item => item.method === 'ue-viewer' && item.format === 'bin')
+    .map(item => [item.path, item]))
+  const backups = []
+  for (const item of exports) {
+    if (item.method !== 'ue-viewer') continue
+    if (item.format === 'psa') backups.push(item)
+    if (item.format === 'gltf' && item.path.endsWith('.gltf')) {
+      const buffer = buffers.get(item.path.slice(0, -5) + '.bin')
+      if (buffer) backups.push(item, buffer)
+    }
+  }
+  return backups
+}
+
 export function cleanupEngine(format) {
   if (isUnrealLoose(format) || format === 'unreal-pak') return 'unreal'
   if (unityFolder(format) || ['unitypackage', 'unityfs', 'unity-serialized'].includes(format)) return 'unity'
@@ -33,7 +48,9 @@ export async function* cleanupCandidates(format, source, manifest, assets, selec
       if (!relativeSourcePath(path) || !asset.output) continue
       const type = unrealFileType(path)
       if (unreal ? type !== 'uasset' : !unityDataFormats.has(type)) continue
-      const rendered = exportsOf(asset).filter(item => derivatives.has(item.format))
+      const exports = exportsOf(asset)
+      const rendered = exports.filter(item => derivatives.has(item.format))
+      if (unreal) rendered.push(...viewerBackups(exports))
       if (!rendered.length) continue
       const mount = !unreal && layout.mounts.find(item => path.startsWith(item.logical + '/'))
       const root = unreal ? loose.root : mount?.path
