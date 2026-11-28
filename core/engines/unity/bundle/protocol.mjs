@@ -5,10 +5,17 @@ import { bundleMemberPattern } from './member.mjs'
 const issuePattern = /^unity-bundle-[a-z0-9-]{1,64}$/
 const versionPattern = /^\d{1,4}\.\d{1,3}\.\d{1,4}[abfp]\d{1,4}$/
 const pathIdPattern = /^-?\d{1,19}$/
-export const bundleDecoderRevision = 10
+export const bundleDecoderRevision = 11
 const pixelDimension = value => Number.isInteger(value) && value >= 1 && value <= 2048
 const validCount = (value, max) => Number.isSafeInteger(value) && value > 0 && value <= max
 const cropCoordinate = (value, length, limit = 2048) => Number.isInteger(value) && value >= 0 && value + length <= limit
+const uint = (value, maximum) => Number.isInteger(value) && value >= 0 && value <= maximum
+
+function textureSampler(value) {
+  const { filter, wrapU, wrapV, anisotropy, mipmaps } = value ?? {}
+  return uint(filter, 2) && uint(wrapU, 3) && uint(wrapV, 3) && uint(anisotropy, 16) && typeof mipmaps === 'boolean'
+    ? { filter, wrapU, wrapV, anisotropy, mipmaps } : null
+}
 
 function spriteSource(sprite, width, height) {
   if (typeof sprite?.texturePathId !== 'string' || !pathIdPattern.test(sprite.texturePathId)) return null
@@ -70,6 +77,9 @@ export function bundleResult(report, inspectOnly, serialized = false, dependency
         (textureStorage === 'inline' || textureStorage === (serialized ? 'companion' : 'bundle-member'))) {
       format = 'rgba'
       metrics = { width, height, textureEncoding, textureStorage }
+      if (asset.sampler !== undefined) {
+        if (classId !== 28 || !(metrics.sampler = textureSampler(asset.sampler))) return null
+      }
       if (['bc4', 'bc5'].includes(textureEncoding) && textureColorSpace !== 'linear') return null
       if (textureColorSpace != null) {
         if (!['linear', 'srgb'].includes(textureColorSpace)) return null

@@ -23,6 +23,7 @@ internal sealed record VertexBuffer(int Count, Dictionary<string, float[]> Attri
             {
                 0 => ("POSITION", 3),
                 1 => ("NORMAL", 3),
+                2 => ("TANGENT", 4),
                 4 => ("TEXCOORD_0", 2),
                 _ => ("", 0),
             };
@@ -57,9 +58,11 @@ internal sealed record VertexBuffer(int Count, Dictionary<string, float[]> Attri
                     continue;
                 }
                 values[position + 2] = -values[position + 2];
-                if (semantic != "NORMAL") continue;
+                if (semantic is not ("NORMAL" or "TANGENT")) continue;
                 var vector = values.AsSpan(position, 3);
                 var length = MathF.Sqrt(vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2]);
+                if (semantic == "TANGENT" && (length < 1e-6f || values[position + 3] is not (-1 or 1)))
+                    throw new BundleException("unity-bundle-mesh-tangent");
                 if (length < 1e-6f) throw new BundleException("unity-bundle-mesh-normal");
                 for (int axis = 0; axis < 3; axis++) vector[axis] /= length;
             }

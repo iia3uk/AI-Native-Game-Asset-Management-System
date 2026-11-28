@@ -178,6 +178,7 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     ...bridgeScripts.map(file => 'core/engines/unity/bridge/editor/' + file),
     ...unrealBridgeScripts.map(file => 'core/engines/unreal/bridge/editor/' + file),
     'public/package-importer/index.js',
+    'public/package-importer/unity-materials.js',
     'public/package-importer/folder.js',
     'public/package-importer/folder-processing.js',
     'public/package-importer/export.js',
@@ -219,7 +220,7 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     await access(join(resources, 'unity-bundle', path))
   }
   await verifyUnrealWorker(join(resources, 'cue4parse'))
-  for (const script of ['batch.py', 'fbx_animation.py', 'stage_inputs.py']) {
+  for (const script of ['batch.py', 'fbx_animation.py', 'fbx_materials.py', 'stage_inputs.py']) {
     await access(join(resources, 'app.asar.unpacked', 'core', 'engines', 'blender', 'scripts', script))
   }
 }

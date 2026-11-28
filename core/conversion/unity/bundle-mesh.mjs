@@ -5,7 +5,7 @@ import { modelArtifact } from '../artifacts.mjs'
 import { bundleIdentity } from './bundle-names.mjs'
 import { applyBundleMaterials } from './materials/bundle-glb.mjs'
 
-async function exportFbx(source, relative, stage, store, options, signal) {
+async function exportFbx(source, relative, stage, store, options, materials, signal) {
   const format = 'fbx'
   if (!options.blender) return { format, status: 'requires-tool', issue: 'blender-unavailable' }
   if (options.deadline.aborted) return { format, status: 'failed', issue: 'batch-time-limit' }
@@ -16,7 +16,8 @@ async function exportFbx(source, relative, stage, store, options, signal) {
     let conversion
     try {
       conversion = await convertBatchModel(options.blender, {
-        source: join(store.root, source), root: store.root, workspace, formats: [format], signal: options.signal,
+        source: join(store.root, source), root: store.root, workspace, formats: [format],
+        unityMaterials: materials?.channels?.some(channel => channel !== 'baseColor'), signal: options.signal,
       })
     } catch (error) {
       signal?.throwIfAborted()
@@ -26,7 +27,11 @@ async function exportFbx(source, relative, stage, store, options, signal) {
     const result = conversion.error ?? conversion.outputs?.fbx
     const file = result === 'written' && await modelArtifact(workspace, 'model.fbx', format, signal)
     if (!file) return { format, status: 'failed', issue: !result || result === 'written' ? 'invalid-converter-output' : result }
-    return await store.save(relative, file, { format, status: 'converted', method: 'blender', converterVersion: conversion.version })
+    const issues = ['fbx-occlusion-unsupported', 'fbx-texture-sampling', 'fbx-material-channel-unavailable']
+      .filter(issue => Array.isArray(conversion.issues) && conversion.issues.includes(issue))
+    if (materials?.alphaCutout) issues.push('fbx-alpha-cutoff')
+    return await store.save(relative, file, { format, status: 'converted', method: 'blender', converterVersion: conversion.version,
+      ...(issues.length && { issues }) })
   } finally {
     await rm(workspace, { recursive: true, force: true, maxRetries: 3 })
   }
@@ -36,7 +41,8 @@ export async function saveBundleMesh(asset, stage, store, { method, converterVer
   const { file: staged, size, ...entry } = asset
   let file = await modelArtifact(stage, staged, 'glb', signal)
   if (!file || file.info.size !== size) return { ...entry, status: 'failed', issue: 'unity-bundle-mesh-output' }
-  const materialPreview = entry.meshMaterials && await applyBundleMaterials(file, entry, store.root, objects, budget, signal)
+  const materials = entry.meshMaterials && await applyBundleMaterials(file, entry, store.root, objects, budget, signal)
+  const materialPreview = materials?.status
   if (materialPreview === 'bound' || materialPreview === 'partial') {
     file = await modelArtifact(stage, staged, 'glb', signal)
     if (!file) return { ...entry, status: 'failed', issue: 'unity-bundle-mesh-output' }
@@ -47,7 +53,9 @@ export async function saveBundleMesh(asset, stage, store, { method, converterVer
     status: 'converted', format: 'glb', method: method + '-static-mesh', converterVersion,
   })
   const outputs = fbx && artifact.status === 'converted' &&
-    [await exportFbx(artifact.path, 'Models/' + id + '/' + filename + '.fbx', stage, store, fbx, signal)]
+    [await exportFbx(artifact.path, 'Models/' + id + '/' + filename + '.fbx', stage, store, fbx, materials, signal)]
   return { ...entry, id, status: artifact.status, artifact, ...(materialPreview && { materialPreview }),
+    ...(materials?.issues?.length && { materialIssues: materials.issues }),
+    ...(materials?.channels?.length && { materialChannels: materials.channels }),
     ...(outputs && { exports: outputs }) }
 }

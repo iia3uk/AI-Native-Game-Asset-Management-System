@@ -1,7 +1,11 @@
 import { bundleMemberPattern } from './member.mjs'
 
 const pathIdPattern = /^-?[1-9]\d{0,18}$/
-const numericProperties = ['_Mode', '_Cutoff', '_Metallic', '_Glossiness']
+const numericProperties = ['_Mode', '_Cutoff', '_Metallic', '_Glossiness', '_GlossMapScale',
+  '_OcclusionStrength', '_BumpScale', '_SmoothnessTextureChannel']
+const materialKeywords = new Set(['_METALLICGLOSSMAP', '_SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A', '_NORMALMAP', '_EMISSION',
+  '_PARALLAXMAP', '_DETAIL_MULX2', '_DETAIL_MUL', '_DETAIL_ADD', '_DETAIL_LERP', '_SPECULARHIGHLIGHTS_OFF',
+  '_GLOSSYREFLECTIONS_OFF', '_ALPHATEST_ON', '_ALPHABLEND_ON', '_ALPHAPREMULTIPLY_ON'])
 const vector = (values, length) => Array.isArray(values) && values.length === length &&
   values.every(value => typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 3.403e38)
 
@@ -19,6 +23,11 @@ export function materialSource(value) {
       !Array.isArray(value.textures) || value.textures.length > 64 ||
       !value.numbers || typeof value.numbers !== 'object' || Array.isArray(value.numbers) ||
       (value.color !== null && !vector(value.color, 4))) return null
+  const { keywords, emissionColor, mainTransform } = value
+  if (keywords !== undefined && (!Array.isArray(keywords) || keywords.length > materialKeywords.size ||
+      !keywords.every(keyword => materialKeywords.has(keyword)) || new Set(keywords).size !== keywords.length)) return null
+  if (emissionColor !== undefined && !vector(emissionColor, 4)) return null
+  if (mainTransform !== undefined && (!vector(mainTransform?.scale, 2) || !vector(mainTransform?.offset, 2))) return null
   const shader = reference(value.shader)
   if ((value.shader !== null || value.profile) && !shader) return null
   const numbers = {}
@@ -37,7 +46,9 @@ export function materialSource(value) {
     const { property, scale, offset } = slot
     textures.push({ property, texture, scale, offset })
   }
-  return { shader, profile: value.profile, textures, numbers, color: value.color }
+  return { shader, profile: value.profile, textures, numbers, color: value.color,
+    ...(keywords && { keywords }), ...(emissionColor && { emissionColor }),
+    ...(mainTransform && { mainTransform: { scale: mainTransform.scale, offset: mainTransform.offset } }) }
 }
 
 export function meshMaterialSlots(value) {

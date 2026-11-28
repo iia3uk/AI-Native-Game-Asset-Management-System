@@ -23,7 +23,7 @@ internal static class Glb
             var entry = new Dictionary<string, object>
             {
                 ["bufferView"] = views.Count - 1, ["componentType"] = 5126, ["count"] = mesh.Vertices.Count,
-                ["type"] = semantic == "TEXCOORD_0" ? "VEC2" : "VEC3",
+                ["type"] = semantic switch { "TEXCOORD_0" => "VEC2", "TANGENT" => "VEC4", _ => "VEC3" },
             };
             if (semantic == "POSITION")
             {

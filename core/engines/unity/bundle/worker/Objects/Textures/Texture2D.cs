@@ -5,7 +5,7 @@ using AssetViewer.UnityBundle.Objects.Resources;
 namespace AssetViewer.UnityBundle.Objects.Textures;
 
 internal sealed record TextureInput(string Name, int Width, int Height, int Dimension, int Count, int Format, int? ColorSpace,
-    ReadOnlyMemory<byte> Pixels, ResourceReference? External);
+    ReadOnlyMemory<byte> Pixels, ResourceReference? External, TextureSampling? Sampler = null);
 
 internal static class Texture2D
 {
@@ -20,7 +20,7 @@ internal static class Texture2D
         var colorSpace = field["m_ColorSpace"];
         return Read(new TextureInput(field["m_Name"].AsString, field["m_Width"].AsInt, field["m_Height"].AsInt,
             field["m_TextureDimension"].AsInt, field["m_ImageCount"].AsInt, field["m_TextureFormat"].AsInt,
-            colorSpace.IsDummy ? null : colorSpace.AsInt, pixels, source), member, resources, inspectOnly, outputLimit);
+            colorSpace.IsDummy ? null : colorSpace.AsInt, pixels, source, Sampler(field)), member, resources, inspectOnly, outputLimit);
     }
 
     public static Product Read(TextureInput input, string member, SerializedResources resources, bool inspectOnly,
@@ -69,7 +69,21 @@ internal static class Texture2D
         };
         var name = input.Name;
         return new Product(name.Length > 160 ? name[..160] : name, "rgba", bytes, Width: width, Height: height,
-            TextureEncoding: encoding, TextureStorage: storage, TextureColorSpace: colorSpace);
+            TextureEncoding: encoding, TextureStorage: storage, TextureColorSpace: colorSpace, Sampler: input.Sampler);
+    }
+
+    private static TextureSampling? Sampler(AssetTypeValueField field)
+    {
+        var settings = field["m_TextureSettings"];
+        var filter = settings["m_FilterMode"];
+        var wrapU = settings["m_WrapU"];
+        var wrapV = settings["m_WrapV"];
+        var aniso = settings["m_Aniso"];
+        var mips = field["m_MipCount"];
+        if (filter.IsDummy || wrapU.IsDummy || wrapV.IsDummy || aniso.IsDummy || mips.IsDummy ||
+            filter.AsInt is < 0 or > 2 || wrapU.AsInt is < 0 or > 3 || wrapV.AsInt is < 0 or > 3 ||
+            aniso.AsInt is < 0 or > 16 || mips.AsInt is < 1 or > 32) return null;
+        return new TextureSampling(filter.AsInt, wrapU.AsInt, wrapV.AsInt, aniso.AsInt, mips.AsInt > 1);
     }
 
     private static byte[] Expand(byte[] bytes, int width, int height, string encoding) => encoding switch

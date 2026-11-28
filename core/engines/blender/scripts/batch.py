@@ -77,7 +77,7 @@ def export_model(workspace, format_name, issues):
     raise InputIssue("model-format-unsupported")
 
 
-def run(inputs, workspace, formats, report):
+def run(inputs, workspace, formats, report, material_mode):
     if bpy.app.version < (4, 5, 0):
         raise InputIssue("converter-version-unsupported")
     bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -96,6 +96,9 @@ def run(inputs, workspace, formats, report):
     }
     for format_name in formats:
         try:
+            if format_name == "fbx" and material_mode == ["unity-materials"] and inputs.source.suffix.lower() == ".glb":
+                from fbx_materials import restore_fbx_material_maps
+                restore_fbx_material_maps(inputs.issues)
             if "FINISHED" in export_model(workspace, format_name, inputs.issues):
                 report["outputs"][format_name] = "written"
             else:
@@ -105,7 +108,7 @@ def run(inputs, workspace, formats, report):
     report["issues"] = sorted(inputs.issues)
 
 
-root, source, workspace, formats = sys.argv[sys.argv.index("--") + 1:]
+root, source, workspace, formats, *material_mode = sys.argv[sys.argv.index("--") + 1:]
 workspace = Path(workspace).resolve()
 root = Path(root).resolve()
 source = Path(os.path.abspath(source))
@@ -113,7 +116,7 @@ report = {"version": bpy.app.version_string, "outputs": {}}
 try:
     if not source.is_relative_to(root) or source.resolve() != source or not source.is_file():
         raise InputIssue("model-file-unavailable")
-    run(Inputs(root, source, workspace), workspace, formats.split(","), report)
+    run(Inputs(root, source, workspace), workspace, formats.split(","), report, material_mode)
 except InputIssue as error:
     report["error"] = str(error)
 except (RuntimeError, ValueError, TypeError, OSError, AttributeError, RecursionError):

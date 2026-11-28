@@ -18,12 +18,13 @@ export async function locateBatchBlender() {
   return { ...candidate, identity: [candidate.executable, binary.size, binary.mtimeMs, batchRevision], fbxRevision }
 }
 
-export async function convertBatchModel(blender, { source, root, workspace, formats, signal }) {
+export async function convertBatchModel(blender, { source, root, workspace, formats, unityMaterials, signal }) {
   const script = process.env.ASSET_VIEWER_BLENDER_BATCH_SCRIPT ?? bundledScript
   const reportPath = join(workspace, 'result.json')
   try {
     await runBlender(blender.executable, ['--threads', '2', '--python-exit-code', '1', '--python', script, '--',
-      root, source, workspace, formats.join(',')], { signal, timeout: 120_000, cwd: workspace })
+      root, source, workspace, formats.join(','), ...(unityMaterials ? ['unity-materials'] : [])],
+    { signal, timeout: 120_000, cwd: workspace })
     signal?.throwIfAborted()
     const result = JSON.parse(await readFile(reportPath, 'utf8'))
     if (typeof result.version !== 'string' || !/^[\w. -]{1,80}$/.test(result.version)) throw new Error('Invalid Blender report')

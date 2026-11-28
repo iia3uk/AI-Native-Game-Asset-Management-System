@@ -33,6 +33,7 @@ public static class AssetViewerBundleFixture
         var sprites = BundleFixtureSprites.Create(root);
         var audio = BundleFixtureAudio.Create(root);
         var materials = BundleFixtureMaterials.Create(root, mesh);
+        var pbr = BundleFixtureMaterials.CreatePbr(root, mesh);
         var scenes = BundleFixtureMaterialScenes.Create(root, mesh);
         AssetDatabase.SaveAssets();
 
@@ -47,6 +48,7 @@ public static class AssetViewerBundleFixture
             new AssetBundleBuild { assetBundleName = "sprites.bundle", assetNames = sprites },
             new AssetBundleBuild { assetBundleName = "audio.bundle", assetNames = audio },
             new AssetBundleBuild { assetBundleName = "materials.bundle", assetNames = materials },
+            new AssetBundleBuild { assetBundleName = "pbr-materials.bundle", assetNames = pbr },
             new AssetBundleBuild { assetBundleName = "scene-materials.bundle", assetNames = scenes },
         }.Concat(BundleFixtureMaterials.CreateLinked(root, mesh)).ToArray();
         if (BuildPipeline.BuildAssetBundles(output, mappings,

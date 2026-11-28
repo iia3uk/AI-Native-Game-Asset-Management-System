@@ -1,7 +1,7 @@
 import { basename } from 'node:path'
 
-export async function verifyUnityBundle(webContents, waitFor, fixture, { standalone = false, materials = false, linked = false } = {}) {
-  const mesh = linked ? 'LinkedMesh' : materials ? 'Painted' : 'Triangle'
+export async function verifyUnityBundle(webContents, waitFor, fixture, { standalone = false, materials = false, linked = false, pbr = false } = {}) {
+  const mesh = pbr ? 'PbrMesh' : linked ? 'LinkedMesh' : materials ? 'Painted' : 'Triangle'
   const preview = 'Mesh-' + mesh + '.glb'
   await webContents.executeJavaScript(`
     if (!document.querySelector('#index-dialog').open) document.querySelector('#index-mode').click()
@@ -34,6 +34,9 @@ export async function verifyUnityBundle(webContents, waitFor, fixture, { standal
   } else if (linked) {
     await waitFor(`(${row})?.textContent.includes('Материалы восстановлены в GLB') &&
       (${row})?.textContent.includes('Texture-LinkedPaintColor.png')`)
+  } else if (pbr) {
+    await waitFor(`(${row})?.textContent.includes('Карты GLB · базовый цвет, металличность и шероховатость, затенение, нормали, свечение') &&
+      (${row})?.textContent.includes('разные параметры выборки')`)
   } else if (!standalone) await waitFor(`(${row})?.textContent.includes('Texture-Albedo.png')`)
   if (compressed) {
     await waitFor(`(${row})?.textContent.includes('Texture-InlineDXT1.png') && (${row})?.textContent.includes('Texture-StreamedDXT5.png')`)
@@ -47,5 +50,5 @@ export async function verifyUnityBundle(webContents, waitFor, fixture, { standal
   await webContents.executeJavaScript("document.querySelector('#index-preview').click()")
   await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('2 треугольника')")
   if (materials) await waitFor("document.querySelector('#color-source').textContent.includes('с текстурой 2')")
-  if (linked) await waitFor("document.querySelector('#color-source').textContent.includes('с текстурой')")
+  if (linked || pbr) await waitFor("document.querySelector('#color-source').textContent.includes('с текстурой')")
 }

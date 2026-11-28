@@ -20,6 +20,7 @@ import { verifyBundleAudio } from './unity-bundle/audio.mjs'
 import { verifyBundleAtlas } from './unity-bundle/atlas.mjs'
 import { verifyBundleMaterials } from './unity-bundle/materials.mjs'
 import { verifyLinkedBundleMaterials } from './unity-bundle/linked-materials.mjs'
+import { verifyPbrBundle } from './unity-bundle/pbr-materials.mjs'
 import { readTexture } from './unity-bundle/png.mjs'
 import { verifyBcTextures } from './unity-bundle/bc-textures.mjs'
 import { verifyPlayerExports, verifyPlayerMalformed } from './unity-bundle/player.mjs'
@@ -78,9 +79,12 @@ test('UnityFS validates decoder reports and rejects non-bundle sources without t
   assert.equal(bundleResult(report, false).assets[0].file, '0.rgba')
   const bc5 = { ...row, textureEncoding: 'bc5', textureColorSpace: 'linear' }
   assert.equal(bundleResult({ ...report, assets: [bc5] }, false).assets[0].textureColorSpace, 'linear')
+  const sampler = { filter: 1, wrapU: 0, wrapV: 2, anisotropy: 1, mipmaps: true }
+  assert.deepEqual(bundleResult({ ...report, assets: [{ ...bc5, sampler }] }, false).assets[0].sampler, sampler)
   for (const invalid of [{ ...row, member: '../CAB' }, { ...row, output: 4 }, { ...row, width: 3000 },
     { ...row, textureStorage: 'sidecar' }, { ...row, textureEncoding: 'other' }, { ...row, bytes: 63 },
-    { ...row, textureColorSpace: 'other' }, { ...bc5, textureColorSpace: 'srgb' }, { ...bc5, textureColorSpace: null }]) {
+    { ...row, textureColorSpace: 'other' }, { ...bc5, textureColorSpace: 'srgb' }, { ...bc5, textureColorSpace: null },
+    { ...bc5, sampler: { ...sampler, wrapV: 4 } }, { ...bc5, sampler: { ...sampler, mipmaps: 1 } }]) {
     assert.equal(bundleResult({ ...report, assets: [invalid] }, false), null)
   }
   assert.equal(bundleResult({ ...report, decoderRevision: bundleDecoderRevision - 1 }, false), null)
@@ -117,7 +121,12 @@ test('UnityFS validates decoder reports and rejects non-bundle sources without t
   const paint = { member: row.member, pathId: '-4', classId: 21, name: 'Paint', status: 'decoded',
     issue: null, output: null, format: 'material', material }
   assert.deepEqual(bundleResult({ ...report, assets: [row, paint] }, false).assets[1].material, material)
+  const pbr = { ...material, keywords: ['_EMISSION'], emissionColor: [2, .5, .25, 1],
+    mainTransform: { scale: [1, 2], offset: [.25, 0] } }
+  assert.deepEqual(bundleResult({ ...report, assets: [row, { ...paint, material: pbr }] }, false).assets[1].material, pbr)
   for (const bad of [{ ...material, shader: null }, { ...material, textures: [binding, binding] },
+    { ...pbr, keywords: ['_EMISSION', '_EMISSION'] }, { ...pbr, keywords: ['unexpected'] },
+    { ...pbr, emissionColor: [Infinity, 0, 1, 1] }, { ...pbr, mainTransform: { scale: [], offset: [1, 0] } },
     { ...material, textures: [{ ...binding, texture: { fileId: -1, pathId: '42' } }] },
     { ...material, textures: [{ ...binding, texture: { fileId: 0, pathId: '9223372036854775808' } }] }]) {
     assert.equal(bundleResult({ ...report, assets: [row, { ...paint, material: bad }] }, false), null)
@@ -312,6 +321,7 @@ test('Unity builds native UnityFS bundles and the independent worker indexes tex
   await verifyBundleAtlas(root, atlasData, client(atlasData))
   const materialData = join(root, 'material-data')
   await verifyBundleMaterials(root, client(materialData))
+  await verifyPbrBundle(root, client(join(root, 'pbr-material-data')))
   const linkedData = join(root, 'linked-material-data')
   const linkedServer = await startServer(linkedData)
   try {

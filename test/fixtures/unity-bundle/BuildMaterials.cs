@@ -2,7 +2,7 @@ using System.IO;
 using UnityEditor;
 using UnityEngine;
 
-internal static class BundleFixtureMaterials
+internal static partial class BundleFixtureMaterials
 {
     public static AssetBundleBuild[] CreateLinked(string root, Mesh source)
     {

@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileInfo } from '../../../files/asset-files.mjs'
 import { bundleIdentity } from '../bundle-names.mjs'
+import { standardSlotActive, standardSlotRoles } from './standard-slots.mjs'
 
 export const bundleObjectKey = (member, pathId) => member + ':' + pathId
 
@@ -20,21 +21,20 @@ export function bundleTarget(objects, member, reference, classId) {
 
 export async function saveBundleMaterial(asset, stage, store, decoder, objects, signal) {
   const { id, label } = bundleIdentity(asset)
-  const { profile, shader, numbers, color } = asset.material
+  const { profile, shader, numbers, color, keywords, emissionColor, mainTransform } = asset.material
+  const active = new Set(keywords)
   const textures = asset.material.textures.map(binding => {
     const target = bundleTarget(objects, asset.member, binding.texture, 28)
     const status = target ? 'resolved' : bundlePointer(asset.member, binding.texture) ? 'missing' : 'external'
-    const roles = []
-    if (profile === 'standard' && binding.property === '_MainTex') {
-      roles.push({ role: 'baseColor', channels: 'rgb', colorSpace: 'srgb' })
-      if (numbers._Mode === 1) roles.push({ role: 'opacity', channels: 'a', colorSpace: 'linear' })
-    }
-    return { ...binding, roles, status, ...(target && {
+    const roles = standardSlotRoles(asset.material, binding.property)
+    const enabled = profile === 'standard' && keywords && roles.length ? standardSlotActive(binding.property, active) : null
+    return { ...binding, roles, ...(enabled !== null && { active: enabled }), status, ...(target && {
       target: { path: target.artifact.path, sha256: target.artifact.sha256, colorSpace: target.textureColorSpace ?? null },
     }) }
   })
   const document = { version: 1, source: { member: asset.member, pathId: asset.pathId }, name: asset.name,
-    shader, profile, numbers, color, textures }
+    shader, profile, numbers, color, ...(keywords && { keywords }), ...(emissionColor && { emissionColor }),
+    ...(mainTransform && { mainTransform }), textures }
   const staged = join(stage, id + '.json')
   await writeFile(staged, JSON.stringify(document, null, 2) + '\n', { flag: 'wx', signal })
   const artifact = await store.save('Materials/' + id + '/Material' + (label ? '-' + label : '') + '.json',

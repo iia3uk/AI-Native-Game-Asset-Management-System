@@ -27,7 +27,7 @@ async function saveOutputs(workspace, source, fingerprint, recipe, report, { met
   const fbx = withFbx && { blender, deadline, signal: signal ? AbortSignal.any([signal, deadline]) : deadline }
   const assets = [...report.assets]
   const objects = new Map()
-  const materials = { objects, budget: { remaining: 128 * 1024 ** 2 } }
+  const materials = { objects, budget: { remaining: 128 * 1024 ** 2, remainingPixels: 64 * 1024 ** 2 } }
   const decoder = { method, converterVersion: assetsToolsVersion }
   const save = {
     png: asset => saveBundleTexture(asset, results, store, decoder, signal),

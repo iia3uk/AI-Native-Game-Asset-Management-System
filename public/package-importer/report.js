@@ -1,3 +1,5 @@
+import { unityMaterialDetails } from './unity-materials.js'
+
 const artifactStatus = {
   ready: 'Оригинал', converted: 'Сконвертирован', extracted: 'Извлечён',
   'requires-tool': 'Требуется Blender', 'missing-dependencies': 'Отсутствуют зависимости',
@@ -5,6 +7,10 @@ const artifactStatus = {
 }
 
 const packageIssues = {
+  'fbx-occlusion-unsupported': 'Карта затенения сохранена в GLB',
+  'fbx-texture-sampling': 'Часть параметров выборки текстур сохранена в GLB',
+  'fbx-material-channel-unavailable': 'Часть каналов материала сохранена в GLB',
+  'fbx-alpha-cutoff': 'Порог отсечения прозрачности сохранён в GLB',
   'metadata-guid-invalid': 'Неверный GUID в файле .meta',
   'unity-material-yaml-unrecognized': 'Не удалось разобрать описание материала Unity',
   'unity-material-output-limit': 'Достигнут лимит описаний материалов',
@@ -336,6 +342,7 @@ export function appendManifest({ details, record, json, element, button, assetSt
         }
         const materialPreview = unityPreviewMaterials[asset.materialPreview]
         if (materialPreview) row.append(element('p', materialPreview))
+        for (const detail of unityMaterialDetails(asset)) row.append(element('p', detail))
         if (asset.soundCue) row.append(element('p', 'Связанных WAV · ' + asset.soundCue.linkedWaves))
         const artifacts = [asset.artifact, ...(asset.exports ?? [])].filter(item => item && item.format !== 'meta')
         if (artifacts.length) {
