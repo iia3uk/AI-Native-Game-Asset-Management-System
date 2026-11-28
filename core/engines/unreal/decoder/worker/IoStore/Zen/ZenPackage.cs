@@ -11,11 +11,13 @@ using CUE4Parse.UE4.Versions;
 namespace AssetViewer.UnrealDecode.IoStore.Zen;
 
 internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags flags, VersionContainer version,
-    FBulkDataMapEntry[] bulk, int offset, int size) : AbstractUePackage("Zen.uasset", null)
+    FBulkDataMapEntry[] bulk, int offset, int size, ZenIdentity? identity, ZenImports? imports) : AbstractUePackage("Zen.uasset", null)
 {
     private static readonly ulong TextureClass = ScriptClass("texture2d");
     private static readonly ulong SoundWaveClass = ScriptClass("soundwave");
     private static readonly ulong StaticMeshClass = ScriptClass("staticmesh");
+    private static readonly ulong MaterialClass = ScriptClass("material");
+    private static readonly ulong MaterialInstanceClass = ScriptClass("materialinstanceconstant");
     private const int HeaderLimit = 16 * 1024 * 1024;
 
     public override FPackageFileSummary Summary { get; } = new() { PackageFlags = flags };
@@ -28,6 +30,8 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
     public FBulkDataMapEntry[] Bulk => bulk;
     public int Offset => offset;
     public int Size => size;
+    public ZenIdentity? Identity => identity;
+    public ZenReference? Reference(int index) => imports?.Resolve(index);
 
     public static ZenPackage? Read(byte[] bytes, ulong packageId, out ZenExportKind kind)
     {
@@ -71,7 +75,9 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
                 entry.ObjectFlags.HasFlag(EObjectFlags.RF_ClassDefaultObject)) continue;
             var exportKind = entry.ClassIndex.TypeAndId == TextureClass ? ZenExportKind.Texture :
                 entry.ClassIndex.TypeAndId == SoundWaveClass ? ZenExportKind.SoundWave :
-                entry.ClassIndex.TypeAndId == StaticMeshClass ? ZenExportKind.StaticMesh : ZenExportKind.None;
+                entry.ClassIndex.TypeAndId == StaticMeshClass ? ZenExportKind.StaticMesh :
+                entry.ClassIndex.TypeAndId == MaterialClass ? ZenExportKind.Material :
+                entry.ClassIndex.TypeAndId == MaterialInstanceClass ? ZenExportKind.MaterialInstance : ZenExportKind.None;
             if (exportKind == ZenExportKind.None) continue;
             if (selected >= 0) throw new InputException("ambiguous");
             kind = exportKind;
@@ -108,12 +114,18 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
             names[header.Name.NameIndex].Name is not { Length: > 1 } packageName || packageName[0] != '/' ||
             FPackageId.FromName(packageName).id != packageId) throw Invalid();
         var bulk = ReadBulk(archive, game.Value, header.ImportedPublicExportHashesOffset);
+        var objectName = ZenImports.NumberedName(names[target.ObjectName.NameIndex].Name, target.ObjectName.ExtraIndex);
+        var identity = target.PublicExportHash != 0 && ZenImports.ValidPackage(packageName) && ZenImports.ValidObject(objectName)
+            ? new ZenIdentity(packageName, objectName, target.PublicExportHash.ToString("x16")) : null;
+        var imports = kind is ZenExportKind.StaticMesh or ZenExportKind.Material or ZenExportKind.MaterialInstance
+            ? ZenImports.Read(archive, bytes, header) : null;
         return new(names, header.PackageFlags, version, bulk,
-            (int)(header.HeaderSize + target.CookedSerialOffset), (int)target.CookedSerialSize);
+            (int)(header.HeaderSize + target.CookedSerialOffset), (int)target.CookedSerialSize, identity, imports);
     }
 
-    private static FNameEntrySerialized[] ReadNames(FByteArchive archive, byte[] bytes, int start, int boundary)
+    internal static FNameEntrySerialized[] ReadNames(FByteArchive archive, byte[] bytes, int start, int boundary)
     {
+        if (start < 0 || start + 16L > boundary) throw Invalid();
         var count = U32(bytes.AsSpan(start));
         var size = U32(bytes.AsSpan(start + 4));
         var headersAt = start + 16L + 8 * count;
@@ -153,4 +165,4 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
     internal static InputException Invalid() => new("layout");
 }
 
-internal enum ZenExportKind { None, Texture, SoundWave, StaticMesh }
+internal enum ZenExportKind { None, Texture, SoundWave, StaticMesh, Material, MaterialInstance }

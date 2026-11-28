@@ -192,7 +192,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
         if (meshes) details.append(element('p', cookedMeshSummary(meshes)))
       }
       if (record.result.report.packageFormat === 'unreal-iostore') {
-        const { containerVersion, extracted, extractedTypes, textures, audio, meshes, total } = record.result.report
+        const { containerVersion, extracted, extractedTypes, textures, audio, meshes, materials, total } = record.result.report
         details.append(element('p', 'Unreal IoStore ' + containerVersion + ' · Извлечено ' + extracted + ' из ' + total))
         if (extractedTypes) details.append(element('p', [
           'Готовых файлов · ' + extractedTypes.file,
@@ -202,6 +202,10 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
         if (audio?.converted || audio?.skipped || audio?.failed) {
           details.append(element('p', ['Аудио из Zen-пакетов', audio.converted && 'Готово ' + audio.converted,
             audio.skipped && 'Пропущено ' + audio.skipped, audio.failed && 'Ошибок ' + audio.failed].filter(Boolean).join(' · ')))
+        }
+        if (materials) {
+          details.append(element('p', ['Материалы из Zen-пакетов', materials.converted && 'Готово ' + materials.converted,
+            materials.skipped && 'Пропущено ' + materials.skipped, materials.failed && 'Ошибок ' + materials.failed].filter(Boolean).join(' · ')))
         }
         if (meshes) details.append(element('p', cookedMeshSummary(meshes, 'UE 5.3–5.4')))
       }

@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using AssetViewer.UnrealDecode.Formats;
 using AssetViewer.UnrealDecode.IoStore.Zen.Audio;
+using AssetViewer.UnrealDecode.IoStore.Zen.Materials;
 using AssetViewer.UnrealDecode.IoStore.Zen.Mesh;
 
 namespace AssetViewer.UnrealDecode.IoStore.Zen;
@@ -12,6 +13,8 @@ internal static class IoStoreAssets
     public static void Decode(List<IoStoreEntry> entries, long remaining)
     {
         remaining = Math.Min(remaining, 256 * MiB);
+        var materialBudget = 4096;
+        var slotBudget = 4096;
         var sidecars = new Dictionary<(string Chunk, string Path), string>();
         foreach (var entry in entries)
         {
@@ -36,6 +39,7 @@ internal static class IoStoreAssets
                 var chunk = File.ReadAllBytes(IoStoreDecoder.OutputPath(output, "bin"));
                 var package = ZenPackage.Read(chunk, packageId, out kind);
                 if (package == null) continue;
+                entry = entry with { Identity = package.Identity };
                 var bytes = chunk.AsSpan(package.Offset, package.Size).ToArray();
                 if (kind == ZenExportKind.SoundWave)
                 {
@@ -47,9 +51,21 @@ internal static class IoStoreAssets
                 }
                 else if (kind == ZenExportKind.StaticMesh)
                 {
-                    var mesh = ZenStaticMesh.Read(bytes, package, companions, output.ToString("D5"), remaining);
-                    entries[i] = entry with { Mesh = mesh };
+                    var (mesh, slots) = ZenStaticMesh.Read(bytes, package, companions, output.ToString("D5"), remaining);
+                    entries[i] = slots.Count <= slotBudget ? entry with { Mesh = mesh, MeshMaterials = slots } :
+                        entry with { Mesh = mesh with { Limited = true } };
+                    slotBudget -= Math.Min(slots.Count, slotBudget);
                     remaining -= mesh.Lods.Sum(lod => lod.Size);
+                }
+                else if (kind is ZenExportKind.Material or ZenExportKind.MaterialInstance)
+                {
+                    if (materialBudget == 0) throw new InputException("limit");
+                    var material = ZenMaterial.Read(bytes, package, kind);
+                    var cost = 1 + material.Textures.Length + material.Scalars.Length +
+                        material.Vectors.Length + material.Streaming.Length;
+                    if (cost > materialBudget) throw new InputException("limit");
+                    materialBudget -= cost;
+                    entries[i] = entry with { Material = material };
                 }
                 else
                 {
@@ -85,6 +101,7 @@ internal static class IoStoreAssets
         ZenExportKind.Texture => entry with { TextureIssue = "unreal-iostore-texture-" + code },
         ZenExportKind.SoundWave => entry with { AudioIssue = "unreal-iostore-audio-" + code },
         ZenExportKind.StaticMesh => entry with { MeshIssue = "unreal-iostore-mesh-" + code.Replace("unreal-cooked-mesh-", "") },
+        ZenExportKind.Material or ZenExportKind.MaterialInstance => entry with { MaterialIssue = "unreal-iostore-material-" + code },
         _ => entry,
     };
 }

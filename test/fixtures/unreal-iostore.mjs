@@ -62,14 +62,14 @@ const meshDigests = {
 
 export function makeIoStore({ version = 8, flags = 9, soundName = 'IoStore-Tone.wav', cycle = false,
   secondPartition = version >= 3, unsupportedCodec = false, audioOffset = 27, texture, soundWave, staticMesh,
-  bulkName = 'Sample.ubulk' } = {}) {
+  bulkName = 'Sample.ubulk', primary, packages = [] } = {}) {
   const { audio, ...original } = ioStorePayloads()
-  const native = staticMesh ? zenStaticMeshPackage(staticMesh) :
-    soundWave ? zenAudioPackage(soundWave) : texture ? zenTexturePackage({ mode: texture }) : original
+  const native = primary ?? (staticMesh ? zenStaticMeshPackage(staticMesh) :
+    soundWave ? zenAudioPackage(soundWave) : texture ? zenTexturePackage({ mode: texture }) : original)
   const { asset, bulk } = native
-  const packageId = texture || soundWave || staticMesh ? zenFixtureId : 2n
-  const [assetDigest, bulkDigest] = staticMesh ? [meshDigests[staticMesh], meshDigests.bulk] : soundWave ? soundDigests[soundWave] :
-    texture ? [textureDigests[texture], textureDigests.bulk] : [digests.asset, digests.bulk]
+  const packageId = texture || soundWave || staticMesh || primary ? zenFixtureId : 2n
+  const [assetDigest, bulkDigest] = primary?.digests ?? (staticMesh ? [meshDigests[staticMesh], meshDigests.bulk] :
+    soundWave ? soundDigests[soundWave] : texture ? [textureDigests[texture], textureDigests.bulk] : [digests.asset, digests.bulk])
   const files = [
     { content: audio, digest: digests.audio, id: 1n, type: 7, offset: audioOffset, compressed: true },
     { content: asset, digest: assetDigest, id: packageId,
@@ -77,6 +77,11 @@ export function makeIoStore({ version = 8, flags = 9, soundName = 'IoStore-Tone.
     { content: bulk, digest: bulkDigest, id: packageId,
       type: version >= 4 ? 2 : 3, offset: (5 + Math.ceil(asset.length / blockSize)) * blockSize, compressed: true },
   ]
+  for (const item of packages) {
+    const last = files.at(-1)
+    const offset = last.offset + Math.ceil(last.content.length / blockSize) * blockSize
+    files.push({ ...item, type: 1, offset, compressed: false })
+  }
   const offsets = []
   const ids = []
   const table = []
@@ -117,9 +122,11 @@ export function makeIoStore({ version = 8, flags = 9, soundName = 'IoStore-Tone.
   const directory = Buffer.concat([
     unrealString('../../../Fixture/Content/'), words(2),
     words(end, 1, end, 0), words(0, cycle ? 1 : end, end, 1),
-    words(3), words(1, end, 0), words(2, 2, 1), words(3, end, 2),
-    words(4), unrealString(texture || soundWave || staticMesh ? 'Verification' : 'Vérification', true), unrealString(soundName),
-    unrealString('Sample.uasset'), unrealString(bulkName),
+    words(files.length), words(1, end, 0),
+    ...files.slice(1).map((_, i) => words(i + 2, i + 2 < files.length ? i + 2 : end, i + 1)),
+    words(files.length + 1), unrealString(texture || soundWave || staticMesh || primary ? 'Verification' : 'Vérification', true),
+    unrealString(soundName), unrealString('Sample.uasset'), unrealString(bulkName),
+    ...packages.map(item => unrealString(item.name)),
   ])
   const header = Buffer.alloc(144)
   header.write('-==--==--==--==-')

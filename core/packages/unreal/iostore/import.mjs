@@ -1,9 +1,10 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { renameSync } from 'node:fs'
 import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { artifactHash, ExportArtifacts, exportFolders } from '../../../conversion/artifacts.mjs'
+import { publishIoStoreMaterials } from '../../../conversion/unreal/cooked-material/iostore.mjs'
 import { publishIoStoreMeshes } from '../../../conversion/unreal/cooked-mesh/iostore.mjs'
 import { ioStoreMethod, publishIoStoreEntries } from '../../../conversion/unreal/iostore.mjs'
 import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
@@ -30,7 +31,9 @@ async function saveOutputs(workspace, source, files, result, hash, { recipe, ble
   await Promise.all(exportFolders.map(folder => mkdir(join(output, folder))))
   const store = new ExportArtifacts(output, signal)
   const entries = await publishIoStoreEntries(result.entries, join(workspace, 'output'), store, cue4parseVersion, signal)
-  const meshes = await publishIoStoreMeshes(entries, result.entries, { workspace, store, blender, formats, signal })
+  const { materials, dependencies, resolve } = await publishIoStoreMaterials(entries, result.entries, { workspace, store, signal })
+  const meshes = await publishIoStoreMeshes(entries, result.entries, { workspace, store, blender, formats, signal,
+    resolve, dependencies })
   const counts = { extracted: 0, skipped: 0, failed: 0 }
   const extractedTypes = { package: 0, bulk: 0, file: 0, registry: 0 }
   const derivatives = { texture: { converted: 0, skipped: 0, failed: 0 }, audio: { converted: 0, skipped: 0, failed: 0 } }
@@ -48,15 +51,18 @@ async function saveOutputs(workspace, source, files, result, hash, { recipe, ble
     textureDecoder: result.textureDecoder, textures: derivatives.texture,
     audioDecoder: result.audioDecoder, audio: derivatives.audio,
     meshDecoder: result.meshDecoder, ...(meshes && { meshes }),
-    limits: ['unreal-iostore-zen-stock-ue5-textures-sound-waves-and-static-meshes', 'unreal-iostore-dependency-analysis-pending'] }
-  const reports = {
-    manifest: { version: 1, recipe, source: { name: source.name, format: ioStoreFormat,
-      size: source.size, sha256: hash, files, license: null }, method: ioStoreMethod, converterVersion: cue4parseVersion, entries },
-    dependencies: { version: 1, status: 'unavailable', entries: [] },
-    'conversion-report': summary,
-  }
+    materialDecoder: result.materialDecoder, ...(materials && { materials }),
+    limits: ['unreal-iostore-zen-stock-ue5-versioned-packages', 'unreal-iostore-dependency-analysis-partial'] }
+  const json = data => JSON.stringify(data, null, 2) + '\n'
+  const hashText = text => createHash('sha256').update(text).digest('hex')
+  const dependencyText = json({ version: 1, status: dependencies.length ? 'partial' : 'unavailable', entries: dependencies })
+  const reportText = json(summary)
+  const manifest = { version: 1, recipe, source: { name: source.name, format: ioStoreFormat,
+    size: source.size, sha256: hash, files, license: null }, method: ioStoreMethod, converterVersion: cue4parseVersion, entries,
+    dependenciesSha256: hashText(dependencyText), reportSha256: hashText(reportText) }
+  const reports = { manifest: json(manifest), dependencies: dependencyText, 'conversion-report': reportText }
   await Promise.all(Object.entries(reports).map(([name, data]) =>
-    writeFile(join(output, name + '.json'), JSON.stringify(data, null, 2) + '\n', { signal, flag: 'wx' })))
+    writeFile(join(output, name + '.json'), data, { signal, flag: 'wx' })))
   const cacheable = !failed && !meshes?.issue &&
     !entries.some(entry => entry.issue === 'unreal-iostore-space-limit' ||
       entry.exports?.some(product => product.status === 'failed' || /-(io|limit)$/.test(product.issue ?? '')))

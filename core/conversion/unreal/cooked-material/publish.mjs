@@ -4,7 +4,7 @@ import { describeUnrealMaterial } from '../../../materials/unreal/describe.mjs'
 import { sourceMaterialParameters } from '../../../materials/unreal/source-parameters.mjs'
 
 export const cookedMaterialRevision = 1
-const method = 'unreal-cooked-material-properties'
+export const cookedMaterialMethod = 'unreal-cooked-material-properties'
 
 function materialLinks(asset, description, resolve) {
   const records = []
@@ -26,7 +26,8 @@ function materialLinks(asset, description, resolve) {
   return records
 }
 
-export async function publishCookedMaterials(assets, { results, incomplete }, workspace, store, resolveAsset, signal) {
+export async function publishCookedMaterials(assets, { results, incomplete, method = cookedMaterialMethod,
+  version = cookedMaterialRevision }, workspace, store, resolveAsset, signal) {
   const dependencies = []
   const materials = { converted: 0, skipped: 0, failed: 0,
     ...(incomplete && { issue: 'unreal-cooked-material-budget' }) }
@@ -41,7 +42,7 @@ export async function publishCookedMaterials(assets, { results, incomplete }, wo
     signal?.throwIfAborted()
     const result = results.get(asset.path)
     if (!result || !asset.artifact?.path) continue
-    const details = { from: asset.artifact.path, format: 'json', role: 'material', method, converterVersion: cookedMaterialRevision }
+    const details = { from: asset.artifact.path, format: 'json', role: 'material', method, converterVersion: version }
     const companion = result.split ? sidecars.get(asset.path.normalize('NFC').toLowerCase().slice(0, -7) + '.uexp') : null
     const issue = result.issue ?? (result.split && !companion ? 'unreal-cooked-material-export-missing' : null)
     const exported = issue ? { ...details, status: 'skipped', issue } :
@@ -69,12 +70,13 @@ async function publishDescription(asset, companion, parsed, resolveAsset, depend
     resolve: path => {
       const target = resolve(path)
       return target && { id: target.id, exports: target.exports ?? [] }
-    }, method, version: cookedMaterialRevision, corroborate })
+    }, method: details.method, version: details.converterVersion, corroborate })
   for (const binding of description.bindings) {
     const texture = resolve(binding.sourcePath)?.exports?.find(file => file.path === binding.path)
     if (typeof texture?.srgb === 'boolean') binding.textureColorSpace = texture.srgb ? 'sRGB' : 'linear'
   }
   if (companion) description.source.payload = { path: companion.path, sha256: companion.artifact.sha256 }
+  if (source.parentReference) description.parentReference = source.parentReference
   const { textures, scalars, vectors } = source
   Object.assign(description, { materialClass: source.type, parentStatus, parameters: { textures, scalars, vectors },
     effectiveParameters, textureStreaming: source.streaming, ...(surface && { surface }) })

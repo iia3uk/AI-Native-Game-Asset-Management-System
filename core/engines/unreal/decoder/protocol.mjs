@@ -1,4 +1,5 @@
 import { posix } from 'node:path'
+import { ioStoreMaterialRevision, validZenIdentity, validZenMaterial, validZenSlots } from './iostore-material-protocol.mjs'
 import { ioStoreMeshRevision, meshProduct } from './mesh-protocol.mjs'
 
 const invalidChars = /[<>:"\\|?*\x00-\x1f\x7f-\x9f]/u
@@ -32,7 +33,8 @@ const ioStoreKinds = {
 export function ioStoreResult(raw, { inspectOnly, version, chunks, partitions }) {
   if (raw?.status === 'completed' && (raw.chunks !== chunks || raw.partitions !== partitions ||
       raw.entries?.length > chunks || raw.textureDecoder !== ioStoreTextureRevision ||
-      raw.audioDecoder !== ioStoreAudioRevision || raw.meshDecoder !== ioStoreMeshRevision)) return null
+      raw.audioDecoder !== ioStoreAudioRevision || raw.meshDecoder !== ioStoreMeshRevision ||
+      raw.materialDecoder !== ioStoreMaterialRevision)) return null
   return archiveResult(raw, { inspectOnly, version, ioStore: true })
 }
 
@@ -83,6 +85,8 @@ function archiveResult(raw, { inspectOnly, version, ioStore = false }) {
   let outputs = 0
   let bytes = 0
   let derivativeBytes = 0
+  let materialCost = 0
+  let slots = 0
   for (const row of raw.entries) {
     if (!validPath(row?.path) || !Number.isSafeInteger(row.size) || row.size < 0) return null
     const parts = row.path.split('/')
@@ -159,10 +163,36 @@ function archiveResult(raw, { inspectOnly, version, ioStore = false }) {
         entry.meshIssue = row.meshIssue
       }
     }
+    if (row.identity != null || row.material != null || row.materialIssue != null || row.meshMaterials != null) {
+      if (!ioStore || inspectOnly || format !== 'uasset' || !entry.file || entry.kind !== 'package' || version < 5) return null
+      if (row.identity != null) {
+        if (!validZenIdentity(row.identity)) return null
+        entry.identity = row.identity
+      }
+      if (row.meshMaterials != null) {
+        if (!entry.mesh || !validZenSlots(row.meshMaterials)) return null
+        slots += row.meshMaterials.length
+        if (slots > 4096) return null
+        entry.meshMaterials = row.meshMaterials
+      }
+      if (row.material != null || row.materialIssue != null) {
+        if (entry.texture || entry.textureIssue || entry.audio || entry.audioIssue || entry.mesh || entry.meshIssue) return null
+        if (row.material != null) {
+          if (row.materialIssue != null || !validZenMaterial(row.material)) return null
+          const { textures, scalars, vectors, streaming } = row.material
+          materialCost += 1 + textures.length + scalars.length + vectors.length + streaming.length
+          if (materialCost > 4096) return null
+          entry.material = row.material
+        } else {
+          if (!issueCode(row.materialIssue) || !row.materialIssue.startsWith('unreal-iostore-material-')) return null
+          entry.materialIssue = row.materialIssue
+        }
+      }
+    }
     if (derivativeBytes > 256 * 1024 ** 2) return null
     entries.push(entry)
   }
   if (bytes + derivativeBytes > 1024 ** 3) return null
   return { status: 'completed', version, entries, textureDecoder: raw.textureDecoder,
-    ...(ioStore && { audioDecoder: raw.audioDecoder, meshDecoder: raw.meshDecoder }) }
+    ...(ioStore && { audioDecoder: raw.audioDecoder, meshDecoder: raw.meshDecoder, materialDecoder: raw.materialDecoder }) }
 }

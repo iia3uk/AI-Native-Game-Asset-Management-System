@@ -16,6 +16,7 @@ const documents = ['manifest', 'dependencies', 'conversion-report']
 const dataFolders = new Set(['Source', ...exportFolders])
 const changed = () => new IndexConflictError('Файлы или отчёт импорта изменились. Проверьте результат импорта.')
 const json = data => JSON.stringify(data, null, 2) + '\n'
+const hashText = text => createHash('sha256').update(text).digest('hex')
 
 export async function exportDestination(input, protectedRoots, { exactIdentity = false } = {}) {
   if (typeof input !== 'string' || input.length > 4096 || /[\x00-\x1f]/.test(input)) {
@@ -82,8 +83,7 @@ async function collectFiles(directory, rows, byteLimit, signal) {
 
 function selectDocuments(managed, selection, dependencies, conversion, files) {
   const entries = managed.archive ? 'entries' : 'assets'
-  return {
-    manifest: json({ ...managed.manifest.data, [entries]: selection.assets, selection: { asset: selection.selected.id } }),
+  const reports = {
     dependencies: json({ version: dependencies.data.version, status: dependencies.data.status, entries: selection.records }),
     'conversion-report': json({
       version: 1, method: 'package-asset-export', originalMethod: conversion.data.method,
@@ -93,6 +93,10 @@ function selectDocuments(managed, selection, dependencies, conversion, files) {
       limitations: conversion.data.limitations ?? conversion.data.limits ?? [],
     }),
   }
+  const { dependenciesSha256, reportSha256 } = managed.manifest.data
+  return { manifest: json({ ...managed.manifest.data, [entries]: selection.assets, selection: { asset: selection.selected.id },
+    ...(dependenciesSha256 !== undefined && { dependenciesSha256: hashText(reports.dependencies) }),
+    ...(reportSha256 !== undefined && { reportSha256: hashText(reports['conversion-report']) }) }), ...reports }
 }
 
 export async function preparePackageExport(importDirectory, protectedRoots, job, input, signal, { checkSpace = true } = {}) {
@@ -112,6 +116,9 @@ export async function preparePackageExport(importDirectory, protectedRoots, job,
     readPackageDocument(managed.directory, 'dependencies'), readPackageDocument(managed.directory, 'conversion-report'),
   ])
   if (!dependencies?.data || !conversion?.data) throw changed()
+  const { dependenciesSha256, reportSha256 } = managed.manifest.data
+  if ((dependenciesSha256 !== undefined && hashText(dependencies.text) !== dependenciesSha256) ||
+      (reportSha256 !== undefined && hashText(conversion.text) !== reportSha256)) throw changed()
   const available = processedOnly ? managed.assets : await availablePackageAssets(managed.directory, managed.assets, signal)
   const entryKey = managed.archive ? 'entries' : 'assets'
   const selected = available[ordinal]

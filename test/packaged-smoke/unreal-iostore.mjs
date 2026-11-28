@@ -6,6 +6,7 @@ import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { writeIoStoreFixture } from '../fixtures/unreal-iostore.mjs'
+import { zenMaterialFixture } from '../fixtures/unreal-zen-material.mjs'
 import { assertZenPng } from '../fixtures/unreal-zen-texture.mjs'
 import { startServer, testDirectory } from '../server-fixture.mjs'
 
@@ -79,14 +80,20 @@ test('The packaged Windows importer verifies and indexes a multi-partition Unrea
   assert.equal(vorbis.format, 'ogg')
   assert.deepEqual(await readFile(join(audioDirectory, vorbis.path)), audioFixture.payloads.soundWave)
 
-  const meshFixture = await writeIoStoreFixture(root, 'PackagedMesh', { staticMesh: 'ue54' })
+  const meshFixture = await writeIoStoreFixture(root, 'PackagedMesh', zenMaterialFixture('ue54'))
   const { job: meshJob, scan: meshScan } = await cli('package-import', meshFixture.path)
   assert.equal(meshJob.status, 'completed', meshJob.error)
   assert.equal(meshScan.status, 'completed', meshScan.error)
   assert.deepEqual(meshJob.result.report.meshes.derivatives, { fbx: 0, glb: 2 })
+  assert.deepEqual(meshJob.result.report.materials, { converted: 2, skipped: 0, failed: 0 })
   const meshDirectory = meshJob.result.directory
   const meshManifest = JSON.parse(await readFile(join(meshDirectory, 'manifest.json'), 'utf8'))
-  const previews = meshManifest.entries.find(row => row.kind === 'package').exports.filter(row => row.format === 'glb')
+  const previews = meshManifest.entries.find(row => row.path.endsWith('/Sample.uasset')).exports.filter(row => row.format === 'glb')
   assert.deepEqual(previews.map(row => row.lod), [0, 1])
-  for (const preview of previews) assert.equal((await readFile(join(meshDirectory, preview.path))).toString('ascii', 0, 4), 'glTF')
+  for (const preview of previews) {
+    const bytes = await readFile(join(meshDirectory, preview.path))
+    assert.equal(bytes.toString('ascii', 0, 4), 'glTF')
+    const model = JSON.parse(bytes.toString('utf8', 20, 20 + bytes.readUInt32LE(12)))
+    assert.equal(model.images[0].mimeType, 'image/png')
+  }
 })

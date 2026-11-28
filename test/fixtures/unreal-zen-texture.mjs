@@ -21,10 +21,10 @@ export function assertZenPng(png, srgb) {
     Buffer.from([0]), zenFixtureRgba.subarray(8)]))
 }
 
-export function zenTexturePackage({ mode }) {
+export function zenTexturePackage({ mode, packageName = zenFixtureName, label = 'Sample', publicHash }) {
   const external = mode !== 'inline'
   const format = 'PF_B8G8R8A8'
-  const names = [zenFixtureName, 'Sample', 'None', format, 'SRGB', 'BoolProperty']
+  const names = [packageName, label, 'None', format, 'SRGB', 'BoolProperty']
   const name = value => zenName(names, value)
   const pixels = Buffer.from(zenFixtureRgba)
   for (let i = 0; i < pixels.length; i += 4) [pixels[i], pixels[i + 2]] = [pixels[i + 2], pixels[i]]
@@ -39,7 +39,7 @@ export function zenTexturePackage({ mode }) {
   const object = Buffer.concat([...(properties ? [properties] : []), name('None'), words(0), Buffer.from([1, 0, 1, 0]),
     words(1, 1), name(format), long(8 + platform.length), platform, name('None')])
   return {
-    asset: zenPackage({ ue54: external, names, classId: engineTexture, bulkMap, object }),
+    asset: zenPackage({ ue54: external, names, classId: engineTexture, bulkMap, object, label, publicHash }),
     bulk: Buffer.concat([padding, pixels]),
   }
 }

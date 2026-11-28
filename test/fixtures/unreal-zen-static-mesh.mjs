@@ -1,7 +1,7 @@
 import { cookedMeshLod, meshPoints } from './unreal-cooked-static-mesh.mjs'
 import { long, words, zenFixtureName, zenName, zenPackage } from './unreal-zen-package.mjs'
 
-export function zenStaticMeshPackage(mode) {
+export function zenStaticMeshPackage(mode, { publicHash, material, materialHash } = {}) {
   const ue54 = mode !== 'ue53'
   const names = [zenFixtureName, 'Sample', 'None', 'Paint', 'Trim']
   const primary = cookedMeshLod(meshPoints, [0, 1, 2, 2, 1, 3], [[1, 0, 1], [0, 3, 1]], { zen: true })
@@ -22,7 +22,9 @@ export function zenStaticMeshPackage(mode) {
     primary.exportData, secondary.exportData,
     Buffer.from([1, 3, 0, 1, 2, 1, 1]), bounds, words(1), screen,
     ...(ue54 ? [Buffer.from([1, 0])] : []),
-    words(0, 2), ...['Paint', 'Trim'].flatMap(label => [words(0), zenName(names, label), Buffer.alloc(24)]),
+    words(0, 2), ...['Paint', 'Trim'].flatMap((label, slot) =>
+      [words(material && slot === 0 ? 0xfffffffe : 0), zenName(names, label), Buffer.alloc(24)]),
   ])
-  return { asset: zenPackage({ ue54, names, classId: 0x407cde1a593e47cfn, bulkMap, object }), bulk }
+  return { asset: zenPackage({ ue54, names, classId: 0x407cde1a593e47cfn, bulkMap, object, publicHash,
+    ...(material && { importedNames: [material], importedHashes: [materialHash], importedObjects: [2n << 62n] }) }), bulk }
 }

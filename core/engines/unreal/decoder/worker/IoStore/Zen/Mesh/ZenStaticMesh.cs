@@ -10,6 +10,8 @@ using static CUE4Parse.UE4.Assets.Objects.EBulkDataFlags;
 
 namespace AssetViewer.UnrealDecode.IoStore.Zen.Mesh;
 
+internal sealed record ZenMaterialSlot(int Slot, ZenReference Reference);
+
 internal static class ZenStaticMesh
 {
     private const int BulkLimit = 48 * 1024 * 1024;
@@ -19,7 +21,7 @@ internal static class ZenStaticMesh
     [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "BulkDataMap")]
     private static extern ref FBulkDataMapEntry[]? BulkMap(FAssetArchive archive);
 
-    public static MeshExport Read(byte[] bytes, ZenPackage package, IReadOnlyDictionary<string, string> sidecars,
+    public static (MeshExport Mesh, List<ZenMaterialSlot> Materials) Read(byte[] bytes, ZenPackage package, IReadOnlyDictionary<string, string> sidecars,
         string stem, long remaining)
     {
         if (remaining <= 0) throw new InputException("limit");
@@ -55,7 +57,12 @@ internal static class ZenStaticMesh
         var asset = new UStaticMesh();
         asset.Deserialize(archive, bytes.Length);
         if (archive.Position != bytes.Length) throw ZenPackage.Invalid();
-        return CookedStaticMesh.Write(asset, stem, remaining,
+        var mesh = CookedStaticMesh.Write(asset, stem, remaining,
             slot => (CookedStaticMesh.SlotName(asset.StaticMaterials[slot]), null));
+        var materials = new List<ZenMaterialSlot>();
+        for (var slot = 0; slot < asset.StaticMaterials.Length; slot++)
+            if (package.Reference(asset.StaticMaterials[slot].MaterialInterface?.Index ?? 0) is { } reference)
+                materials.Add(new(slot, reference));
+        return (mesh, materials);
     }
 }

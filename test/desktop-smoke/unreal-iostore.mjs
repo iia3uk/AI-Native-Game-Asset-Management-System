@@ -1,5 +1,6 @@
 import { dirname } from 'node:path'
 import { writeIoStoreFixture } from '../fixtures/unreal-iostore.mjs'
+import { zenMaterialFixture } from '../fixtures/unreal-zen-material.mjs'
 
 export async function verifyUnrealIoStore(webContents, waitFor, fixtures) {
   const fixture = await writeIoStoreFixture(dirname(fixtures), 'SmokeIoStore', { texture: 'external' })
@@ -16,14 +17,13 @@ export async function verifyUnrealIoStore(webContents, waitFor, fixtures) {
   // Chromium can include a Vorbis block of decoder padding in the reported duration.
   await playIndexedAudio(webContents, waitFor, 'Sample.ogg', 0.5, 0.024)
 
-  const mesh = await writeIoStoreFixture(dirname(fixtures), 'SmokeZenMesh', { staticMesh: 'ue54' })
-  await showIoStoreLibrary(webContents, waitFor, mesh.path, 'SmokeZenMesh',
-    'Статические модели cooked UE 5.3–5.4 · Моделей · 1 · LOD · 2 · 2 GLB')
+  const mesh = await writeIoStoreFixture(dirname(fixtures), 'SmokeZenMesh', zenMaterialFixture('ue54'))
+  await showIoStoreLibrary(webContents, waitFor, mesh.path, 'SmokeZenMesh', 'Материалы из Zen-пакетов · Готово 2', 5)
   await openIndexedAsset(webContents, waitFor, 'Sample_Lod1.glb')
   await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('1 треугольник')")
 }
 
-async function showIoStoreLibrary(webContents, waitFor, path, name, details) {
+async function showIoStoreLibrary(webContents, waitFor, path, name, details, chunks = 2) {
   await webContents.executeJavaScript(`
     if (!document.querySelector('#index-dialog').open) document.querySelector('#index-mode').click()
     document.querySelector('#package-importer').open = true
@@ -35,7 +35,7 @@ async function showIoStoreLibrary(webContents, waitFor, path, name, details) {
   const row = `Array.from(document.querySelector('#package-jobs').children)
     .find(item => item.firstElementChild.textContent.startsWith(${JSON.stringify(name + '.utoc · ')}))`
   await waitFor(`(${row})?.firstElementChild.textContent.includes('В индексе')`)
-  await waitFor(`(${row})?.textContent.includes('Готовых файлов · 1 · Блоков в формате IoStore · 2')`)
+  await waitFor(`(${row})?.textContent.includes('Готовых файлов · 1 · Блоков в формате IoStore · ${chunks}')`)
   await waitFor(`(${row})?.textContent.includes(${JSON.stringify(details)})`)
   await webContents.executeJavaScript(`Array.from((${row}).querySelectorAll('button'))
     .find(button => button.textContent === 'Показать в индексе').click()`)
