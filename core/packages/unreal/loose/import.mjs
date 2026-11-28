@@ -3,6 +3,8 @@ import { renameSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { exportRecipe, verifyExports } from '../../../conversion/cache.mjs'
+import { animationTotalsMatch } from '../../../conversion/unreal/animation/cache.mjs'
+import { createEditorAnimationPublisher } from '../../../conversion/unreal/animation/publish.mjs'
 import { collisionTotalsMatch } from '../../../conversion/unreal/collision/cache.mjs'
 import { cookedMaterialRevision } from '../../../conversion/unreal/cooked-material/publish.mjs'
 import { publishLooseCooked } from '../../../conversion/unreal/loose-cooked/publish.mjs'
@@ -17,6 +19,7 @@ import { publishTexturedViewerModels } from '../../../conversion/unreal/viewer/b
 import { publishActorXAnimations } from '../../../conversion/unreal/viewer/actorx/publish.mjs'
 import { createViewerDerivatives } from '../../../conversion/unreal/viewer/derivatives.mjs'
 import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
+import { editorAnimationRevision } from '../../../engines/unreal/animation/ue4-514.mjs'
 import { unrealBridgeVersion } from '../../../engines/unreal/bridge/project.mjs'
 import { cookedCollisionRevision } from '../../../engines/unreal/collision/cooked.mjs'
 import { locateUnrealBridge } from '../../../engines/unreal/bridge/selection.mjs'
@@ -59,6 +62,7 @@ async function cachedResult(root, name, hash, source, recipe, signal) {
     ])
     const report = summary?.data
     const data = manifest?.data
+    const dependencyRecords = links && JSON.parse(links).dependencies
     if (!links || sha256(links) !== data?.dependenciesSha256 ||
         data?.version !== version || data.source?.format !== source.format || data.source.sha256 !== hash ||
         data.recipe !== recipe || report?.method !== method || report.version !== version ||
@@ -66,7 +70,8 @@ async function cachedResult(root, name, hash, source, recipe, signal) {
         !Array.isArray(data.assets) || !collisionTotalsMatch(data.assets.filter(asset => asset.storage === 'cooked'),
           report.unrealCooked?.meshes?.collision) ||
         !editorSkeletalTotalsMatch(data.assets, report.unrealSourceMeshes) ||
-        !skeletonTotalsMatch(data.assets, report.unrealSkeletons, JSON.parse(links).dependencies) ||
+        !skeletonTotalsMatch(data.assets, report.unrealSkeletons, dependencyRecords) ||
+        !animationTotalsMatch(data.assets, report.unrealEditorAnimations, dependencyRecords) ||
         !await verifyExports(directory, await availablePackageAssets(directory, data.assets, signal), signal)) {
       throw new Error('Invalid cached Unreal outputs')
     }
@@ -98,6 +103,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     ['unreal-source-texture', sourceTextureRevision],
     ['unreal-sound-cue', sourceSoundCueRevision],
     ['unreal-ue4-reference-skeleton', ue4SkeletonRevision],
+    ['unreal-editor-animation', editorAnimationRevision],
     ['unreal-cooked-material', cookedMaterialRevision],
     ['unreal-cooked-texture', looseTextureRevision, decoder ? cue4parseVersion : null],
     ['unreal-cooked-audio', cookedAudioRevision, decoder ? cue4parseVersion : null],
@@ -121,10 +127,11 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     const records = await readUnrealLoose(source, { output, signal, onProgress })
     if (records.hash !== sourceKey) throw unrealSourceChanged()
     const skeletons = createSkeletonPublisher({ records, output, workspace, source, signal })
+    const animations = createEditorAnimationPublisher({ records, output, workspace, source, signal, skeletons })
     const decoded = viewer && records.written ?
       await decodeLooseWithViewer({ viewer, records, output, workspace, source, signal }) : null
     const sourceMeshes = records.written ? await publishSourceMeshes({ records, output, workspace, source,
-      store: decoded?.store, signal, skeletons }) : null
+      store: decoded?.store, signal, skeletons, animations }) : null
     const unrealSourceMeshes = sourceMeshes?.summary
     if (decoded) onProgress?.(65)
     const conversion = selection && records.written ?
@@ -157,6 +164,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     if (decoded?.animations?.length) {
       decoded.summary.animationBinding = await publishActorXAnimations({ ...decoded, output, workspace, records, signal })
     }
+    const unrealEditorAnimations = sourceMeshes && await animations.publish(sourceMeshes)
     const derivativeStages = [decoded, sourceMeshes, cooked?.meshes].filter(stage => stage?.models.length)
     onProgress?.(85)
     if (exportFormats.length) {
@@ -179,6 +187,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
       engineVersion: source.association ?? null, ...conversion, converted: counts.converted ?? 0, media,
       ...(unrealViewer && { unrealViewer }),
       ...(unrealSkeletons && { unrealSkeletons }),
+      ...(unrealEditorAnimations && { unrealEditorAnimations }),
       ...(unrealSourceMeshes && { unrealSourceMeshes }),
       ...(sourceMaterials && { unrealSourceMaterials: sourceMaterials.summary }),
       ...(unrealCooked && { unrealCooked }),
@@ -189,7 +198,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
       'conversion-report': JSON.stringify(report, null, 2) + '\n' }).map(([key, value]) =>
       writeFile(join(output, key + '.json'), value, { flag: 'wx', signal })))
     const partial = unrealViewer?.status === 'partial' || unrealSourceMeshes?.issue || sourceMaterials?.summary.issue ||
-      soundCues.issue || unrealCooked?.partial || unrealSkeletons?.issue
+      soundCues.issue || unrealCooked?.partial || unrealSkeletons?.issue || unrealEditorAnimations?.issue
     const destination = join(root, partial ? name + '-' + randomUUID() : name)
     signal?.throwIfAborted()
     onProgress?.(95)

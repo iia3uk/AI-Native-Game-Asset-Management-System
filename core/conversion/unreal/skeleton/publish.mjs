@@ -98,5 +98,6 @@ export function createSkeletonPublisher({ records, output, workspace, source, si
     }
     return summary.skeletons || summary.meshReferencePoses || summary.incomplete || summary.issue ? summary : undefined
   }
-  return { publish, publishCooked, finish }
+  const reference = asset => published.get(asset.id)?.rig
+  return { publish, publishCooked, finish, reference }
 }

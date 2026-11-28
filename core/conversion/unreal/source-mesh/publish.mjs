@@ -26,7 +26,7 @@ async function publishModel({ asset, scratch, store, lod, document, buffer, stem
   return publishUnrealGeometry({ asset, scratch, store, stem, document, buffer, folder, identity, issues, signal, role })
 }
 
-export async function publishSourceMeshes({ records, output, workspace, source, signal, skeletons,
+export async function publishSourceMeshes({ records, output, workspace, source, signal, skeletons, animations,
   store = new ExportArtifacts(output, signal) }) {
   const scratch = join(workspace, 'unreal-source-mesh')
   await mkdir(scratch)
@@ -61,6 +61,7 @@ export async function publishSourceMeshes({ records, output, workspace, source, 
       throw error
     }
     if (!staticMesh && canReadSkeleton && table) await skeletons.publish(asset, extractEditorSkeleton(prefix, asset.ue4, table))
+    if (!staticMesh && !skeletal && table) animations?.capture(asset, prefix, table)
     if (!staticMesh && !skeletal) continue
     const stem = posix.basename(asset.sourcePath).slice(0, -7).replace(/[#%]/g, '_')
     const result = await decodeSourceMesh(prefix, stem, { signal, render, skeletal, version: asset.ue4,

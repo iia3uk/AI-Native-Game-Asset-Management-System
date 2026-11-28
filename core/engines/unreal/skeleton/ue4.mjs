@@ -12,6 +12,7 @@ const skeletonClass = new Set(['Skeleton'])
 const materialClasses = new Set(['Material', 'MaterialInstance', 'MaterialInstanceConstant'])
 const prefixLimit = 2 * 1024 ** 2
 const versionIds = new Map([
+  ['cffc743f43b04480939114df171d2073', 'framework'],
   ['e4b068edf49442e9a231da0b2e46bb41', 'editor'],
   ['375ec13c06e448fbb50084f0262a717e', 'core'],
   ['12f88b9f88754afca67cd90c383abd29', 'rendering'],
@@ -86,8 +87,12 @@ function decode(bytes, table, object, editor, versions, detailed = false) {
     }
   }
   const reference = readReferenceSkeleton(bytes, at, nameAt, editor)
+  // The legacy editor layout stores the GUID after the retarget-source map.
+  const skeletonGuid = object.type === 'Skeleton' && editor && table.layout.fileVersionUE4 === 514 &&
+    versions.framework === 30 && reference.end + 20 <= bytes.length && bytes.readInt32LE(reference.end) === 0 ?
+    bytes.toString('hex', reference.end + 4, reference.end + 20) : null
   const rig = { object: object.name, objectClass: object.type, serialization: table.layout.fileVersionUE4,
-    ...(skeletonPackage && { skeletonPackage }), bones: reference.bones }
+    ...(skeletonPackage && { skeletonPackage }), ...(skeletonGuid && { skeletonGuid }), bones: reference.bones }
   return detailed ? { rig, materials, properties, end: reference.end } : rig
 }
 

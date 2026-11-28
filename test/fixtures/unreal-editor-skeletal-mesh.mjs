@@ -6,7 +6,8 @@ const customVersions = [
   ['5579f886933a4c1f83ba087b6361b92f', 1],
 ]
 
-export function editorSkeletalMeshFixture({ name: meshName = 'SK_Test', indexWidth = 2, corrupt, lods = 1 } = {}) {
+export function editorSkeletalMeshFixture({ name: meshName = 'SK_Test', indexWidth = 2, corrupt, lods = 1,
+  skeletonPackage = '/Game/Characters/Character_Skeleton' } = {}) {
   return editorFixture(({ i32, name, bool, object, none }) => {
     const u16 = value => {
       const bytes = Buffer.alloc(2)
@@ -61,7 +62,7 @@ export function editorSkeletalMeshFixture({ name: meshName = 'SK_Test', indexWid
       i32(1), Buffer.alloc(16), i32(0), i32(0), i32(2)])
     return {
       imports: [['Package', '/Script/Engine'], ['Class', 'SkeletalMesh', -1],
-        ['Package', '/Game/Characters/Character_Skeleton'], ['Skeleton', 'Character_Skeleton', -3],
+        ['Package', skeletonPackage], ['Skeleton', skeletonPackage.split('/').at(-1), -3],
         ['Package', '/Game/Characters/MI_Paint'], ['MaterialInstanceConstant', 'MI_Paint', -5]],
       objects: [[-2, meshName, 0, Buffer.concat([object('Skeleton', -4), bool('bHasVertexColors', true), none,
         i32(0), meshHeader, materials, rig, lod])]],

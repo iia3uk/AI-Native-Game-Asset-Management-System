@@ -2,7 +2,7 @@ import { cookedPackageFixture } from './unreal-cooked-package.mjs'
 import { editorFixture } from './unreal-editor-package.mjs'
 
 export function unrealSkeletonFixture({ mesh = false, duplicate = false, invalidIndex = false, wrongClass = false, cooked = false, split,
-  skeletonName = 'Character_Skeleton', objectName = mesh ? 'SK_Character' : skeletonName } = {}) {
+  skeletonName = 'Character_Skeleton', objectName = mesh ? 'SK_Character' : skeletonName, guid } = {}) {
   const makePackage = cooked ? cookedPackageFixture : editorFixture
   return makePackage(({ i32, name, none, object }) => {
     const bones = [name('Root'), name(duplicate ? 'root' : 'Spine')]
@@ -24,7 +24,8 @@ export function unrealSkeletonFixture({ mesh = false, duplicate = false, invalid
     ]
     const meshHeader = Buffer.alloc(34)
     if (cooked) meshHeader[0] = 1
-    const data = Buffer.concat([...(mesh ? [object('Skeleton', -4)] : []), none, i32(0), ...(mesh ? [meshHeader] : []), rig])
+    const data = Buffer.concat([...(mesh ? [object('Skeleton', -4)] : []), none, i32(0), ...(mesh ? [meshHeader] : []), rig,
+      ...(guid ? [i32(0), Buffer.from(guid, 'hex')] : [])])
     return { imports, objects: [[-2, objectName, 0, data]] }
-  }, { split })
+  }, { split, ...(guid && { legacy: true, customVersions: [['cffc743f43b04480939114df171d2073', 30]] }) })
 }

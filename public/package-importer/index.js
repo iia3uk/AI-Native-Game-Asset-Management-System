@@ -141,7 +141,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
       }
       if (isUnrealLoose(record.result.report.packageFormat)) {
         const { packageFormat, engineVersion, unreal, media, soundCues, unrealViewer, unrealSourceMeshes,
-          unrealSourceMaterials, unrealCooked } = record.result.report
+          unrealSourceMaterials, unrealCooked, unrealEditorAnimations } = record.result.report
         const gltf = (unrealViewer?.gltf ?? 0) + (unrealSourceMeshes?.gltf ?? 0)
         const textured = (unrealViewer?.materials?.texturedGltf ?? 0) + (unrealSourceMeshes?.texturedGltf ?? 0)
         const materials = (unrealViewer?.materials?.materialJson ?? 0) + (unrealSourceMaterials?.materialJson ?? 0)
@@ -157,6 +157,9 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
           soundCues?.incomplete && 'Неполных SoundCue · ' + soundCues.incomplete,
           unrealSourceMeshes?.meshes && 'Статических моделей UE4 · ' + unrealSourceMeshes.meshes,
           unrealSourceMeshes?.skeletalMeshes && 'Скелетных моделей UE4 · ' + unrealSourceMeshes.skeletalMeshes,
+          unrealEditorAnimations?.clips && 'Клипов UE4 · ' + unrealEditorAnimations.clips,
+          unrealEditorAnimations?.models && 'Моделей с клипами · ' + unrealEditorAnimations.models,
+          unrealEditorAnimations?.incomplete && 'Недоступных клипов · ' + unrealEditorAnimations.incomplete,
           collision?.shapes && 'Форм коллизии · ' + collision.shapes,
           collision?.incomplete && 'Пакетов с неполными коллизиями · ' + collision.incomplete,
           gltf && gltf + ' glTF', unrealViewer?.psa && unrealViewer.psa + ' PSA',
@@ -167,6 +170,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
           textured && textured + ' glTF с текстурами',
           fbx && fbx + ' FBX', glb && glb + ' GLB',
           unrealSourceMeshes?.issue && describeIssue(unrealSourceMeshes.issue),
+          unrealEditorAnimations?.issue && describeIssue(unrealEditorAnimations.issue),
           unrealSourceMaterials?.issue && describeIssue(unrealSourceMaterials.issue),
           soundCues?.issue && describeIssue(soundCues.issue),
           unrealViewer?.issue && describeIssue(unrealViewer.issue),

@@ -4,11 +4,13 @@ import { cookedMaterial } from '../fixtures/unreal-cooked-material.mjs'
 import { cookedSoundWave } from '../fixtures/unreal-cooked-soundwave.mjs'
 import { cookedStaticMesh } from '../fixtures/unreal-cooked-static-mesh.mjs'
 import { cookedTexture } from '../fixtures/unreal-cooked-texture.mjs'
+import { demoSkeletonGuid, editorAnimationFixture } from '../fixtures/unreal-editor-animation.mjs'
 import { editorSkeletalMeshFixture } from '../fixtures/unreal-editor-skeletal-mesh.mjs'
 import { writeUnrealLooseFixture } from '../fixtures/unreal-loose.mjs'
 import { soundCueFixture } from '../fixtures/unreal-source-audio.mjs'
 import { sourceWave, ue4SourceFixture } from '../fixtures/unreal-source-media.mjs'
 import { sourceArtPackage, sourceArtPng } from '../fixtures/unreal-source-texture.mjs'
+import { unrealSkeletonFixture } from '../fixtures/unreal-skeleton.mjs'
 import { zenOgg } from '../fixtures/unreal-zen-audio.mjs'
 import { playIndexedAudio } from './unreal-iostore.mjs'
 
@@ -17,7 +19,11 @@ export async function verifyUnrealLoose(webContents, waitFor, root) {
   await writeFile(join(content, 'Props/SmokeWave.uasset'), ue4SourceFixture('SoundWave', sourceWave()))
   await writeFile(join(content, 'Props/SmokeCue.uasset'), soundCueFixture({ wave: '/Game/Props/SmokeWave' }))
   await writeFile(join(content, 'Props/SourceArt.uasset'), sourceArtPackage(sourceArtPng(), { compressed: true }))
-  await writeFile(join(content, 'Props/SkeletalSmoke.uasset'), editorSkeletalMeshFixture({ name: 'SkeletalSmoke' }))
+  const skeleton = '/Game/Props/Character_Skeleton'
+  await writeFile(join(content, 'Props/SkeletalSmoke.uasset'), editorSkeletalMeshFixture({
+    name: 'SkeletalSmoke', skeletonPackage: skeleton }))
+  await writeFile(join(content, 'Props/Character_Skeleton.uasset'), unrealSkeletonFixture({ guid: demoSkeletonGuid }))
+  await writeFile(join(content, 'Props/SmokeAttack.uasset'), editorAnimationFixture({ clip: 'SmokeAttack', skeleton }))
   const cooked = process.env.ASSET_VIEWER_SMOKE_PAK === '1'
   if (cooked) {
     const fixtures = [
@@ -52,6 +58,7 @@ export async function verifyUnrealLoose(webContents, waitFor, root) {
   await waitFor("document.querySelector('#package-jobs').textContent.includes('1 PNG')")
   await waitFor("document.querySelector('#package-jobs').textContent.includes('Графов SoundCue · 1')")
   await waitFor("document.querySelector('#package-jobs').textContent.includes('Скелетных моделей UE4 · 1')")
+  await waitFor("document.querySelector('#package-jobs').textContent.includes('Клипов UE4 · 1')")
   if (cooked) {
     await waitFor(`Array.from(document.querySelectorAll('#package-jobs li p')).some(row =>
       row.textContent.includes('Cooked UE4.27') && row.textContent.includes('Текстуры · 1 PNG') &&
@@ -70,12 +77,12 @@ export async function verifyUnrealLoose(webContents, waitFor, root) {
   const job = "Array.from(document.querySelectorAll('#package-jobs > li')).find(row => row.textContent.includes('Unreal Loose Fixture'))"
   await webContents.executeJavaScript(`Array.from((${job}).querySelectorAll('button'))
     .find(button => button.textContent === 'Показать в индексе').click()`)
-  const models = [['SkeletalSmoke.glb', '2 треугольника']]
+  const models = [['SkeletalSmoke.glb', '2 треугольника', 'SmokeAttack'], ['SmokeAttack.glb', '2 кости', 'SmokeAttack']]
   if (cooked) {
     await playIndexedAudio(webContents, waitFor, 'CookedTone.ogg', 0.5, 0.024)
     models.push(['CookedModel.glb', '2 треугольника'], ['CookedModel_Lod1.glb', '1 треугольник'])
   }
-  for (const [file, triangles] of models) {
+  for (const [file, stats, clip] of models) {
     const name = JSON.stringify(file)
     const card = "Array.from(document.querySelectorAll('#index-results button')).find(button => button.textContent.startsWith(" + name + "))"
     await webContents.executeJavaScript("if (!document.querySelector('#index-dialog').open) document.querySelector('#index-mode').click()")
@@ -85,6 +92,12 @@ export async function verifyUnrealLoose(webContents, waitFor, root) {
     await waitFor(`document.querySelector('#index-name').textContent === ${name} && !document.querySelector('#index-preview').disabled`)
     await webContents.executeJavaScript("document.querySelector('#index-preview').click()")
     await waitFor(`!document.querySelector('#index-dialog').open &&
-      document.querySelector('#model-stats').textContent.includes(${JSON.stringify(triangles)})`)
+      document.querySelector('#model-stats').textContent.includes(${JSON.stringify(stats)})`)
+    if (clip) {
+      await waitFor(`!document.querySelector('#animation-tools').hidden &&
+        document.querySelector('#animation').selectedOptions[0].textContent === ${JSON.stringify(clip)}`)
+      await webContents.executeJavaScript("document.querySelector('#play').click()")
+      await waitFor("document.querySelector('#play').getAttribute('aria-pressed') === 'true'")
+    }
   }
 }

@@ -18,17 +18,36 @@ async function readPart(root, file, signal, artifact) {
 
 export async function publishDirectMeshPreview({ asset, artifact, input, output, workspace, store, signal, textureFallback }) {
   const source = await fileInfo(output, input.path)
+  if (!source?.info.size || source.info.size > 16 * MiB) return null
+  const document = JSON.parse(await readPart(output, source, signal, input))
   const binPath = artifact.path.replace(/\.gltf$/, '.bin')
   const parallel = asset.exports.find(item => item.role === 'model-buffer' && item.path === binPath)
-  const bin = parallel && await fileInfo(output, binPath)
-  if (!source?.info.size || source.info.size > 16 * MiB || !bin?.info.size || bin.info.size > 96 * MiB ||
-      bin.info.size % 4 !== 0) return null
-  const document = JSON.parse(await readPart(output, source, signal, input))
-  const [buffer] = document.buffers
-  if (document.buffers.length !== 1 || buffer.uri !== posix.basename(binPath) || buffer.byteLength !== bin.info.size) return null
+  const records = [parallel]
+  if (document.buffers.length === 2 && input.sourceModel === artifact.path) {
+    records.push(asset.exports.find(item => item.role === 'animation-buffer' && item.from === input.from &&
+      item.sourceModel === input.sourceModel && item.path === input.path.replace(/\.gltf$/, '.bin')))
+  }
+  if (document.buffers.length !== records.length) return null
+  const binary = []
+  const offsets = []
+  let size = 0
+  for (const [index, buffer] of document.buffers.entries()) {
+    const record = records[index]
+    const file = record?.path && await fileInfo(output, record.path)
+    if (!file?.info.size || file.info.size > 96 * MiB || file.info.size % 4 ||
+        buffer.uri !== posix.basename(record.path) || buffer.byteLength !== file.info.size) return null
+    offsets.push(size)
+    size += file.info.size
+    if (size > 160 * MiB) return null
+    binary.push({ file, record })
+  }
+  for (const view of document.bufferViews) {
+    view.byteOffset = (view.byteOffset ?? 0) + offsets[view.buffer]
+    view.buffer = 0
+  }
 
   const images = []
-  let size = bin.info.size
+  let offset = size
   for (const image of document.images ?? []) {
     const location = dependencyLocation(input.path, image.uri, { uri: true })
     if (location.location !== 'local' || !location.path.startsWith('Textures/') || !location.path.endsWith('.png')) return null
@@ -40,8 +59,8 @@ export async function publishDirectMeshPreview({ asset, artifact, input, output,
   }
   if (await store.preflight(size + source.info.size + 64 * 1024)) return null
 
-  const parts = [await readPart(output, bin, signal, parallel)]
-  let offset = bin.info.size
+  const parts = []
+  for (const { file, record } of binary) parts.push(await readPart(output, file, signal, record))
   for (const { image, file } of images) {
     const bytes = await readPart(output, file, signal)
     if (!bytes.subarray(0, pngMagic.length).equals(pngMagic)) return null
@@ -62,7 +81,7 @@ export async function publishDirectMeshPreview({ asset, artifact, input, output,
   const target = ['Previews', asset.id, folder, posix.basename(artifact.path, '.gltf') + '.glb'].join('/')
   return store.save(target, file, { format: 'glb', role: artifact.role, lod: artifact.lod,
     method: artifact.method, converterVersion: artifact.converterVersion, status: 'converted', from: input.path,
-    metrics: { ...artifact.metrics, textures: document.textures?.length ?? 0 },
+    metrics: { ...input.metrics, textures: document.textures?.length ?? 0 },
     issues: [...new Set([...artifact.issues, ...input.issues]),
       ...(textureFallback ? ['unreal-material-conversion-fallback'] : [])] })
 }

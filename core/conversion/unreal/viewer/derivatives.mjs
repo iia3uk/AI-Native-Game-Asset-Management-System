@@ -4,12 +4,14 @@ import { analyzeAsset } from '../../../analysis/asset-analysis.mjs'
 import { convertBatchModel } from '../../../engines/blender/batch.mjs'
 import { editorSkeletalMeshMethod } from '../../../engines/unreal/source-mesh/run.mjs'
 import { modelArtifact } from '../../artifacts.mjs'
+import { editorAnimationBindingMethod } from '../animation/binding.mjs'
 import { cookedMeshMethod } from '../cooked-mesh/geometry.mjs'
 import { publishDirectMeshPreview } from '../source-mesh/preview.mjs'
 import { animationBindingMethod } from './actorx/publish.mjs'
 
 const destination = { fbx: 'Models', glb: 'Previews' }
 const materialMethods = new Set(['ue-viewer-material-binding', 'unreal-source-mesh-material-binding', 'unreal-cooked-mesh-material-binding'])
+const animationMethods = new Set([animationBindingMethod, editorAnimationBindingMethod])
 
 async function checkDerivative(workspace, path, format, original, signal) {
   const file = await modelArtifact(workspace, path, format, signal)
@@ -27,8 +29,9 @@ export async function createViewerDerivatives({ models, store, blender, output, 
     let requested = formats.filter(format => !asset.exports.some(item => item.path && item.format === format &&
       item.method === 'unreal-editor' && item.role === artifact.role && artifact.lod === 0))
     if (!requested.length) continue
-    const animated = asset.exports.find(item => item.path && item.method === animationBindingMethod &&
+    const animated = asset.exports.find(item => item.path && animationMethods.has(item.method) &&
       item.sourceModel === artifact.path && item.format === 'gltf')
+    const requireAnimation = animated?.method === editorAnimationBindingMethod
     let input = animated ?? asset.exports.find(item => item.path && materialMethods.has(item.method) &&
       item.from === artifact.path) ?? artifact
     const directPreview = artifact.sourceFormat === 'FRawMesh' ||
@@ -36,7 +39,7 @@ export async function createViewerDerivatives({ models, store, blender, output, 
     if (requested.includes('glb') && directPreview && Date.now() < deadline) {
       const preview = { asset, artifact, output, workspace, store, signal }
       let direct = await publishDirectMeshPreview({ ...preview, input })
-      if (!direct?.path && !blender && input !== artifact) {
+      if (!direct?.path && !blender && !requireAnimation && input !== artifact) {
         direct = await publishDirectMeshPreview({ ...preview, input: artifact, textureFallback: true })
       }
       if (direct?.path) {
@@ -60,7 +63,7 @@ export async function createViewerDerivatives({ models, store, blender, output, 
         source: join(output, input.path), root: output, workspace: scratch, formats: requested, signal,
       })
       let converterOutput = scratch
-      const fallback = input !== artifact && !requested.some(format => result.outputs?.[format] === 'written')
+      const fallback = input !== artifact && !requireAnimation && !requested.some(format => result.outputs?.[format] === 'written')
       if (fallback && Date.now() < deadline) {
         input = artifact
         converterOutput = join(scratch, 'geometry-only')

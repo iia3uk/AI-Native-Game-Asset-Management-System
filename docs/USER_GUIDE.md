@@ -183,7 +183,9 @@ Supported UE4 cutouts such as grass and foliage retain their mask, clipping thre
 
 For a trusted project or Content folder, choose **С редактором** or **Авто** to request native conversion. Specify **Версия Unreal** when you want a particular installed version. With an available editor, FBX output can also produce GLB previews if Blender is installed. The job retains its direct copies if the editor is unavailable.
 
-In **Без движка**, compatible UE4 editor skeletal meshes from the 514 layout export a single render LOD with the reference pose, skin weights, UV layers and material slots. Choose GLB for a self-contained preview with any verified texture bindings, or FBX to convert through installed Blender. Morph targets, cloth simulation and animation clips are outside this decoder's coverage. The original mesh stays available for selective export and is excluded from source cleanup.
+In **Без движка**, compatible UE4 editor skeletal meshes from the 514 layout export a single render LOD with the reference pose, skin weights, UV layers and material slots. Choose GLB for a self-contained preview with any verified texture bindings, or FBX to convert through installed Blender. The original mesh stays available for selective export and is excluded from source cleanup. Morph targets and cloth simulation remain in the original package.
+
+Include the `AnimSequence`, its `Skeleton` and the mesh in the same import to recover raw UE4 514 bone animation. Open the model's GLB or animated glTF, choose a clip and click **Пуск**. The same tracks feed FBX when Blender is available. Each matched clip also has a standalone skeleton GLB in `Animations/` that can be previewed and exported on its own. The desktop viewer currently deforms skinned geometry using the first four influences. The exported model files retain up to eight. Compressed tracks, additive clips, custom retargeting, notify events and curve graphs remain in the source packages.
 
 ```sh
 npm run cli -- package-import "/absolute/path/Project.uproject" --json

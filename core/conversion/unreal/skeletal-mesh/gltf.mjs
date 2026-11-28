@@ -2,24 +2,36 @@ import { Matrix4, Quaternion, Vector3 } from 'three'
 import { requireLayout } from '../../../engines/unreal/package-tables.mjs'
 import { meshBuffer } from '../gltf-buffer.mjs'
 
+export function unrealTranslation([x, y, z]) {
+  return [x * 0.01, z * 0.01, y * 0.01]
+}
+
+export function unrealRotation([x, y, z, w]) {
+  return [-x, -z, -y, w]
+}
+
+export function unrealScale([x, y, z]) {
+  return [x, z, y]
+}
+
+export function unrealBoneNode(bone) {
+  return { name: bone.name, translation: unrealTranslation(bone.translation),
+    rotation: new Quaternion(...unrealRotation(bone.rotation)).normalize().toArray(), scale: unrealScale(bone.scale) }
+}
+
 function referenceSkin(bones) {
   const nodes = []
   const bindWorld = []
   const inverse = new Float32Array(bones.length * 16)
   for (const [index, bone] of bones.entries()) {
-    const [x, y, z] = bone.translation
-    const [qx, qy, qz, qw] = bone.rotation
-    const [sx, sy, sz] = bone.scale
-    const translation = new Vector3(x * 0.01, z * 0.01, y * 0.01)
-    const rotation = new Quaternion(-qx, -qz, -qy, qw).normalize()
-    const scale = new Vector3(sx, sz, sy)
-    const local = new Matrix4().compose(translation, rotation, scale)
+    const node = unrealBoneNode(bone)
+    const local = new Matrix4().compose(new Vector3(...node.translation), new Quaternion(...node.rotation), new Vector3(...node.scale))
     const world = bone.parent < 0 ? local : new Matrix4().multiplyMatrices(bindWorld[bone.parent], local)
     const determinant = world.determinant()
     requireLayout(Number.isFinite(determinant) && determinant !== 0)
     bindWorld.push(world)
     inverse.set(world.clone().invert().elements, index * 16)
-    nodes.push({ name: bone.name, translation: translation.toArray(), rotation: rotation.toArray(), scale: scale.toArray() })
+    nodes.push(node)
     if (bone.parent >= 0) (nodes[bone.parent].children ??= []).push(index + 1)
   }
   requireLayout(inverse.every(Number.isFinite))
