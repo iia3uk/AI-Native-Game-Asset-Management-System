@@ -56,6 +56,7 @@ const packageIssues = {
   'unreal-source-mesh-invalid-model': 'Геометрия исходного меша UE4 не прошла проверку',
   'unreal-source-mesh-lods-need-build': 'В пакете отсутствует геометрия некоторых LOD',
   'unreal-source-mesh-material-graphs-not-extracted': 'Из исходного меша получены слоты и ссылки на материалы',
+  'unreal-source-mesh-editor-build-not-applied': 'Восстановлена исходная геометрия UE4. Сборка меша редактором не выполнялась.',
   'unreal-source-collision-layout': 'Данные коллизии UE4 имеют неподдерживаемую структуру',
   'unreal-source-collision-partial': 'Некоторые формы коллизии не удалось восстановить',
   'unreal-source-collision-preview': 'GLB коллизии не прошёл проверку',

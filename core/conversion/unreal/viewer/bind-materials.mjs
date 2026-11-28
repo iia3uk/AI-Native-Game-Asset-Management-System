@@ -22,8 +22,9 @@ export function bindViewerMaterials(document, lookup, modelPath, lookupPath) {
   const usable = new Map()
   const withNormals = new Map()
   for (const mesh of document.meshes ?? []) {
+    const sourceUVs = mesh.extras?.unrealRawMesh?.uvChannels
     for (const primitive of mesh.primitives ?? []) {
-      const uv0 = Number.isSafeInteger(primitive.attributes?.TEXCOORD_0)
+      const uv0 = Number.isSafeInteger(primitive.attributes?.TEXCOORD_0) && (!sourceUVs || sourceUVs[0] === 0)
       usable.set(primitive.material, usable.get(primitive.material) !== false && uv0)
       withNormals.set(primitive.material, withNormals.get(primitive.material) !== false &&
         Number.isSafeInteger(primitive.attributes?.NORMAL))

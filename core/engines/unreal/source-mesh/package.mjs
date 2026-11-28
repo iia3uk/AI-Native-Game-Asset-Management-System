@@ -2,9 +2,13 @@ import { taggedProperties } from '../editor-package/properties.mjs'
 import { editorPackage, requireLayout } from '../editor-package/tables.mjs'
 
 const meshClass = new Set(['StaticMesh'])
+const meshVersions = new Set([514, 522])
 
-export function staticMeshPackage(bytes) {
-  const table = editorPackage(bytes)
+export const supportsSourceMeshVersion = version => meshVersions.has(version)
+
+export function staticMeshPackage(bytes, version = 522) {
+  if (!supportsSourceMeshVersion(version)) return null
+  const table = editorPackage(bytes, version)
   const mesh = table?.topLevel(meshClass)
   return mesh && { ...table, ...mesh }
 }

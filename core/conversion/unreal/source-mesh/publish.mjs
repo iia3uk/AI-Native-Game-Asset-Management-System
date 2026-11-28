@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import { unrealGameAssetResolver } from '../../../engines/unreal/editor-package/game-path.mjs'
-import { staticMeshPackage } from '../../../engines/unreal/source-mesh/package.mjs'
+import { staticMeshPackage, supportsSourceMeshVersion } from '../../../engines/unreal/source-mesh/package.mjs'
 import { decodeSourceMesh, sourceMeshFileLimit, sourceMeshRevision } from '../../../engines/unreal/source-mesh/run.mjs'
 import { fileInfo } from '../../../files/asset-files.mjs'
 import { readVerifiedFile } from '../../../files/read-verified.mjs'
@@ -11,12 +11,13 @@ import { viewerModel } from '../viewer/model.mjs'
 
 const method = 'unreal-source-mesh'
 
-async function publishModel({ asset, scratch, store, lod, document, buffer, stem, signal }) {
+async function publishModel({ asset, scratch, store, lod, document, buffer, stem, signal, rawMesh }) {
   const bin = stem + '.bin'
   const name = stem + '.gltf'
   const target = 'Models/' + asset.id + '/unreal-source/'
   const json = JSON.stringify(document)
-  const identity = { status: 'converted', converterVersion: sourceMeshRevision, method, from: asset.output, lod }
+  const identity = { status: 'converted', converterVersion: sourceMeshRevision, method, from: asset.output, lod,
+    ...(rawMesh && { sourceFormat: 'FRawMesh' }) }
   const issue = await store.preflight(Buffer.byteLength(json) + buffer.byteLength)
   if (issue) return { issue }
   await Promise.all([writeFile(join(scratch, name), json, { signal }), writeFile(join(scratch, bin), buffer, { signal })])
@@ -24,8 +25,10 @@ async function publishModel({ asset, scratch, store, lod, document, buffer, stem
   if (!model) return { issue: 'unreal-source-mesh-invalid-model' }
   const savedBuffer = await store.save(target + bin, model.buffer, { ...identity, format: 'bin', role: 'model-buffer' })
   if (!savedBuffer.path) return { issue: savedBuffer.issue }
+  const issues = ['unreal-source-mesh-material-graphs-not-extracted']
+  if (rawMesh) issues.push('unreal-source-mesh-editor-build-not-applied')
   const artifact = await store.save(target + name, model.file, { ...identity, format: 'gltf', role: 'model',
-    metrics: model.metrics, issues: ['unreal-source-mesh-material-graphs-not-extracted'] })
+    metrics: model.metrics, issues })
   asset.exports.push(savedBuffer, artifact)
   return { artifact }
 }
@@ -41,7 +44,7 @@ export async function publishSourceMeshes({ records, output, workspace, source, 
   for (const asset of records.assets) {
     signal?.throwIfAborted()
     if (!asset.output || asset.issue || asset.type !== 'uasset' || asset.storage !== 'editor' ||
-        asset.layout !== -7 || asset.ue4 !== 522 || asset.ue5 !== 0 || asset.size > sourceMeshFileLimit) continue
+        asset.layout !== -7 || !supportsSourceMeshVersion(asset.ue4) || asset.ue5 !== 0 || asset.size > sourceMeshFileLimit) continue
     if (Date.now() >= deadline) {
       summary.issue = 'unreal-source-mesh-time-budget'
       break
@@ -52,14 +55,14 @@ export async function publishSourceMeshes({ records, output, workspace, source, 
     const { prefix, hash } = await readVerifiedFile(output, file, { capture: asset.size, changed, signal })
     if (hash !== asset.hash) throw changed()
     try {
-      if (!staticMeshPackage(prefix)) continue
+      if (!staticMeshPackage(prefix, asset.ue4)) continue
     } catch (error) {
       if (error instanceof RangeError) continue
       throw error
     }
     const stem = posix.basename(asset.sourcePath).slice(0, -7).replace(/[#%]/g, '_')
     const render = !asset.exports.some(item => item.path && item.role === 'model' && item.format === 'gltf' && item.lod === 0)
-    const result = await decodeSourceMesh(prefix, stem, { signal, render,
+    const result = await decodeSourceMesh(prefix, stem, { signal, render, version: asset.ue4,
       timeout: Math.min(12_000, Math.max(1, deadline - Date.now())) })
     if (!result) continue
     if (result.issue) {

@@ -1,5 +1,6 @@
 import { nativeStructArray, structArray, taggedProperties } from '../editor-package/properties.mjs'
 import { requireLayout } from '../editor-package/tables.mjs'
+import { legacyHullIndices } from './raw-mesh/convex-hull.mjs'
 
 const fields = new Map([
   ['BoxElems', ['KBoxElem', 'box']],
@@ -51,15 +52,21 @@ function structProperties(bytes, field, nameAt, type) {
   return tags.properties
 }
 
-function convex(bytes, row, nameAt) {
+function convex(bytes, row, nameAt, legacy) {
   const { count, start } = nativeStructArray(bytes, row.get('VertexData'), nameAt, 'Vector', 12, maxVertices)
-  const faces = row.get('IndexData')
-  requireLayout(count >= 4 && faces?.type === 'ArrayProperty' && faces.inner === 'IntProperty' && faces.size >= 4)
-  const length = bytes.readInt32LE(faces.start)
-  requireLayout(length >= 12 && length <= maxIndices && length % 3 === 0 && 4 + length * 4 === faces.size)
-  const indices = Array.from({ length }, (_, index) => bytes.readInt32LE(faces.start + 4 + index * 4))
-  requireLayout(indices.every(index => index >= 0 && index < count))
+  requireLayout(count >= 4)
   const vertices = Array.from({ length: count }, (_, index) => floats(bytes, start + index * 12, 3))
+  const faces = row.get('IndexData')
+  const generated = legacy && !faces
+  let indices
+  if (generated) indices = legacyHullIndices(vertices)
+  else {
+    requireLayout(faces?.type === 'ArrayProperty' && faces.inner === 'IntProperty' && faces.size >= 4)
+    const length = bytes.readInt32LE(faces.start)
+    requireLayout(length >= 12 && length <= maxIndices && length % 3 === 0 && 4 + length * 4 === faces.size)
+    indices = Array.from({ length }, (_, index) => bytes.readInt32LE(faces.start + 4 + index * 4))
+    requireLayout(indices.every(index => index >= 0 && index < count))
+  }
   const transform = row.get('Transform')
   const properties = transform ? structProperties(bytes, transform, nameAt, 'Transform') : new Map()
   const rotation = taggedVector(bytes, properties.get('Rotation'), 'Quat', [0, 0, 0, 1])
@@ -67,7 +74,7 @@ function convex(bytes, row, nameAt) {
   const scale = taggedVector(bytes, properties.get('Scale3D'), 'Vector', [1, 1, 1])
   requireLayout(Math.abs(Math.hypot(...rotation) - 1) <= 0.001 &&
     scale.every(value => Math.abs(value) >= 1e-6 && Math.abs(value) <= 1e4))
-  return { vertices, indices, transform: { rotation, translation, scale } }
+  return { vertices, indices, ...(generated && { indexSource: 'convex-hull' }), transform: { rotation, translation, scale } }
 }
 
 function primitive(bytes, row, type) {
@@ -78,8 +85,8 @@ function primitive(bytes, row, type) {
   return { center, rotation, radius: scalar(bytes, row.get('Radius'), 1e-6), length: scalar(bytes, row.get('Length'), 0) }
 }
 
-function parseShape(bytes, row, type, nameAt) {
-  const data = type === 'convex' ? convex(bytes, row, nameAt) : primitive(bytes, row, type)
+function parseShape(bytes, row, type, nameAt, legacy) {
+  const data = type === 'convex' ? convex(bytes, row, nameAt, legacy) : primitive(bytes, row, type)
   return { type, ...data, name: nameValue(row.get('Name'), nameAt, 'NameProperty'),
     collisionEnabled: nameValue(row.get('CollisionEnabled'), nameAt, 'ByteProperty', 'ECollisionEnabled'),
     restOffset: scalar(bytes, row.get('RestOffset'), -maximumComponent, 0),
@@ -89,6 +96,7 @@ function parseShape(bytes, row, type, nameAt) {
 export function sourceMeshCollision(bytes, mesh, bodyIndex) {
   if (!bodyIndex) return null
   const { nameAt } = mesh
+  const legacy = mesh.layout?.fileVersionUE4 === 514
   const body = mesh.exported(bodyIndex)
   requireLayout(body?.type === 'BodySetup' && body.outer === mesh.index &&
     (body.end <= mesh.start || body.start >= mesh.end))
@@ -114,7 +122,7 @@ export function sourceMeshCollision(bytes, mesh, bodyIndex) {
       remaining -= rows.length
       for (const [index, row] of rows.entries()) {
         try {
-          shapes.push(parseShape(bytes, row, type, nameAt))
+          shapes.push(parseShape(bytes, row, type, nameAt, legacy))
         } catch (error) {
           if (!(error instanceof RangeError)) throw error
           omitted.push({ field, index })

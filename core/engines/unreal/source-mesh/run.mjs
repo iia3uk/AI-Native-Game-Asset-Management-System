@@ -1,12 +1,12 @@
 import { Worker } from 'node:worker_threads'
 
-export const sourceMeshRevision = '0.1.26/2'
+export const sourceMeshRevision = '0.1.26/5'
 export const sourceMeshFileLimit = 48 * 1024 ** 2
 
-export async function decodeSourceMesh(bytes, stem, { signal, timeout, render = true }) {
+export async function decodeSourceMesh(bytes, stem, { signal, timeout, version, render = true }) {
   signal?.throwIfAborted()
   const worker = new Worker(new URL('./worker.mjs', import.meta.url), {
-    workerData: { bytes, stem, render }, transferList: [bytes.buffer],
+    workerData: { bytes, stem, version, render }, transferList: [bytes.buffer],
     resourceLimits: { maxOldGenerationSizeMb: 192, stackSizeMb: 4 },
   })
   let abort, timer

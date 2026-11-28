@@ -14,7 +14,7 @@ function words(values, setter = 'writeInt32LE') {
   return bytes
 }
 
-function sample({ badIndex = false, wrongOwner = false, withUnsupported = false } = {}) {
+function sample({ badIndex = false, wrongOwner = false, withUnsupported = false, legacy = false, flat = false } = {}) {
   const names = ['None']
   const ref = name => {
     if (!names.includes(name)) names.push(name)
@@ -34,8 +34,9 @@ function sample({ badIndex = false, wrongOwner = false, withUnsupported = false 
   const sphere = bag(vector('Center', 'Vector', [0, 100, 0]), scalar('Radius', 50))
   const capsule = bag(vector('Rotation', 'Rotator', [90, 0, 0]), scalar('Radius', 50), scalar('Length', 200))
   const faceIndices = [0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, badIndex ? 4 : 3, 0, 0, 1]
-  const hull = bag(array('VertexData', 'Vector', 4, words([0, 0, 0, 100, 0, 0, 0, 100, 0, 0, 0, 100], 'writeFloatLE')),
-    tag('IndexData', 'ArrayProperty', words([faceIndices.length, ...faceIndices]), ref('IntProperty')),
+  const hull = bag(array('VertexData', 'Vector', 4, words(
+    [0, 0, 0, 100, 0, 0, 0, 100, 0, flat ? 50 : 0, flat ? 50 : 0, flat ? 0 : 100], 'writeFloatLE')),
+    ...(legacy && !badIndex ? [] : [tag('IndexData', 'ArrayProperty', words([faceIndices.length, ...faceIndices]), ref('IntProperty'))]),
     struct('Transform', 'Transform', bag(vector('Translation', 'Vector', [300, 0, 0]), vector('Scale3D', 'Vector', [-1, 1, 1]))))
   const aggregate = struct('AggGeom', 'KAggregateGeom', bag(array('BoxElems', 'KBoxElem', 1, box),
     array('SphereElems', 'KSphereElem', 1, sphere), array('SphylElems', 'KSphylElem', 1, capsule),
@@ -46,7 +47,7 @@ function sample({ badIndex = false, wrongOwner = false, withUnsupported = false 
   header.writeInt32LE(2, 10)
   const meshBytes = Buffer.concat([bag(), header])
   const bytes = Buffer.concat([meshBytes, body])
-  const mesh = { start: 0, end: meshBytes.length, index: 1,
+  const mesh = { start: 0, end: meshBytes.length, index: 1, layout: { fileVersionUE4: legacy ? 514 : 522 },
     nameAt: at => names[bytes.readInt32LE(at)],
     exported: index => index === 2 && { type: 'BodySetup', outer: wrongOwner ? 3 : 1, name: 'FixtureBody',
       start: meshBytes.length, end: bytes.length } }
@@ -91,6 +92,21 @@ test('UE4 collision keeps valid shapes when another shape is damaged or unsuppor
   const source = readCollision(sample({ badIndex: true, withUnsupported: true }))
   assert.deepEqual(source.shapes.map(shape => shape.type), ['box', 'sphere', 'capsule'])
   assert.deepEqual(source.omitted, [{ field: 'ConvexElems', index: 0 }, { field: 'TaperedCapsuleElems' }])
+})
+
+test('UE4 514 point-only convex collision reconstructs a closed hull and rejects planar or invalid indexed input', () => {
+  const { shapes, omitted } = readCollision(sample({ legacy: true }))
+  assert.deepEqual(omitted, [])
+  const hull = shapes.at(-1)
+  assert.equal(hull.indexSource, 'convex-hull')
+  assert.equal(hull.indices.length, 12)
+  assert.deepEqual([...new Set(hull.indices)].sort(), [0, 1, 2, 3])
+  assert.deepEqual(collisionPreview(shapes).omitted, [])
+  for (const options of [{ flat: true }, { badIndex: true }]) {
+    const rejected = readCollision(sample({ legacy: true, ...options }))
+    assert.deepEqual(rejected.omitted, [{ field: 'ConvexElems', index: 0 }])
+    assert.equal(rejected.shapes.length, 3)
+  }
 })
 
 test('Unreal source cleanup requires render geometry and both collision artifacts', async t => {

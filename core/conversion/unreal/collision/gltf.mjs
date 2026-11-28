@@ -1,4 +1,5 @@
 import { BoxGeometry, CapsuleGeometry, Euler, Quaternion, SphereGeometry, Vector3 } from 'three'
+import { encodeGlb } from '../../glb.mjs'
 
 const radians = Math.PI / 180
 const palette = { box: [0.25, 0.52, 0.95], sphere: [0.88, 0.54, 0.18], capsule: [0.28, 0.72, 0.34],
@@ -52,25 +53,6 @@ function primitiveMesh(shape) {
   return { points, indices }
 }
 
-function glb(document, buffers, binarySize) {
-  const json = Buffer.from(JSON.stringify(document))
-  const jsonSize = Math.ceil(json.length / 4) * 4
-  const total = 28 + jsonSize + binarySize
-  const result = Buffer.allocUnsafeSlow(total)
-  result.write('glTF', 0, 'ascii')
-  result.writeUInt32LE(2, 4)
-  result.writeUInt32LE(total, 8)
-  result.writeUInt32LE(jsonSize, 12)
-  result.write('JSON', 16, 'ascii')
-  json.copy(result, 20)
-  result.fill(0x20, 20 + json.length, 20 + jsonSize)
-  result.writeUInt32LE(binarySize, 20 + jsonSize)
-  result.write('BIN\0', 24 + jsonSize, 'ascii')
-  let at = 28 + jsonSize
-  for (const bytes of buffers) at += bytes.copy(result, at)
-  return result
-}
-
 export function collisionPreview(shapes) {
   const omitted = []
   const document = { asset: { version: '2.0', generator: 'Asset Viewer Unreal collision' }, scene: 0,
@@ -115,5 +97,5 @@ export function collisionPreview(shapes) {
       material: materials.get(shape.type) }] })
   }
   document.buffers.push({ byteLength: size })
-  return { omitted, degenerateTriangles, buffer: size ? glb(document, buffers, size) : null }
+  return { omitted, degenerateTriangles, buffer: size ? encodeGlb(document, buffers, size) : null }
 }

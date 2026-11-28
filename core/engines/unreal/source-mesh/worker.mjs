@@ -3,10 +3,11 @@ import { encodeSourceMesh } from '../../../conversion/unreal/source-mesh/gltf.mj
 import { sourceMeshLods } from './mesh-description.mjs'
 import { staticMeshHeader, staticMeshPackage } from './package.mjs'
 import { sourceMeshCollision } from './collision.mjs'
+import { rawMeshLods } from './raw-mesh/lods.mjs'
 
 const input = workerData.bytes
 const bytes = Buffer.from(input.buffer, input.byteOffset, input.byteLength)
-const mesh = staticMeshPackage(bytes)
+const mesh = staticMeshPackage(bytes, workerData.version)
 if (!mesh) {
   parentPort.postMessage(null)
 } else {
@@ -29,13 +30,14 @@ if (!mesh) {
       result.collisionIssue = 'unreal-source-collision-layout'
     }
     if (workerData.render) {
-      const { materials, missing, lods } = sourceMeshLods(bytes, mesh, header)
+      const readLods = workerData.version === 514 ? rawMeshLods : sourceMeshLods
+      const { materials, missing, lods } = readLods(bytes, mesh, header)
+      result.missing = missing
       for (const { lod, data } of lods()) {
         const name = mesh.name + (lod ? '_Lod' + lod : '')
         const model = encodeSourceMesh(data, { name, bin: workerData.stem + (lod ? '_Lod' + lod : '') + '.bin', materials })
-        meshes.push({ lod, ...model })
+        meshes.push({ lod, ...model, rawMesh: Boolean(data.rawMesh) })
       }
-      result.missing = missing
     }
   } catch {
     result.issue = 'unreal-source-mesh-layout'
