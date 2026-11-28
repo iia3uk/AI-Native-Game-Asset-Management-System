@@ -20,7 +20,7 @@ export function pakMaterialResolver(assets) {
     .map(asset => [key(asset.path), asset]))
   return (from, path) => {
     const own = key(from).match(projectContent)
-    if (!own || own[1] === 'engine' || !path.startsWith('/Game/')) return null
+    if (!own || own[1] === 'engine' || typeof path !== 'string' || !path.startsWith('/Game/')) return null
     return packages.get(own[0] + key(path.slice(6)) + '.uasset') ?? null
   }
 }

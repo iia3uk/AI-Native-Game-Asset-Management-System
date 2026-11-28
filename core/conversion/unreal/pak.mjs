@@ -6,10 +6,11 @@ import { containerFileFolders, validateContainerFile } from './container-files.m
 import { publishContainerTexture } from './container-texture.mjs'
 import { pakMaterialResolver, readPakMaterials } from './cooked-material/pak-inputs.mjs'
 import { publishCookedMaterials } from './cooked-material/publish.mjs'
+import { publishPakMeshes } from './cooked-mesh/pak.mjs'
 
 const companions = new Set(['uexp', 'ubulk', 'uptnl'])
 
-async function validatedArtifact(root, entry, signal) {
+async function validatedArtifact(root, entry, signal, cookedMeshCandidates) {
   const file = await fileInfo(root, entry.file)
   if (!file || file.info.size !== entry.size) return null
   if (Object.hasOwn(containerFileFolders, entry.format)) {
@@ -17,16 +18,20 @@ async function validatedArtifact(root, entry, signal) {
   }
   if (companions.has(entry.format)) return file
   const info = await inspectUnrealFile(root, { file, name: entry.path, type: entry.format }, signal)
+  if (entry.format === 'uasset' && info.storage === 'cooked' && info.layout === -7 && info.ue4 === 522 && info.ue5 === 0) {
+    cookedMeshCandidates.add(entry.path)
+  }
   return ['editor', 'cooked', 'unversioned'].includes(info.storage) ? file : null
 }
 
-export async function publishPakEntries(entries, root, store, backendVersion, signal) {
+export async function publishPakEntries(entries, root, store, { backendVersion, decoder, workspace, blender, formats, signal }) {
   const accepted = new Map()
   const validPackages = new Set()
+  const cookedMeshCandidates = new Set()
   for (const entry of entries) {
     signal?.throwIfAborted()
     if (!entry.file) continue
-    const file = await validatedArtifact(root, entry, signal)
+    const file = await validatedArtifact(root, entry, signal, cookedMeshCandidates)
     if (!file) continue
     accepted.set(entry, file)
     if (entry.format === 'uasset' || entry.format === 'umap') {
@@ -62,6 +67,9 @@ export async function publishPakEntries(entries, root, store, backendVersion, si
         converterVersion: backendVersion, outputIssue: 'unreal-cooked-texture-output' }, signal)] : undefined
     published.push({ ...entry, id, status: artifact.status, artifact, ...(exports && { exports }) })
   }
-  const materials = await publishCookedMaterials(published, cooked, root, store, pakMaterialResolver(published), signal)
-  return { entries: published, ...materials }
+  const resolve = pakMaterialResolver(published)
+  const { materials, dependencies } = await publishCookedMaterials(published, cooked, root, store, resolve, signal)
+  const eligible = published.filter(entry => cookedMeshCandidates.has(entry.path))
+  const meshes = await publishPakMeshes(published, eligible, { decoder, workspace, store, blender, formats, resolve, dependencies, signal })
+  return { entries: published, materials, dependencies, meshes }
 }

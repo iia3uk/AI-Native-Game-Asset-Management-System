@@ -8,6 +8,7 @@ import { promisify } from 'node:util'
 import { inflateSync } from 'node:zlib'
 import { cookedMaterial } from '../fixtures/unreal-cooked-material.mjs'
 import { cookedTexture } from '../fixtures/unreal-cooked-texture.mjs'
+import { cookedStaticMesh } from '../fixtures/unreal-cooked-static-mesh.mjs'
 import { makePak, wavTone } from '../fixtures/unreal-pak.mjs'
 import { startServer, testDirectory } from '../server-fixture.mjs'
 
@@ -40,7 +41,8 @@ test('The packaged server automatically imports a stock Pak with its bundled wor
       pixels: Buffer.from('00f8e00700000000', 'hex'), external: true })
     const material = cookedMaterial({ name: 'Packaged-Paint', parent: ['/Engine/EngineMaterials/DefaultMaterial'],
       textures: [{ parameter: 'BaseColor', value: '/Game/Packaged-Tint' }] })
-    const pak = makePak([{ path: 'Audio/Packaged-Tone.wav', content: audio }, ...dxt, ...material])
+    const mesh = cookedStaticMesh({ name: 'Packaged-Model', external: true })
+    const pak = makePak([{ path: 'Audio/Packaged-Tone.wav', content: audio }, ...dxt, ...material, ...mesh])
     const source = join(incoming, 'Incoming.pak')
     await writeFile(source, pak)
     const inspection = await cli('package-inspect', source)
@@ -61,6 +63,10 @@ test('The packaged server automatically imports a stock Pak with its bundled wor
         assert.deepEqual(await readFile(join(result.root, sound.path)), audio)
         assert.deepEqual(job.result.report.textures, { converted: 1, skipped: 0, failed: 0 })
         assert.deepEqual(job.result.report.materials, { converted: 1, skipped: 0, failed: 0 })
+        assert.equal(job.result.report.meshes.gltf, 2)
+        assert.equal(job.result.report.meshes.derivatives.glb, 2)
+        assert.deepEqual(assets.filter(asset => asset.ext === 'glb').map(asset => asset.name).sort(),
+          ['Packaged-Model.glb', 'Packaged-Model_Lod1.glb'])
         const texture = assets.find(asset => asset.name === 'Packaged-Tint.png')
         const png = await readFile(join(result.root, texture.path))
         assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [4, 4])
@@ -72,6 +78,9 @@ test('The packaged server automatically imports a stock Pak with its bundled wor
         assert.equal(description.parentStatus, 'missing')
         assert.deepEqual(description.bindings.map(binding => [binding.role, binding.status, binding.path]),
           [['baseColor', 'resolved', texture.path]])
+        const reused = await cli('unreal-extract', source, '--fbx')
+        assert.equal(reused.reused, true)
+        assert.deepEqual(reused.meshes.derivatives, job.result.report.meshes.derivatives)
         assert.deepEqual(await readFile(source), pak)
         return
       }

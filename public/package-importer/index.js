@@ -1,7 +1,7 @@
 import { mountEngineStatus } from './engine-status.js'
 import { mountPackageFolder } from './folder.js'
 import { formatLabel, isUnityBinary, isUnityFolder, isUnrealArchive, isUnrealLoose } from './formats.js'
-import { appendManifest, assetLabel, describeIssue } from './report.js'
+import { appendManifest, assetLabel, cookedMeshSummary, describeIssue } from './report.js'
 import { mountImportOptions } from './import-options.js'
 import { mountPackageExport } from './export.js'
 import { requestPackageCleanup } from './cleanup.js'
@@ -177,22 +177,11 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
               'Пропущено ' + (textures.skipped + materials.skipped) + ', ошибок ' + (textures.failed + materials.failed) : '',
             textures.issue && describeIssue(textures.issue),
             materials.issue && describeIssue(materials.issue)].filter(Boolean).join(' · ')))
-          if (meshes) {
-            details.append(element('p', ['Статические модели cooked UE4.27',
-              meshes.meshes && 'Моделей · ' + meshes.meshes,
-              meshes.gltf && 'LOD · ' + meshes.gltf,
-              meshes.texturedGltf && 'С текстурами · ' + meshes.texturedGltf,
-              meshes.missingLods && 'Недоступных LOD · ' + meshes.missingLods,
-              meshes.derivatives?.fbx && meshes.derivatives.fbx + ' FBX',
-              meshes.derivatives?.glb && meshes.derivatives.glb + ' GLB',
-              meshes.skipped && 'Пропущено · ' + meshes.skipped,
-              meshes.failed && 'Ошибок · ' + meshes.failed,
-              meshes.issue && describeIssue(meshes.issue)].filter(Boolean).join(' · ')))
-          }
+          if (meshes) details.append(element('p', cookedMeshSummary(meshes)))
         }
       }
       if (record.result.report.packageFormat === 'unreal-pak') {
-        const { containerVersion, extracted, textures, materials, total } = record.result.report
+        const { containerVersion, extracted, textures, materials, meshes, total } = record.result.report
         details.append(element('p', 'Unreal Pak ' + containerVersion + ' · Извлечено ' + extracted + ' из ' + total))
         if (textures?.converted) details.append(element('p', 'Текстур из cooked-ресурсов · ' + textures.converted + ' PNG'))
         if (materials) {
@@ -200,6 +189,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
             materials.skipped && 'Пропущено ' + materials.skipped, materials.failed && 'Ошибок ' + materials.failed,
             materials.issue && describeIssue(materials.issue)].filter(Boolean).join(' · ')))
         }
+        if (meshes) details.append(element('p', cookedMeshSummary(meshes)))
       }
       if (record.result.report.packageFormat === 'unreal-iostore') {
         const { containerVersion, extracted, extractedTypes, textures, audio, total } = record.result.report
@@ -251,7 +241,9 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
 
   async function queuePlan(target, plan, options = importOptions(plan.format)) {
     if (isUnityBinary(plan.format)) options = { mode: 'engineless', formats: options.formats }
-    if (isUnrealArchive(plan.format)) options = { mode: 'engineless' }
+    if (isUnrealArchive(plan.format)) {
+      options = { mode: 'engineless', ...(plan.format === 'unreal-pak' && { formats: options.formats }) }
+    }
     if (plan.format === 'unreal-asset' || (isUnrealLoose(plan.format) && options.mode === 'engineless')) {
       options = { mode: 'engineless', formats: options.formats }
     }
@@ -300,7 +292,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
       }
     }
     if (plan.format === 'unreal-pak') {
-      details.insertBefore(element('p', 'Unreal Pak ' + plan.containerVersion + ' · Извлечение исходных файлов'), preview)
+      details.insertBefore(element('p', 'Unreal Pak ' + plan.containerVersion + ' · Извлечение и конвертация'), preview)
     }
     if (plan.format === 'unreal-iostore') {
       details.insertBefore(element('p', 'Unreal IoStore ' + plan.containerVersion + ' · Всего блоков · ' + plan.chunks), preview)

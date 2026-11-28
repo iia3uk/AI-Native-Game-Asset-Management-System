@@ -98,10 +98,10 @@ export function packageOptions(format, input) {
   }
   const options = unityImportOptions(input?.mode, input?.editorVersion)
   if (isUnrealArchive(format)) {
-    if (options.mode === 'engine-assisted' || options.editorVersion || formats) {
+    if (options.mode === 'engine-assisted' || options.editorVersion || (format === 'unreal-iostore' && formats)) {
       throw new IndexInputError('Для контейнера Unreal выберите независимое извлечение.')
     }
-    return { mode: 'engineless', formats: '' }
+    return { mode: 'engineless', formats: format === 'unreal-pak' ? (formats.includes('fbx') ? 'fbx,glb' : 'glb') : '' }
   }
   if (format === 'unityfs' || format === 'unity-serialized') {
     if (options.mode === 'engine-assisted' || options.editorVersion) {
@@ -130,7 +130,7 @@ export async function stagePackage(directory, source, job, { signal, onProgress,
   packageOptions(format, { mode: job.engineMode, editorVersion: job.editorVersion, formats: job.exportFormats })
   if (isUnrealArchive(format)) {
     const result = await unrealDecoder(format)(source, {
-      directory, expectedHash: job.sourceKey, signal, onProgress,
+      directory, expectedHash: job.sourceKey, withFbx: job.exportFormats?.includes('fbx') ?? false, signal, onProgress,
       publish: ({ output, sourceName, reused, entries, ...report }, move) => publish({ directory: output, source: output,
         report: { ...report, packageFormat: format }, reused }, move, report.extracted > 0),
     })

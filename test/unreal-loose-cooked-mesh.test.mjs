@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict'
-import { execFile } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { promisify } from 'node:util'
 import { test } from 'node:test'
 import { setTimeout } from 'node:timers/promises'
 import { looseMeshResult } from '../core/engines/unreal/decoder/mesh-protocol.mjs'
-import { locateBatchBlender } from '../core/engines/blender/batch.mjs'
+import { readFbxGeometry } from './fixtures/blender-model.mjs'
 import { cookedMaterial } from './fixtures/unreal-cooked-material.mjs'
 import { cookedStaticMesh } from './fixtures/unreal-cooked-static-mesh.mjs'
 import { cookedTexture } from './fixtures/unreal-cooked-texture.mjs'
@@ -44,27 +42,6 @@ function accessor(document, bin, index, reader, stride) {
   const start = document.bufferViews[field.bufferView].byteOffset
   const components = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 }[field.type]
   return Array.from({ length: field.count * components }, (_, i) => bin[reader](start + i * stride))
-}
-
-async function readFbxGeometry(paths) {
-  const blender = await locateBatchBlender()
-  assert.ok(blender)
-  const script = `
-import bpy, json, sys
-rows = []
-for path in sys.argv[sys.argv.index('--') + 1:]:
-    bpy.ops.wm.read_factory_settings(use_empty=True)
-    bpy.ops.import_scene.fbx(filepath=path)
-    meshes = [obj.data for obj in bpy.context.scene.objects if obj.type == 'MESH']
-    for mesh in meshes:
-        mesh.calc_loop_triangles()
-    rows.append([sum(len(mesh.loop_triangles) for mesh in meshes), max(len(mesh.uv_layers) for mesh in meshes),
-                 max(len(mesh.color_attributes) for mesh in meshes), sum(len(mesh.materials) for mesh in meshes)])
-print('COOKED_FBX ' + json.dumps(rows))
-`
-  const { stdout } = await promisify(execFile)(blender.executable, ['--background', '--factory-startup', '--disable-autoexec',
-    '--python-exit-code', '1', '--python-expr', script, '--', ...paths], { timeout: 20_000, windowsHide: true })
-  return JSON.parse(stdout.match(/^COOKED_FBX (.*)$/m)[1])
 }
 
 test('cooked mesh worker metadata can only address bounded numbered geometry and disjoint sections', () => {

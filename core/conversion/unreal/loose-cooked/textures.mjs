@@ -1,9 +1,9 @@
 import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { boundedCookedBatch } from '../../../engines/unreal/decoder/budget.mjs'
 import { looseTextureResult, looseTextureRevision } from '../../../engines/unreal/decoder/protocol.mjs'
 import { cue4parseVersion, runUnrealDecoder, stageUnrealInputs } from '../../../engines/unreal/decoder/run.mjs'
 import { publishContainerTexture } from '../container-texture.mjs'
-import { boundedCookedBatch } from './inputs.mjs'
 
 const format = 'loose-textures'
 const options = { method: 'cue4parse-cooked-texture', converterVersion: cue4parseVersion + '-loose-' + looseTextureRevision,

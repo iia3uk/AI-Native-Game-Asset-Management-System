@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { cookedMaterial } from '../fixtures/unreal-cooked-material.mjs'
+import { cookedStaticMesh } from '../fixtures/unreal-cooked-static-mesh.mjs'
 import { cookedTexture } from '../fixtures/unreal-cooked-texture.mjs'
 import { makePak, wavTone } from '../fixtures/unreal-pak.mjs'
 
@@ -13,6 +14,7 @@ export async function verifyUnrealPak(webContents, waitFor, fixtures) {
     ...cookedMaterial({ name: 'Pak-Paint', parent: ['/Engine/EngineMaterials/DefaultMaterial'],
       textures: [{ parameter: 'BaseColor', value: '/Game/Pak-Tint' }] }),
     ...cookedTexture({ name: 'Pak-Tint', format: 'PF_G8', width: 2, height: 2, pixels: Buffer.from([5, 40, 80, 255]) }),
+    ...cookedStaticMesh({ name: 'Pak-CookedModel', external: true }),
   ]))
   await webContents.executeJavaScript(`
     if (!document.querySelector('#index-dialog').open) document.querySelector('#index-mode').click()
@@ -36,14 +38,17 @@ export async function verifyUnrealPak(webContents, waitFor, fixtures) {
     (${row})?.textContent.includes('Pak-Tint.png · 2 × 2 · Мип 0')`)
   await waitFor(`(${row})?.textContent.includes('Материалы из cooked-ресурсов · Готово 1') &&
     (${row})?.textContent.includes('Pak-Paint.material.json')`)
+  await waitFor(`(${row})?.textContent.includes('Статические модели cooked UE4.27 · Моделей · 1 · LOD · 2') &&
+    (${row})?.textContent.includes('2 GLB')`)
   await webContents.executeJavaScript(`Array.from((${row}).querySelectorAll('button'))
     .find(button => button.textContent === 'Показать в индексе').click()`)
   await waitFor("document.querySelector('#index-results').textContent.includes('Pak-Cabin.glb') && " +
     "document.querySelector('#index-results').textContent.includes('Pak-Tint.png') && " +
-    "document.querySelector('#index-results').textContent.includes('Pak-Paint.material.json')")
+    "document.querySelector('#index-results').textContent.includes('Pak-Paint.material.json') && " +
+    "document.querySelector('#index-results').textContent.includes('Pak-CookedModel_Lod1.glb')")
   await webContents.executeJavaScript(`Array.from(document.querySelectorAll('#index-results button'))
-    .find(button => button.textContent.startsWith('Pak-Cabin.glb')).click()`)
-  await waitFor("document.querySelector('#index-name').textContent === 'Pak-Cabin.glb' && !document.querySelector('#index-preview').disabled")
+    .find(button => button.textContent.startsWith('Pak-CookedModel_Lod1.glb')).click()`)
+  await waitFor("document.querySelector('#index-name').textContent === 'Pak-CookedModel_Lod1.glb' && !document.querySelector('#index-preview').disabled")
   await webContents.executeJavaScript("document.querySelector('#index-preview').click()")
-  await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('252')")
+  await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('1 треугольник')")
 }

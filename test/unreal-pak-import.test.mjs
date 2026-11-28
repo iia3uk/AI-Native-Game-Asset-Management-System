@@ -10,8 +10,11 @@ import { promisify } from 'node:util'
 import { inflateSync } from 'node:zlib'
 import { locateUnrealDecoder } from '../core/engines/unreal/decoder/run.mjs'
 import { generateFixtures } from '../scripts/generate-fixtures.mjs'
+import { readFbxGeometry } from './fixtures/blender-model.mjs'
 import { cookedTexture } from './fixtures/unreal-cooked-texture.mjs'
-import { makePak, wavTone } from './fixtures/unreal-pak.mjs'
+import { cookedStaticMesh } from './fixtures/unreal-cooked-static-mesh.mjs'
+import { pakStaticMesh } from './fixtures/unreal-pak-static-mesh.mjs'
+import { makeModernPak, makePak, wavTone } from './fixtures/unreal-pak.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 
 const run = promisify(execFile)
@@ -29,8 +32,8 @@ async function waitForJob(server, id) {
   assert.fail('Pak job did not reach a terminal state.')
 }
 
-async function queueImport(server, path, hash) {
-  const response = await server.post('/api/index/packages/import', { path, hash })
+async function queueImport(server, path, hash, options) {
+  const response = await server.post('/api/index/packages/import', { path, hash, ...options })
   assert.equal(response.status, 202)
   const { job } = await response.json()
   return waitForJob(server, job.id)
@@ -123,6 +126,102 @@ test('a Pak publishes decoded Texture2D PNGs with native provenance, selective e
     } finally { await server.close() }
   })
 
+test('compressed Pak import publishes indexed cooked StaticMesh LODs and their exact material closure',
+  { skip: process.env.ASSET_VIEWER_TEST_CUE4PARSE !== '1', timeout: 60_000 }, async t => {
+    const root = await testDirectory(t)
+    const path = join(root, 'CookedModels.pak')
+    const destination = join(root, 'delivery')
+    const files = pakStaticMesh('SM_PakPanel')
+    const truncated = cookedStaticMesh({ name: 'SM_MissingBulk', external: true })
+      .filter(file => !file.path.endsWith('.ubulk')).map(file => ({ ...file, path: 'Example/' + file.path }))
+    const impostor = cookedStaticMesh({ name: 'SM_Impostor', rootClass: '/Script/Other' })
+    const source = makeModernPak([...files, ...truncated, ...impostor].map(file => ({ ...file, compressed: true })))
+    const hash = createHash('sha256').update(source).digest('hex')
+    await writeFile(path, source)
+    await mkdir(destination)
+    const server = await startServer(root)
+    try {
+      const imported = await queueImport(server, path, hash)
+      assert.equal(imported.status, 'completed', imported.error)
+      const { directory, report, scanJobId, library } = imported.result
+      assert.deepEqual(report.meshes, {
+        meshes: 2, gltf: 3, texturedGltf: 3, missingLods: 1, skipped: 0, failed: 0, derivatives: { fbx: 0, glb: 3 },
+      })
+      assert.equal((await waitForJob(server, scanJobId)).status, 'completed')
+      const route = '/api/index/jobs/' + imported.id
+      const { assets: entries } = await (await server.request(route + '/manifest')).json()
+      const panel = entries.find(entry => entry.path.endsWith('/SM_PakPanel.uasset'))
+      const incomplete = entries.find(entry => entry.path.endsWith('/SM_MissingBulk.uasset'))
+      assert.ok(incomplete.issues.includes('unreal-cooked-mesh-lods-incomplete'))
+      assert.deepEqual(incomplete.exports.filter(item => item.format === 'glb').map(item => item.lod), [0])
+      assert.equal(entries.find(entry => entry.path.endsWith('/SM_Impostor.uasset')).exports, undefined)
+      const models = panel.exports.filter(item => item.format === 'glb')
+      assert.deepEqual(models.map(item => [item.lod, item.metrics.triangles, item.metrics.textures]), [[0, 2, 1], [1, 1, 1]])
+      const pngProduct = entries.find(entry => entry.path.endsWith('/T_Panel.uasset')).exports[0]
+      const pixels = await readFile(join(directory, pngProduct.path))
+      for (const model of models) {
+        const glb = await readFile(join(directory, model.path))
+        const jsonSize = glb.readUInt32LE(12)
+        const json = JSON.parse(glb.toString('utf8', 20, 20 + jsonSize))
+        const view = json.bufferViews[json.images[0].bufferView]
+        const offset = 28 + jsonSize + view.byteOffset
+        assert.deepEqual(glb.subarray(offset, offset + view.byteLength), pixels)
+        assert.ok(json.meshes[0].primitives.every(primitive => Number.isInteger(primitive.attributes.TEXCOORD_1)))
+      }
+      const { assets: modelsIndexed } = await (await server.request('/api/index/search?kind=model&library=' + library.id)).json()
+      assert.ok(models.every(product => modelsIndexed.some(item => item.path === product.path)))
+      const asset = entries.indexOf(panel)
+      const plan = await (await server.post(route + '/export-plan', { destination, asset })).json()
+      assert.equal(plan.dependencyStatus, 'partial')
+      assert.equal(plan.unresolved, 0)
+      const publication = await server.post(route + '/export', { destination, asset, key: plan.key })
+      assert.equal(publication.status, 201)
+      const exported = (await publication.json()).directory
+      const exportedManifest = JSON.parse(await readFile(join(exported, 'manifest.json'), 'utf8'))
+      assert.deepEqual(exportedManifest.entries.map(entry => entry.path).sort(),
+        files.map(file => 'Fixture/Content/' + file.path).sort())
+      for (const file of files) {
+        assert.deepEqual(await readFile(join(exported, 'Source', 'Fixture', 'Content', file.path)), file.content)
+      }
+      const cached = await queueImport(server, path, hash)
+      assert.equal(cached.status, 'completed', cached.error)
+      assert.equal(cached.result.reused, true)
+      if (process.env.ASSET_VIEWER_TEST_NATIVE_BLENDER === '1') {
+        const fbx = await queueImport(server, path, hash, { formats: ['fbx'] })
+        assert.equal(fbx.status, 'completed', fbx.error)
+        assert.notEqual(fbx.result.directory, directory)
+        assert.deepEqual(fbx.result.report.meshes.derivatives, { fbx: 3, glb: 3 })
+        const manifest = JSON.parse(await readFile(join(fbx.result.directory, 'manifest.json'), 'utf8'))
+        const derivatives = manifest.entries.find(entry => entry.path === panel.path).exports.filter(item => item.format === 'fbx')
+        assert.deepEqual(derivatives.map(item => item.lod), [0, 1])
+        assert.deepEqual(await readFbxGeometry(derivatives.map(item => join(fbx.result.directory, item.path))),
+          [[2, 2, 1, 2], [1, 2, 1, 1]])
+        const cachedFbx = await queueImport(server, path, hash, { formats: ['fbx', 'glb'] })
+        assert.equal(cachedFbx.status, 'completed', cachedFbx.error)
+        assert.equal(cachedFbx.result.reused, true)
+      }
+      const manifestPath = join(directory, 'manifest.json')
+      const originalManifest = await readFile(manifestPath, 'utf8')
+      const editedManifest = JSON.parse(originalManifest)
+      const editedPanel = editedManifest.entries.find(entry => entry.path === panel.path)
+      editedPanel.exports = editedPanel.exports.filter(item => item.path !== models[0].path)
+      await writeFile(manifestPath, JSON.stringify(editedManifest))
+      assert.match((await queueImport(server, path, hash)).error, /Кеш импорта Unreal Pak повреждён/)
+      await writeFile(manifestPath, originalManifest)
+      const buffer = panel.exports.find(item => item.role === 'model-buffer')
+      const bufferPath = join(directory, buffer.path)
+      const binary = await readFile(bufferPath)
+      const modified = Buffer.from(binary)
+      modified[0] ^= 1
+      await writeFile(bufferPath, modified)
+      assert.match((await queueImport(server, path, hash)).error, /Кеш импорта Unreal Pak повреждён/)
+      await writeFile(bufferPath, binary)
+      await writeFile(join(directory, 'conversion-report.json'), JSON.stringify(report))
+      assert.match((await queueImport(server, path, hash)).error, /Кеш импорта Unreal Pak повреждён/)
+      assert.deepEqual(await readFile(path), source)
+    } finally { await server.close() }
+  })
+
 test('universal Pak import verifies source, reuses validated output and exposes artifacts in the shared viewer',
   { skip: process.env.ASSET_VIEWER_TEST_CUE4PARSE !== '1', timeout: 45_000 }, async t => {
     assert.ok(await locateUnrealDecoder(), 'Build the native Pak decoder first.')
@@ -155,7 +254,7 @@ test('universal Pak import verifies source, reuses validated output and exposes 
       const { package: plan } = await inspection.json()
       assert.deepEqual([plan.format, plan.containerVersion, plan.hash, plan.total], ['unreal-pak', 4, hash, 3])
       assert.ok(plan.assets.some(entry => entry.issue === 'unreal-pak-encrypted-entry'))
-      for (const options of [{ mode: 'engine-assisted' }, { formats: ['fbx'] }]) {
+      for (const options of [{ mode: 'engine-assisted' }, { formats: ['obj'] }]) {
         const unsupported = await server.post('/api/index/packages/import', { path, hash, ...options })
         assert.equal(unsupported.status, 400)
       }

@@ -302,7 +302,7 @@ test('Enabled formats share scan results while cancellation and content validati
     const jobs = index.jobs.list({ type: 'package-import' })
     const wrong = jobs.find(job => job.packageName === 'Wrong.pak')
     assert.equal(wrong.status, 'pending')
-    assert.equal(wrong.exportFormats, undefined)
+    assert.deepEqual(wrong.exportFormats, ['fbx', 'glb'])
     assert.deepEqual(jobs.filter(job => job.status === 'cancelled').map(job => job.packageName).sort(), ['Other.BUNDLE', 'Sample.unity3d'])
     assert.deepEqual(jobs.find(job => job.packageName === 'Sample.unity3d').exportFormats, ['fbx', 'glb'])
 

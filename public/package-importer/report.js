@@ -185,6 +185,19 @@ const artifactRoles = {
 
 export const describeIssue = issue => packageIssues[issue] ?? issue
 
+export function cookedMeshSummary(meshes) {
+  return ['Статические модели cooked UE4.27',
+    meshes.meshes && 'Моделей · ' + meshes.meshes,
+    meshes.gltf && 'LOD · ' + meshes.gltf,
+    meshes.texturedGltf && 'С текстурами · ' + meshes.texturedGltf,
+    meshes.missingLods && 'Недоступных LOD · ' + meshes.missingLods,
+    meshes.derivatives?.fbx && meshes.derivatives.fbx + ' FBX',
+    meshes.derivatives?.glb && meshes.derivatives.glb + ' GLB',
+    meshes.skipped && 'Пропущено · ' + meshes.skipped,
+    meshes.failed && 'Ошибок · ' + meshes.failed,
+    meshes.issue && describeIssue(meshes.issue)].filter(Boolean).join(' · ')
+}
+
 export function assetLabel(asset) {
   const atlas = asset.sprite?.packed && `, атлас #${asset.sprite.packed.atlasPathId}`
   const sprite = asset.sprite && `Спрайт ${asset.width} × ${asset.height} (текстура #${asset.sprite.texturePathId}${atlas || ''})`

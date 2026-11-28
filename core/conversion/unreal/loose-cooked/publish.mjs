@@ -2,10 +2,10 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { unrealGameAssetResolver } from '../../../engines/unreal/editor-package/game-path.mjs'
 import { ExportArtifacts } from '../../artifacts.mjs'
+import { publishCookedMeshes } from '../cooked-mesh/publish.mjs'
 import { publishCookedMaterials } from '../cooked-material/publish.mjs'
 import { readCookedMaterials } from '../cooked-material/read.mjs'
 import { looseCookedInputs } from './inputs.mjs'
-import { publishLooseCookedMeshes } from './meshes.mjs'
 import { publishLooseCookedTextures } from './textures.mjs'
 
 export async function publishLooseCooked({ records, source, decoder, output, workspace, signal }) {
@@ -24,7 +24,7 @@ export async function publishLooseCooked({ records, source, decoder, output, wor
   await mkdir(scratch)
   const { materials, dependencies } = await publishCookedMaterials([...assets.values()], staged, scratch, store, resolveAsset, signal)
   for (const dependency of dependencies) records.dependencies.push(dependency)
-  const meshes = await publishLooseCookedMeshes(inputs, { records, decoder, output, workspace, resolve, store, signal })
+  const meshes = await publishCookedMeshes(inputs, { records, decoder, output, workspace, resolve, store, signal })
   for (const { asset } of inputs) {
     if (asset.exports.some(item => item.status === 'converted')) asset.status = 'converted'
   }

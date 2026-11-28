@@ -43,7 +43,7 @@ const commands = {
   'unity-bundle': { args: ['absolute-path'], options: { inspect: flag, fbx: flag } },
   'unreal-inspect': { args: ['absolute-path'], options: {} },
   'unreal-export': { args: ['absolute-path'], options: { 'unreal-version': string } },
-  'unreal-extract': { args: ['absolute-path'], options: { inspect: flag } },
+  'unreal-extract': { args: ['absolute-path'], options: { inspect: flag, fbx: flag } },
   engines: { args: [], options: { 'unity-project': string, 'unreal-project': string } },
   'thumbnail-cache': { args: [], options: { clear: flag, 'dry-run': flag } },
   profiles: { args: [], options: {} },
@@ -235,7 +235,11 @@ async function main([command, ...args]) {
   if (command === 'unreal-extract') return print(await runPackageOperation(paths, 'Unreal', async options => {
     const source = await importSource(input)
     const settings = { ...options, inspectOnly: values.inspect }
-    return !source.directory && isIoStorePath(source.path) ? processIoStore(source, settings) : extractUnrealPak(input, settings)
+    if (!source.directory && isIoStorePath(source.path)) {
+      if (values.fbx) throw new IndexInputError('Экспорт FBX через unreal-extract доступен для Pak.')
+      return processIoStore(source, settings)
+    }
+    return extractUnrealPak(input, { ...settings, withFbx: values.fbx })
   }), values.json)
   if (command === 'package-folder') {
     const report = await runPackageFolder(input, paths, values, waitForImport)

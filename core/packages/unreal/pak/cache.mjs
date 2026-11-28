@@ -2,17 +2,33 @@ import { createHash } from 'node:crypto'
 import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { cookedMaterialRevision } from '../../../conversion/unreal/cooked-material/publish.mjs'
-import { verifyExports } from '../../../conversion/cache.mjs'
+import { exportRecipe, verifyExports } from '../../../conversion/cache.mjs'
 import { cue4parseVersion } from '../../../engines/unreal/decoder/run.mjs'
+import { looseMeshRevision } from '../../../engines/unreal/decoder/mesh-protocol.mjs'
 import { pakTextureRevision } from '../../../engines/unreal/decoder/protocol.mjs'
 import { checkedPath, readBoundedText } from '../../../files/asset-files.mjs'
 import { IndexInputError } from '../../../index/index-errors.mjs'
 
-export const pakRecipe = createHash('sha256').update(JSON.stringify([1, cue4parseVersion, pakTextureRevision, cookedMaterialRevision])).digest('hex').slice(0, 24)
+export const pakRecipe = (formats, blender) => exportRecipe(formats, blender,
+  [2, cue4parseVersion, pakTextureRevision, cookedMaterialRevision, looseMeshRevision])
 export const pakMethod = 'cue4parse-pak'
 
-export async function readPakCache(root, hash, sourceName, signal) {
-  const output = join(root, hash + '-' + pakRecipe)
+function meshTotalsMatch(entries, derivatives, summary) {
+  const geometry = file => file.role === 'model' && file.format === 'gltf' && file.method === 'cue4parse-cooked-static-mesh'
+  const tally = (format, type, status = 'converted') =>
+    derivatives.filter(file => file.format === format && file.role === type && file.status === status).length
+  const rawModels = derivatives.filter(file => geometry(file) && file.status === 'converted').length
+  const models = entries.filter(entry => entry.exports?.some(file => geometry(file) && file.status === 'converted')).length
+  return models === (summary?.meshes ?? 0) && rawModels === (summary?.gltf ?? 0) &&
+    tally('bin', 'model-buffer') === rawModels &&
+    tally('gltf', 'model') === rawModels + (summary?.texturedGltf ?? 0) &&
+    tally('gltf', 'model', 'skipped') === (summary?.skipped ?? 0) &&
+    tally('glb', 'model') === (summary?.derivatives?.glb ?? 0) &&
+    tally('fbx', 'model') === (summary?.derivatives?.fbx ?? 0)
+}
+
+export async function readPakCache(root, hash, recipe, sourceName, signal) {
+  const output = join(root, hash + '-' + recipe)
   const existing = await lstat(output).catch(error => {
     if (error.code === 'ENOENT') return null
     throw error
@@ -29,7 +45,8 @@ export async function readPakCache(root, hash, sourceName, signal) {
     const report = JSON.parse(summaryText)
     const entries = manifest?.entries
     if (!dependencies || createHash('sha256').update(dependencies).digest('hex') !== manifest.dependenciesSha256 ||
-        manifest.source?.sha256 !== hash || manifest.recipe !== pakRecipe || manifest.version !== 1 ||
+        !summaryText || createHash('sha256').update(summaryText).digest('hex') !== manifest.reportSha256 ||
+        manifest.source?.sha256 !== hash || manifest.recipe !== recipe || manifest.version !== 1 ||
         report?.method !== pakMethod || report.converterVersion !== cue4parseVersion ||
         !Array.isArray(entries) || entries.length > 10_000 || report.total !== entries.length) throw new Error('Invalid cache metadata')
     const extracted = entries.filter(entry => entry.status === 'extracted')
@@ -42,7 +59,10 @@ export async function readPakCache(root, hash, sourceName, signal) {
         extracted.some(entry => !entry.artifact?.path) ||
         (extracted.some(entry => entry.format === 'uasset') && report.textureDecoder !== pakTextureRevision) ||
         !totalsMatch('texture', report.textures) || !totalsMatch('material', report.materials) ||
-        derivatives.some(file => !['texture', 'material'].includes(file.role) || !['converted', 'skipped'].includes(file.status) ||
+        !meshTotalsMatch(extracted, derivatives, report.meshes) ||
+        derivatives.some(file => !['texture', 'material', 'model', 'model-buffer'].includes(file.role) ||
+          (!['converted', 'skipped'].includes(file.status) &&
+            !(file.role === 'model' && file.format === 'fbx' && file.status === 'requires-tool' && file.issue === 'blender-unavailable')) ||
           (file.status === 'converted' && !file.path)) ||
         !await verifyExports(output, extracted.map(entry => ({ exports: [entry.artifact, ...(entry.exports ?? [])] })), signal)) {
       throw new Error('Invalid cached exports')

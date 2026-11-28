@@ -1,13 +1,13 @@
 import { mkdir, rm } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import { readCookedTables } from '../../../engines/unreal/cooked-package/file.mjs'
+import { boundedCookedBatch } from '../../../engines/unreal/decoder/budget.mjs'
 import { looseMeshResult, looseMeshRevision } from '../../../engines/unreal/decoder/mesh-protocol.mjs'
 import { cue4parseVersion, runUnrealDecoder, stageUnrealInputs } from '../../../engines/unreal/decoder/run.mjs'
 import { fileInfo, readBoundedText } from '../../../files/asset-files.mjs'
 import { readVerifiedFile } from '../../../files/read-verified.mjs'
 import { publishUnrealGeometry } from '../mesh-artifact.mjs'
 import { publishTexturedViewerModels } from '../viewer/bind-materials.mjs'
-import { boundedCookedBatch } from './inputs.mjs'
 import { encodeCookedMesh } from './mesh-data.mjs'
 
 const format = 'loose-meshes'
@@ -74,7 +74,7 @@ async function materialDescriptions(records, output, resolve, models, signal) {
   return (path, asset) => descriptions.get(resolve(path, asset)?.id)
 }
 
-export async function publishLooseCookedMeshes(inputs, { records, decoder, output, workspace, resolve, store, signal }) {
+export async function publishCookedMeshes(inputs, { records, decoder, output, workspace, resolve, store, signal }) {
   const found = await candidates(inputs, output, signal)
   if (!found.length) return null
   const summary = { meshes: 0, gltf: 0, texturedGltf: 0, missingLods: 0, skipped: 0, failed: 0 }
