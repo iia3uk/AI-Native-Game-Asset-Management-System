@@ -1,5 +1,5 @@
 import { ModelStage } from './preview/stage.js'
-import { createAudioPreview } from './preview/loaders/audio-preview.js'
+import { canPreviewAudio, createAudioPreview } from './preview/loaders/audio-preview.js'
 import { convertedImages, decodedImages, decodedImageUrl } from './preview/loaders/image-preview.js'
 import { isDataMap } from './preview/materials/textures.js'
 import { isCollisionFile, visualModelFor } from './shared/model-names.js'
@@ -64,7 +64,10 @@ function manualTextureScope() {
 }
 
 const thumbnails = new ModelThumbnails(ui['pack-list'])
-const audioPreview = createAudioPreview(ui['stage-audio'], status)
+const audioPreview = createAudioPreview(ui['stage-audio'], () => {
+  state.previewFailed = true
+  status('Не удалось воспроизвести звук. Исходник доступен справа.')
+})
 const categoryMatches = (pack, file) => !ui.category.value || (file.kind === 'model' && modelCategory(pack, file) === ui.category.value)
 const eligibleFile = (pack, file) => categoryMatches(pack, file) &&
   (!state.candidates || state.marks[markKey(pack.id, file.id)]?.status === 'candidate')
@@ -113,6 +116,7 @@ function updateTabs() {
   ui['candidate-packs'].setAttribute('aria-pressed', String(state.candidates))
   ui['candidate-count'].textContent = counts(chosen().length)
   for (const button of ui['file-tabs'].querySelectorAll('button')) {
+    if (button.dataset.kind === 'audio') button.hidden = !state.active?.files.some(canPreviewAudio)
     button.setAttribute('aria-pressed', String(button.dataset.kind === state.kind))
     button.disabled = Boolean(ui.category.value) && button.dataset.kind !== 'model'
   }
@@ -436,8 +440,10 @@ async function selectPack(id, fileId) {
     const file = eligible.find(item => item.id === fileId) ??
       (preferred && !isCollisionFile(preferred) ? preferred : undefined) ??
       eligible.find(item => item.kind === 'model' && !isCollisionFile(item)) ?? preferred ?? eligible[0]
-    state.kind = ui.category.value ? 'model' :
-      !state.candidates && file && !isCollisionFile(file) && ['model', 'image'].includes(file.kind) ? file.kind : 'all'
+    state.kind = 'all'
+    if (ui.category.value) state.kind = 'model'
+    else if (!state.candidates && canPreviewAudio(file)) state.kind = 'audio'
+    else if (!state.candidates && file && !isCollisionFile(file) && ['model', 'image'].includes(file.kind)) state.kind = file.kind
     await selectFile(file ?? null)
   } catch (error) {
     if (request === state.packLoad) {

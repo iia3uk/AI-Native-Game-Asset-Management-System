@@ -1,4 +1,5 @@
 import { isCollisionFile } from '../shared/model-names.js'
+import { canPreviewAudio } from '../preview/loaders/audio-preview.js'
 import { counts, label, normalize } from './format.js'
 import { markKey } from './viewer-storage.js'
 
@@ -8,7 +9,9 @@ export function renderFileList({ ui, state, eligibleFile, classification, pageSi
   const pack = state.active
   const hideColliders = state.kind === 'model' && !state.candidates &&
     pack?.files.some(file => file.kind === 'model' && !isCollisionFile(file) && eligibleFile(pack, file))
-  const files = !pack ? [] : pack.files.filter(file => (state.kind === 'all' || state.kind === file.kind) &&
+  const matchesKind = file => state.kind === 'all' || state.kind === file.kind ||
+    (state.kind === 'audio' && canPreviewAudio(file))
+  const files = !pack ? [] : pack.files.filter(file => matchesKind(file) &&
     eligibleFile(pack, file) && (!hideColliders || !isCollisionFile(file)) &&
     (!query || normalize(file.displayPath).includes(query)))
   if (revealSelection && state.file) {

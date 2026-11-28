@@ -1,6 +1,10 @@
-export function createAudioPreview(audio, status) {
+const audioFormats = new Set(['wav', 'ogg'])
+
+export const canPreviewAudio = file => Boolean(file?.preview && audioFormats.has(file.ext))
+
+export function createAudioPreview(audio, onError) {
   audio.addEventListener('error', () => {
-    if (!audio.hidden && audio.error) status('Не удалось воспроизвести звук. Файл доступен для скачивания.')
+    if (!audio.hidden && audio.error) onError()
   })
   return {
     clear() {
@@ -10,7 +14,8 @@ export function createAudioPreview(audio, status) {
       audio.load()
     },
     show(file) {
-      if (!['wav', 'ogg'].includes(file.ext) || !file.preview) return false
+      if (!canPreviewAudio(file)) return false
+      audio.setAttribute('aria-label', 'Воспроизведение ' + file.name)
       audio.src = file.preview
       audio.hidden = false
       return true

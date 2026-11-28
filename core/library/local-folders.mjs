@@ -56,7 +56,8 @@ export async function scanFolder(path, { canonical = false } = {}) {
       directModels: models.filter(file => file.preview).length,
       modelIds: models.map(file => file.id),
       previewFiles: previewCandidates(models),
-      files: contents.length, defaultFile: models[0]?.id ?? images.find(file => file.preview)?.id ?? images[0]?.id ?? others[0]?.id,
+      files: contents.length, defaultFile: models[0]?.id ?? images.find(file => file.preview)?.id ?? images[0]?.id ??
+        others.find(file => browserAudio.has(file.ext))?.id ?? others[0]?.id,
       previewImage: images.find(file => file.preview && file.size < 1024 ** 2)?.preview ?? null,
     }
     packs.set(packId, { summary, files: [...models, ...images, ...others] })

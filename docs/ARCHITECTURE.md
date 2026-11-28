@@ -7,6 +7,8 @@
 - `public/preview/loaders/` loads models, decodes images and resolves preview resources. `public/preview/materials/` binds textures and normalizes preview materials. `public/preview/scene/` handles scene parts, root motion and resource disposal. The stage coordinates these components and renders the result.
 - `core/library/local-folders.mjs` groups assets discovered in a user-selected folder. `core/materials/unity/` resolves Unity material, prefab and texture metadata for that library. The backend and browser share the pure collision naming rules in `public/shared/`.
 
+The catalog's Audio tab lists playable WAV and Ogg files in the active pack. Audio-only packs select the first playable file ahead of support files. The audio preview uses the same scoped local byte-range route as indexed audio and releases the media source when selection changes.
+
 `core/files/` owns scoped file access, discovery and the shared format registry. `core/index/` owns SQLite, migrations, assets, version history, full-text search and review fields. `core/analysis/` contains technical analysis and quality profiles. `core/processing/` owns the durable queue, worker lifecycle and library watching. `core/thumbnails/` contains the PNG renderer and its cache. `core/http/` adapts the core APIs for the browser. Indexed search results open in the existing renderer.
 
 Asset roots are user-selected, canonical directories. Discovery skips child symlinks and junctions. File paths stay relative to their root until opened. Application paths are resolved by `core/config/data-paths.mjs`.

@@ -53,7 +53,7 @@
       <div class="stage" id="stage">
         <div id="stage-canvas" class="stage-canvas"></div>
         <img id="stage-image" class="asset-image" alt="" hidden>
-        <audio id="stage-audio" class="asset-audio" controls preload="metadata" aria-label="Воспроизведение WAV" hidden></audio>
+        <audio id="stage-audio" class="asset-audio" controls preload="metadata" hidden></audio>
         <div id="stage-empty" class="stage-empty" aria-live="polite"><span>Открываю локальный каталог…</span></div>
         <div id="stage-label" class="stage-label" hidden></div>
         <div class="stage-axis" aria-hidden="true">Y<span>·</span> X<span>·</span> Z</div>
@@ -119,6 +119,7 @@
         <div class="file-tabs" id="file-tabs" aria-label="Тип файлов">
           <button data-kind="model" aria-pressed="true">Модели</button>
           <button data-kind="image" aria-pressed="false">Текстуры</button>
+          <button data-kind="audio" aria-pressed="false" hidden>Аудио</button>
           <button data-kind="all" aria-pressed="false">Все</button>
         </div>
         <label class="file-search"><input id="file-search" type="search" placeholder="Имя файла" aria-label="Поиск файла в наборе"></label>

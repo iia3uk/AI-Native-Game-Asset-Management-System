@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { app } from 'electron'
 import { startDesktop } from '../../desktop/bootstrap.mjs'
 import { generateFixtures } from '../../scripts/generate-fixtures.mjs'
+import { verifyLocalAudio } from './local-audio.mjs'
 import { verifyPackageExport } from './package-export.mjs'
 import { verifyPackageCleanup } from './package-cleanup.mjs'
 import { verifyPackageFolder } from './package-folder.mjs'
@@ -68,6 +69,8 @@ void launchSmoke().then(async ({ window, origin }) => {
     await mkdir(dirname(screenshot), { recursive: true })
     await writeFile(screenshot, (await webContents.capturePage(undefined, { stayHidden: true })).toPNG())
   }
+  await verifyLocalAudio(webContents, waitFor, join(process.env.ASSET_VIEWER_DATA_DIR, 'local-audio-fixture'),
+    process.env.ASSET_VIEWER_SMOKE_LOCAL_AUDIO)
   await verifyUnityPreview(webContents, join(process.env.ASSET_VIEWER_DATA_DIR, 'unity-preview-fixture'))
   const fixtures = join(process.env.ASSET_VIEWER_DATA_DIR, 'smoke-fixtures')
   await generateFixtures(fixtures, { includeErrors: true })
@@ -192,7 +195,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   await verifyStartupWithoutInterface()
   assert.deepEqual(externalRequests, [])
   assert.equal(window.isVisible(), false)
-  console.log('Desktop startup, demo, library watching, thumbnail cache, analysis, metadata, package import, pause, export, PBR material preview and renderer isolation passed.')
+  console.log('Desktop startup, demo, local audio playback, library watching, thumbnail cache, analysis, metadata, package import, pause, export, PBR material preview and renderer isolation passed.')
   if (bundle) console.log('UnityFS folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
   if (sprites) console.log('UnityFS sprite inspection, queued import, dependency reporting and indexed PNG preview passed.')
   if (atlas) console.log('UnityFS SpriteAtlas inspection, queued import and indexed PNG preview passed.')
