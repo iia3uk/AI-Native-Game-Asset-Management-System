@@ -63,7 +63,7 @@ export async function publishViewerOutputs({ targets, decoded, viewer, store, si
           continue
         }
         const artifact = await store.save(target + name, model.file, { ...identity, format, role, lod: lodIndex,
-          metrics: model.metrics, issues: ['unreal-viewer-textures-not-decoded'] })
+          metrics: model.metrics, issues: ['unreal-viewer-original-gltf-has-no-material-maps'] })
         asset.exports.push(buffer, artifact)
         if (artifact.path) {
           models.push({ asset, artifact })

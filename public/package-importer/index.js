@@ -132,6 +132,8 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
         details.append(element('p', [formatLabel(packageFormat), engineVersion || unreal?.editorVersion,
           media?.png && media.png + ' PNG', media?.wav && media.wav + ' WAV',
           unrealViewer?.gltf && unrealViewer.gltf + ' glTF', unrealViewer?.psa && unrealViewer.psa + ' PSA',
+          unrealViewer?.materials?.materialJson && unrealViewer.materials.materialJson + ' материалов',
+          unrealViewer?.materials?.texturedGltf && unrealViewer.materials.texturedGltf + ' glTF с текстурами',
           unrealViewer?.derivatives?.fbx && unrealViewer.derivatives.fbx + ' FBX',
           unrealViewer?.derivatives?.glb && unrealViewer.derivatives.glb + ' GLB',
           unrealViewer?.issue && describeIssue(unrealViewer.issue),

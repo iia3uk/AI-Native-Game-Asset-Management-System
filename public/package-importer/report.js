@@ -52,6 +52,14 @@ const packageIssues = {
   'unreal-viewer-timeout': 'Истекло время декодирования UE4',
   'unreal-viewer-invalid-model': 'Модель UE Viewer не прошла проверку',
   'unreal-viewer-invalid-animation': 'Анимация UE Viewer не прошла проверку',
+  'unreal-viewer-original-gltf-has-no-material-maps': 'Исходный glTF содержит только геометрию и данные меша',
+  'unreal-viewer-texture-exported-from-decoded-mip': 'PNG восстановлен из доступного мип-уровня Unreal',
+  'unreal-material-preview-approximate': 'Текстуры восстановлены по параметрам. Отображение может отличаться от Unreal.',
+  'unreal-material-model-size-limit': 'Модель с описанием материалов превышает лимит glTF',
+  'unreal-material-conversion-fallback': 'Blender конвертировал модель без восстановленных текстур',
+  'shader-graph-not-reconstructed': 'Граф шейдера не восстановлен',
+  'texture-color-space-from-parameter-role': 'Цветовое пространство определено по роли параметра',
+  'normal-orientation-and-packed-channels-unverified': 'Ориентация нормалей и упаковка каналов требуют проверки',
   'unreal-version-unavailable': 'Запрошенная версия Unreal недоступна',
   'unreal-editor-version-unsupported': 'Версия Unreal Editor не поддерживается',
   'unreal-companion-orphan': 'Отсутствует связанный пакет Unreal',
@@ -62,7 +70,7 @@ const packageIssues = {
 const artifactRoles = {
   prefab: 'Префаб', component: 'Компонент', mesh: 'Меш',
   animation: 'Анимация', texture: 'Текстура', material: 'Материал', audio: 'Аудио',
-  model: 'Модель', 'skeletal-model': 'Модель со скелетом', skeleton: 'Скелет',
+  model: 'Модель', 'skeletal-model': 'Модель со скелетом', skeleton: 'Скелет', 'material-source': 'Свойства материала',
 }
 
 export const describeIssue = issue => packageIssues[issue] ?? issue

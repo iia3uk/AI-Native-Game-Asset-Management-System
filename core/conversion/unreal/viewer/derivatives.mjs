@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { analyzeAsset } from '../../../analysis/asset-analysis.mjs'
 import { convertBatchModel } from '../../../engines/blender/batch.mjs'
@@ -22,7 +22,9 @@ export async function createViewerDerivatives({ models, store, blender, output, 
     const requested = formats.filter(format => !asset.exports.some(item => item.path && item.format === format &&
       item.method === 'unreal-editor' && item.role === artifact.role && artifact.lod === 0))
     if (!requested.length) continue
-    const describe = format => ({ format, role: artifact.role, lod: artifact.lod, method: 'blender', from: artifact.path })
+    let input = asset.exports.find(item => item.path && item.method === 'ue-viewer-material-binding' &&
+      item.from === artifact.path) ?? artifact
+    const describe = format => ({ format, role: artifact.role, lod: artifact.lod, method: 'blender', from: input.path })
     const issue = !blender ? 'blender-unavailable' : Date.now() >= deadline ? 'converter-time-budget' :
       await store.preflight(512 * 1024 ** 2)
     if (issue) {
@@ -32,15 +34,25 @@ export async function createViewerDerivatives({ models, store, blender, output, 
     }
     const scratch = await mkdtemp(join(workspace, 'viewer-model-'))
     try {
-      const result = await convertBatchModel(blender, {
-        source: join(output, artifact.path), root: output, workspace: scratch, formats: requested, signal,
+      let result = await convertBatchModel(blender, {
+        source: join(output, input.path), root: output, workspace: scratch, formats: requested, signal,
       })
+      let converterOutput = scratch
+      const fallback = input !== artifact && !requested.some(format => result.outputs?.[format] === 'written')
+      if (fallback && Date.now() < deadline) {
+        input = artifact
+        converterOutput = join(scratch, 'geometry-only')
+        await mkdir(converterOutput)
+        result = await convertBatchModel(blender, {
+          source: join(output, input.path), root: output, workspace: converterOutput, formats: requested, signal,
+        })
+      }
       const intact = result.metrics?.bones >= artifact.metrics.bones && result.metrics?.animations >= artifact.metrics.animations
       for (const format of requested) {
         const description = describe(format)
         const path = 'model.' + format
         const failure = result.error ?? result.outputs?.[format]
-        const file = intact && failure === 'written' && await checkDerivative(scratch, path, format, artifact, signal)
+        const file = intact && failure === 'written' && await checkDerivative(converterOutput, path, format, artifact, signal)
         if (!file) {
           asset.exports.push({ ...description, status: 'failed', issue: failure === 'written' ?
             'invalid-converter-output' : failure ?? 'invalid-converter-output' })
@@ -48,7 +60,8 @@ export async function createViewerDerivatives({ models, store, blender, output, 
         }
         const target = [destination[format], asset.id, 'ue-viewer', basename(artifact.path, '.gltf') + '.' + format].join('/')
         const saved = await store.save(target, file, { ...description, status: 'converted', converterVersion: result.version,
-          sourceScene: result.metrics, issues: [...artifact.issues, ...(result.issues ?? [])] })
+          sourceScene: result.metrics, issues: [...input.issues, ...(result.issues ?? []),
+            ...(converterOutput !== scratch ? ['unreal-material-conversion-fallback'] : [])] })
         asset.exports.push(saved)
         if (saved.path) counts[format]++
       }

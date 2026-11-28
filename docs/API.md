@@ -52,6 +52,8 @@ For a loose Unreal source, inspection returns `unreal-project`, `unreal-content`
 
 Loose Unreal imports accept `exportFormats` containing `fbx` and `glb` in `engineless` mode. A configured UE Viewer emits glTF with BIN data and standalone PSA for supported UE4 assets. Blender provides the requested FBX and GLB derivatives from the extracted models. `report.unrealViewer` records converter availability or outcome, output counts, invalid artifacts and any phase errors. The manifest links each artifact to its source package.
 
+`report.unrealViewer.materials` counts material JSON files, PNG files decoded by UE Viewer and separate textured glTF variants. Material JSON records parameter names, source package paths, color-space assumptions and unresolved texture references. Mesh export resolves `unreal-model-material`, `unreal-material-parent` and `unreal-material-texture` links in the package dependency report.
+
 Failed scans preserve the last committed index. Disconnection and removal of original files retain history. Search excludes disconnected and missing assets.
 
 Automatic scans use the same queue. An explicit scan request promotes the active automatic job to a manual job if the job is still available. Turning off folder watching and all automatic import formats cancels queued automatic scans and requests cancellation for a running automatic scan.

@@ -4,8 +4,12 @@ import { promisify } from 'node:util'
 import { executable } from '../../discovery-files.mjs'
 
 const execute = promisify(execFile)
-export const unrealViewerRevision = 2
+export const unrealViewerRevision = 4
 const toolOptions = { windowsHide: true, killSignal: 'SIGKILL' }
+const exportsByType = {
+  meshes: ['-gltf', '-lods', '-noanim', '-png'],
+  animations: ['-psk', '-nomesh', '-nostat', '-notex'],
+}
 
 export async function locateUnrealViewer() {
   const path = await executable(process.env.ASSET_VIEWER_UE_VIEWER)
@@ -20,10 +24,9 @@ export async function locateUnrealViewer() {
   }
 }
 
-export async function runUnrealViewer(viewer, { input, output, workspace, version, signal, animations = false }) {
+export async function runUnrealViewer(viewer, { input, output, workspace, version, signal, type = 'meshes' }) {
   signal?.throwIfAborted()
-  const exportFlags = animations ? ['-psk', '-nomesh', '-nostat'] : ['-gltf', '-lods', '-noanim']
-  const flags = ['-export', ...exportFlags, '-notex', '-nomt', '-path=' + input, '-out=' + output]
+  const flags = ['-export', ...exportsByType[type], '-nomt', '-path=' + input, '-out=' + output]
   if (/^4\.(?:[0-9]|1[0-9]|2[0-7])$/.test(version ?? '')) flags.push('-game=ue' + version)
   const running = execute(viewer.path, [...flags, '*.uasset'], { ...toolOptions, cwd: workspace, signal,
     timeout: 120_000, maxBuffer: 16 * 1024 ** 2 })

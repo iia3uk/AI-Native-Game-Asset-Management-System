@@ -16,7 +16,7 @@ import { packageHashPattern } from '../../source.mjs'
 import { packageWorkspaceRoot } from '../../workspace.mjs'
 import { convertLoosePackages } from './convert.mjs'
 import { readUnrealLoose, unrealSourceChanged } from './inspect.mjs'
-import { decodeLooseWithViewer } from './viewer.mjs'
+import { decodeLooseWithViewer, recoverLooseViewerMaterials } from './viewer.mjs'
 
 const method = 'unreal-loose-direct'
 const version = 2
@@ -91,12 +91,16 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     const conversion = selection && records.written ?
       await convertLoosePackages({ records, selection, workspace, output, blender, formats: exportFormats, signal,
         onProgress: progress => onProgress?.((decoded ? 65 : 60) + Math.floor((progress - 60) * 0.4)) }) : null
-    if (decoded && exportFormats.length) {
-      unrealViewer.derivatives = await createViewerDerivatives({ ...decoded, workspace, output, blender, formats: exportFormats, signal,
-        onProgress: progress => onProgress?.(79 + Math.floor(progress * 0.1)) })
-    }
     const media = await recoverUnrealMedia(records, { output, workspace, signal,
-      onProgress: progress => onProgress?.(89 + Math.floor(progress * 0.06)) })
+      onProgress: progress => onProgress?.(79 + Math.floor(progress * 0.04)) })
+    if (decoded) {
+      await recoverLooseViewerMaterials({ decoded, viewer, records, output, workspace, signal })
+      onProgress?.(85)
+      if (exportFormats.length) {
+        unrealViewer.derivatives = await createViewerDerivatives({ ...decoded, workspace, output, blender, formats: exportFormats, signal,
+          onProgress: progress => onProgress?.(85 + Math.floor(progress * 0.09)) })
+      }
+    }
     const counts = Object.create(null)
     for (const asset of records.assets) counts[asset.status] = (counts[asset.status] ?? 0) + 1
     const metadata = { format: source.format, sha256: sourceKey, size: records.size, association: source.association ?? null,
