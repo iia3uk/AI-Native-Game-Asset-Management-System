@@ -24,7 +24,7 @@ function nameBatch(names) {
 }
 
 export function zenPackage({ ue54, names, classId, bulkMap, object, label = 'Sample', publicHash = 0,
-  importedNames = [], importedHashes = [], importedObjects = [] }) {
+  importedNames = [], importedHashes = [], importedObjects = [], subobjects = [] }) {
   const nameMap = nameBatch(names)
   const version = words(3, 522, ue54 ? 1012 : 1009, 0, 0)
   const pad = (8 - (52 + version.length + nameMap.length) % 8) % 8
@@ -32,15 +32,21 @@ export function zenPackage({ ue54, names, classId, bulkMap, object, label = 'Sam
   const imports = 52 + version.length + nameMap.length + bulkHeader.length
   const importMap = imports + importedHashes.length * 8
   const exportAt = importMap + (1 + importedObjects.length) * 8
-  const exportTable = Buffer.concat([long(0), long(object.length), zenName(names, label), long(nil), long(classId),
-    long(nil), long(nil), long(publicHash), words(3, 0)])
+  const exports = [{ bytes: object, label, classId, outer: nil, publicHash }, ...subobjects]
+  let position = 0
+  const exportTable = Buffer.concat(exports.flatMap(row => {
+    const offset = row.offset ?? position
+    position += row.bytes.length
+    return [long(offset), long(row.bytes.length), zenName(names, row.label), long(row.outer), long(row.classId),
+      long(nil), long(nil), long(row.publicHash ?? 0), words(3, 0)]
+  }))
   const bundles = exportAt + exportTable.length
-  const dependencies = bundles + 16
-  const packageNames = dependencies + 20
+  const dependencies = bundles + 16 * exports.length
+  const packageNames = dependencies + 20 * exports.length
   const packageNameTable = Buffer.concat([nameBatch(importedNames), Buffer.alloc(importedNames.length * 4)])
   const end = packageNames + packageNameTable.length
   const header = words(1, end, 0, 0, 0x80000200, end, imports, importMap, exportAt, bundles, dependencies, packageNames, packageNames)
   return Buffer.concat([header, version, nameMap, bulkHeader, ...importedHashes.map(long), long(classId),
-    ...importedObjects.map(long), exportTable, words(0, 0, 0, 1), words(0xffffffff, 0, 0, 0, 0),
-    packageNameTable, object])
+    ...importedObjects.map(long), exportTable, ...exports.map((_, index) => words(index, 0, index, 1)),
+    ...exports.map(() => words(0xffffffff, 0, 0, 0, 0)), packageNameTable, ...exports.map(row => row.bytes)])
 }

@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { artifactHash, ExportArtifacts, exportFolders } from '../../../conversion/artifacts.mjs'
+import { publishIoStoreCollision } from '../../../conversion/unreal/collision/iostore.mjs'
 import { publishIoStoreMaterials } from '../../../conversion/unreal/cooked-material/iostore.mjs'
 import { publishIoStoreMeshes } from '../../../conversion/unreal/cooked-mesh/iostore.mjs'
 import { ioStoreMethod, publishIoStoreEntries } from '../../../conversion/unreal/iostore.mjs'
@@ -34,6 +35,7 @@ async function saveOutputs(workspace, source, files, result, hash, { recipe, ble
   const { materials, dependencies, resolve } = await publishIoStoreMaterials(entries, result.entries, { workspace, store, signal })
   const meshes = await publishIoStoreMeshes(entries, result.entries, { workspace, store, blender, formats, signal,
     resolve, dependencies })
+  const collision = await publishIoStoreCollision(entries, result.entries, { workspace, store, signal })
   const counts = { extracted: 0, skipped: 0, failed: 0 }
   const extractedTypes = { package: 0, bulk: 0, file: 0, registry: 0 }
   const derivatives = { texture: { converted: 0, skipped: 0, failed: 0 }, audio: { converted: 0, skipped: 0, failed: 0 } }
@@ -50,8 +52,9 @@ async function saveOutputs(workspace, source, files, result, hash, { recipe, ble
     extracted, skipped: skipped + failed, counts, extractedTypes, total: entries.length,
     textureDecoder: result.textureDecoder, textures: derivatives.texture,
     audioDecoder: result.audioDecoder, audio: derivatives.audio,
-    meshDecoder: result.meshDecoder, ...(meshes && { meshes }),
+    meshDecoder: result.meshDecoder, ...((meshes || collision) && { meshes: { ...meshes, ...(collision && { collision }) } }),
     materialDecoder: result.materialDecoder, ...(materials && { materials }),
+    collisionDecoder: result.collisionDecoder,
     limits: ['unreal-iostore-zen-stock-ue5-versioned-packages', 'unreal-iostore-dependency-analysis-partial'] }
   const json = data => JSON.stringify(data, null, 2) + '\n'
   const hashText = text => createHash('sha256').update(text).digest('hex')
@@ -63,7 +66,7 @@ async function saveOutputs(workspace, source, files, result, hash, { recipe, ble
   const reports = { manifest: json(manifest), dependencies: dependencyText, 'conversion-report': reportText }
   await Promise.all(Object.entries(reports).map(([name, data]) =>
     writeFile(join(output, name + '.json'), data, { signal, flag: 'wx' })))
-  const cacheable = !failed && !meshes?.issue &&
+  const cacheable = !failed && !meshes?.issue && !collision?.failed &&
     !entries.some(entry => entry.issue === 'unreal-iostore-space-limit' ||
       entry.exports?.some(product => product.status === 'failed' || /-(io|limit)$/.test(product.issue ?? '')))
   return { output, cacheable, report: { ...summary, ...(!extracted && { entries: entries.slice(0, 500) }) } }

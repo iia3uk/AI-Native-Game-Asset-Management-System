@@ -38,12 +38,22 @@ internal static class TaggedProperties
 
     public static T[] StructArray<T>(FAssetArchive archive, FPropertyTag tag, string type, Func<long, T> element)
     {
+        var (count, boundary) = StructArrayRange(archive, tag, type, 256);
+        if (count * 8 > boundary - archive.Position) throw Invalid();
+        var result = new T[count];
+        for (var i = 0; i < count; i++) result[i] = element(boundary);
+        if (archive.Position != boundary) throw Invalid();
+        return result;
+    }
+
+    public static (int Count, long End) StructArrayRange(FAssetArchive archive, FPropertyTag tag, string type, int limit)
+    {
         if (tag.PropertyType.Text != "ArrayProperty" || tag.TagData?.InnerType != "StructProperty" ||
             tag.ArrayIndex != 0 || tag.Size < 4) throw Invalid();
         var boundary = archive.Position + tag.Size;
         var count = archive.Read<int>();
-        if (count is < 0 or > 256) throw new InputException("property-count");
-        if (count == 0 && archive.Position == boundary) return [];
+        if (count < 0 || count > limit) throw new InputException("property-count");
+        if (count == 0 && archive.Position == boundary) return (count, boundary);
         if (archive.Ver >= EUnrealEngineObjectUE5Version.PROPERTY_TAG_COMPLETE_TYPE_NAME)
         {
             if (tag.TagData.InnerTypeData?.StructType != type) throw Invalid();
@@ -52,13 +62,10 @@ internal static class TaggedProperties
         {
             var inner = ReadTag(archive);
             if (inner.Name.Text != tag.Name.Text || inner.PropertyType.Text != "StructProperty" || inner.TagData?.StructType != type ||
+                inner.ArrayIndex != 0 ||
                 inner.Size != boundary - archive.Position) throw Invalid();
         }
-        if (count * 8 > boundary - archive.Position) throw Invalid();
-        var result = new T[count];
-        for (var i = 0; i < count; i++) result[i] = element(boundary);
-        if (archive.Position != boundary) throw Invalid();
-        return result;
+        return (count, boundary);
     }
 
     private static void BoundTypeName(FAssetArchive archive)

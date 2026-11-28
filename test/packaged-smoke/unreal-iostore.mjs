@@ -6,6 +6,7 @@ import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { writeIoStoreFixture } from '../fixtures/unreal-iostore.mjs'
+import { zenCollisionFixture } from '../fixtures/unreal-zen-collision.mjs'
 import { zenMaterialFixture } from '../fixtures/unreal-zen-material.mjs'
 import { assertZenPng } from '../fixtures/unreal-zen-texture.mjs'
 import { startServer, testDirectory } from '../server-fixture.mjs'
@@ -96,4 +97,18 @@ test('The packaged Windows importer verifies and indexes a multi-partition Unrea
     const model = JSON.parse(bytes.toString('utf8', 20, 20 + bytes.readUInt32LE(12)))
     assert.equal(model.images[0].mimeType, 'image/png')
   }
+
+  const collisionFixture = await writeIoStoreFixture(root, 'PackagedCollision', zenCollisionFixture())
+  const { job: collisionJob, scan: collisionScan } = await cli('package-import', collisionFixture.path)
+  assert.equal(collisionJob.status, 'completed', collisionJob.error)
+  assert.equal(collisionScan.status, 'completed', collisionScan.error)
+  assert.deepEqual(collisionJob.result.report.meshes.collision, { assets: 1, shapes: 4, glb: 1, incomplete: 0 })
+  const collisionDirectory = collisionJob.result.directory
+  const collisionManifest = JSON.parse(await readFile(join(collisionDirectory, 'manifest.json'), 'utf8'))
+  const products = collisionManifest.entries.find(row => row.kind === 'package').exports
+  const collisionPreview = products.find(row => row.role === 'collision-preview')
+  const bytes = await readFile(join(collisionDirectory, collisionPreview.path))
+  const model = JSON.parse(bytes.toString('utf8', 20, 20 + bytes.readUInt32LE(12)))
+  assert.deepEqual(model.nodes.map(node => node.extras.collisionShape), ['box', 'sphere', 'capsule', 'convex'])
+  assert.equal((await cli('package-import', collisionFixture.path)).job.result.reused, true)
 })

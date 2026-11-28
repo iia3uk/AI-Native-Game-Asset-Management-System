@@ -1,5 +1,6 @@
 using Blake3;
 using AssetViewer.UnrealDecode.IoStore.Zen;
+using AssetViewer.UnrealDecode.IoStore.Zen.Collision;
 using AssetViewer.UnrealDecode.IoStore.Zen.Materials;
 using AssetViewer.UnrealDecode.IoStore.Zen.Mesh;
 using AssetViewer.UnrealDecode.Objects;
@@ -11,9 +12,10 @@ internal sealed record IoStoreEntry(string Path, long Size, string Status, strin
     string? Kind = null, TextureExport? Texture = null, string? TextureIssue = null,
     AudioExport? Audio = null, string? AudioIssue = null,
     MeshExport? Mesh = null, string? MeshIssue = null, ZenIdentity? Identity = null,
-    List<ZenMaterialSlot>? MeshMaterials = null, ZenMaterialExport? Material = null, string? MaterialIssue = null);
+    List<ZenMaterialSlot>? MeshMaterials = null, ZenMaterialExport? Material = null, string? MaterialIssue = null,
+    ZenCollisionExport? Collision = null, string? CollisionIssue = null);
 internal sealed record IoStoreReport(int Protocol, string Status, int ContainerVersion, int Chunks, int Partitions,
-    IReadOnlyList<IoStoreEntry> Entries, int TextureDecoder, int AudioDecoder, int MeshDecoder, int MaterialDecoder);
+    IReadOnlyList<IoStoreEntry> Entries, int TextureDecoder, int AudioDecoder, int MeshDecoder, int MaterialDecoder, int CollisionDecoder);
 
 internal static class IoStoreDecoder
 {
@@ -58,7 +60,7 @@ internal static class IoStoreDecoder
         }
         if (!request.InspectOnly && version >= 5) IoStoreAssets.Decode(entries, request.MaxOutputBytes - unpacked);
         return new(1, "completed", version, resource.ChunkIds.Length, (int)resource.Header.PartitionCount, entries,
-            TexturePixels.Revision, 1, 1, 1);
+            TexturePixels.Revision, 1, 1, 1, 1);
     }
 
     internal static string OutputPath(int index, string extension) => Path.Combine("output", index.ToString("D5") + "." + extension);

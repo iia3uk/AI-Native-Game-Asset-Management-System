@@ -32,6 +32,7 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
     public int Size => size;
     public ZenIdentity? Identity => identity;
     public ZenReference? Reference(int index) => imports?.Resolve(index);
+    public Mesh.ZenMeshExports? MeshExports { get; private init; }
 
     public static ZenPackage? Read(byte[] bytes, ulong packageId, out ZenExportKind kind)
     {
@@ -68,9 +69,10 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
         archive.Position = header.ExportMapOffset;
         int selected = -1;
         FExportMapEntry target = default;
+        var exports = new FExportMapEntry[count];
         for (var i = 0; i < count; i++)
         {
-            var entry = new FExportMapEntry(archive);
+            var entry = exports[i] = new FExportMapEntry(archive);
             if (!entry.OuterIndex.IsNull ||
                 entry.ObjectFlags.HasFlag(EObjectFlags.RF_ClassDefaultObject)) continue;
             var exportKind = entry.ClassIndex.TypeAndId == TextureClass ? ZenExportKind.Texture :
@@ -92,18 +94,16 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
             throw Invalid();
 
         archive.Position = header.ExportBundleEntriesOffset;
-        var commands = 0;
+        var commands = new byte[count];
         for (var i = 0; i < count * 2; i++)
         {
             var index = archive.Read<uint>();
             var command = archive.Read<uint>();
             if (index >= count || command > 1) throw Invalid();
-            if (index != selected) continue;
-            var bit = 1 << (int)command;
-            if ((commands & bit) != 0) throw Invalid();
-            commands |= bit;
+            var bit = (byte)(1 << (int)command);
+            commands[index] |= (commands[index] & bit) == 0 ? bit : (byte)4;
         }
-        if (commands != 3) throw Invalid();
+        if (commands[selected] != 3) throw Invalid();
 
         archive.Position = 68;
         version.CustomVersions = new FCustomVersionContainer(archive);
@@ -120,7 +120,10 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
         var imports = kind is ZenExportKind.StaticMesh or ZenExportKind.Material or ZenExportKind.MaterialInstance
             ? ZenImports.Read(archive, bytes, header) : null;
         return new(names, header.PackageFlags, version, bulk,
-            (int)(header.HeaderSize + target.CookedSerialOffset), (int)target.CookedSerialSize, identity, imports);
+            (int)(header.HeaderSize + target.CookedSerialOffset), (int)target.CookedSerialSize, identity, imports)
+        {
+            MeshExports = kind == ZenExportKind.StaticMesh ? new((int)header.HeaderSize, selected, exports, commands) : null,
+        };
     }
 
     internal static FNameEntrySerialized[] ReadNames(FByteArchive archive, byte[] bytes, int start, int boundary)
@@ -160,7 +163,7 @@ internal sealed class ZenPackage(FNameEntrySerialized[] names, EPackageFlags fla
     }
 
     private static uint U32(ReadOnlySpan<byte> value) => BinaryPrimitives.ReadUInt32LittleEndian(value);
-    private static ulong ScriptClass(string name) => (1UL << FPackageObjectIndex.TypeShift) |
+    internal static ulong ScriptClass(string name) => (1UL << FPackageObjectIndex.TypeShift) |
         (FPackageId.FromName("/script/engine/" + name).id & FPackageObjectIndex.IndexMask);
     internal static InputException Invalid() => new("layout");
 }

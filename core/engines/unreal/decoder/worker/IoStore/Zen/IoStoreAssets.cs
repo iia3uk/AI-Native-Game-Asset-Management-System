@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using AssetViewer.UnrealDecode.Formats;
 using AssetViewer.UnrealDecode.IoStore.Zen.Audio;
+using AssetViewer.UnrealDecode.IoStore.Zen.Collision;
 using AssetViewer.UnrealDecode.IoStore.Zen.Materials;
 using AssetViewer.UnrealDecode.IoStore.Zen.Mesh;
 
@@ -15,6 +16,8 @@ internal static class IoStoreAssets
         remaining = Math.Min(remaining, 256 * MiB);
         var materialBudget = 4096;
         var slotBudget = 4096;
+        var collisionBudget = ZenBodyCollision.ShapeBudget;
+        var remainingBodies = ZenBodyCollision.MaxBodies;
         var sidecars = new Dictionary<(string Chunk, string Path), string>();
         foreach (var entry in entries)
         {
@@ -51,6 +54,7 @@ internal static class IoStoreAssets
                 }
                 else if (kind == ZenExportKind.StaticMesh)
                 {
+                    entry = ReadCollision(entry, chunk, bytes, package, ref remainingBodies, ref collisionBudget);
                     var (mesh, slots) = ZenStaticMesh.Read(bytes, package, companions, output.ToString("D5"), remaining);
                     entries[i] = slots.Count <= slotBudget ? entry with { Mesh = mesh, MeshMaterials = slots } :
                         entry with { Mesh = mesh with { Limited = true } };
@@ -93,6 +97,23 @@ internal static class IoStoreAssets
             {
                 entries[i] = ReportIssue(entry, kind, "layout");
             }
+        }
+    }
+
+    private static IoStoreEntry ReadCollision(IoStoreEntry entry, byte[] chunk, byte[] mesh, ZenPackage package,
+        ref int remainingBodies, ref int budget)
+    {
+        try
+        {
+            return entry with { Collision = ZenBodyCollision.Read(chunk, mesh, package, ref remainingBodies, ref budget) };
+        }
+        catch (InputException error)
+        {
+            return entry with { CollisionIssue = "unreal-iostore-collision-" + error.Code };
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            return entry with { CollisionIssue = "unreal-iostore-collision-layout" };
         }
     }
 

@@ -1,5 +1,6 @@
 import { posix } from 'node:path'
 import { cookedAudioBatchBytes, cookedAudioIssue, cookedAudioRevision, ioStoreAudioRevision, numberedAudio } from './audio-protocol.mjs'
+import { ioStoreCollisionBudget, ioStoreCollisionRevision, zenCollisionCost } from './iostore-collision-protocol.mjs'
 import { ioStoreMaterialRevision, validZenIdentity, validZenMaterial, validZenSlots } from './iostore-material-protocol.mjs'
 import { ioStoreMeshRevision, meshProduct } from './mesh-protocol.mjs'
 
@@ -35,7 +36,7 @@ export function ioStoreResult(raw, { inspectOnly, version, chunks, partitions })
   if (raw?.status === 'completed' && (raw.chunks !== chunks || raw.partitions !== partitions ||
       raw.entries?.length > chunks || raw.textureDecoder !== ioStoreTextureRevision ||
       raw.audioDecoder !== ioStoreAudioRevision || raw.meshDecoder !== ioStoreMeshRevision ||
-      raw.materialDecoder !== ioStoreMaterialRevision)) return null
+      raw.materialDecoder !== ioStoreMaterialRevision || raw.collisionDecoder !== ioStoreCollisionRevision)) return null
   return archiveResult(raw, { inspectOnly, version, ioStore: true })
 }
 
@@ -93,6 +94,8 @@ function archiveResult(raw, { inspectOnly, version, ioStore = false }) {
   let audioBytes = 0
   let materialCost = 0
   let slots = 0
+  let collisionCost = 0
+  let collisionBodies = 0
   for (const row of raw.entries) {
     if (!validPath(row?.path) || !Number.isSafeInteger(row.size) || row.size < 0) return null
     const parts = row.path.split('/')
@@ -172,6 +175,19 @@ function archiveResult(raw, { inspectOnly, version, ioStore = false }) {
         entry.meshIssue = row.meshIssue
       }
     }
+    if (row.collision != null || row.collisionIssue != null) {
+      if (!entry.mesh && !entry.meshIssue) return null
+      if (row.collision != null) {
+        const cost = zenCollisionCost(row.collision)
+        if (!cost || row.collisionIssue != null) return null
+        collisionCost += cost
+        if (++collisionBodies > 128 || collisionCost > ioStoreCollisionBudget) return null
+        entry.collision = row.collision
+      } else {
+        if (!issueCode(row.collisionIssue) || !row.collisionIssue.startsWith('unreal-iostore-collision-')) return null
+        entry.collisionIssue = row.collisionIssue
+      }
+    }
     if (row.identity != null || row.material != null || row.materialIssue != null || row.meshMaterials != null) {
       if (!ioStore || inspectOnly || format !== 'uasset' || !entry.file || entry.kind !== 'package' || version < 5) return null
       if (row.identity != null) {
@@ -203,5 +219,6 @@ function archiveResult(raw, { inspectOnly, version, ioStore = false }) {
   }
   if (bytes + derivativeBytes + audioBytes > 1024 ** 3) return null
   return { status: 'completed', version, entries, textureDecoder: raw.textureDecoder,
-    audioDecoder: raw.audioDecoder, ...(ioStore && { meshDecoder: raw.meshDecoder, materialDecoder: raw.materialDecoder }) }
+    audioDecoder: raw.audioDecoder, ...(ioStore && { meshDecoder: raw.meshDecoder, materialDecoder: raw.materialDecoder,
+      collisionDecoder: raw.collisionDecoder }) }
 }

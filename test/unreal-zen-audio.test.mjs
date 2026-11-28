@@ -27,7 +27,7 @@ test('IoStore protocol confines SoundWave derivatives to numbered outputs from p
   const entry = { path: 'Sample.uasset', size: 440, status: 'extracted', issue: null, output: 0,
     chunkId: '9d2fbb016ac3df0c00000001', kind: 'package' }
   const report = { protocol: 1, status: 'completed', containerVersion: 8, chunks: 1, partitions: 2,
-    textureDecoder: 2, audioDecoder: 1, meshDecoder: 1, materialDecoder: 1 }
+    textureDecoder: 2, audioDecoder: 1, meshDecoder: 1, materialDecoder: 1, collisionDecoder: 1 }
   const accept = (row, options = {}) => ioStoreResult({ ...report, entries: [{ ...entry, ...row }] }, { ...source, ...options })
   const audio = { format: 'ogg', size: 400, file: '../../escape.ogg' }
   assert.deepEqual(accept({ audio }).entries[0].audio, { format: 'ogg', size: 400, file: '00000.ogg' })

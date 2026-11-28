@@ -1,5 +1,6 @@
 import { dirname } from 'node:path'
 import { writeIoStoreFixture } from '../fixtures/unreal-iostore.mjs'
+import { zenCollisionFixture } from '../fixtures/unreal-zen-collision.mjs'
 import { zenMaterialFixture } from '../fixtures/unreal-zen-material.mjs'
 
 export async function verifyUnrealIoStore(webContents, waitFor, fixtures) {
@@ -21,6 +22,11 @@ export async function verifyUnrealIoStore(webContents, waitFor, fixtures) {
   await showIoStoreLibrary(webContents, waitFor, mesh.path, 'SmokeZenMesh', 'Материалы из Zen-пакетов · Готово 2', 5)
   await openIndexedAsset(webContents, waitFor, 'Sample_Lod1.glb')
   await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('1 треугольник')")
+
+  const collision = await writeIoStoreFixture(dirname(fixtures), 'SmokeZenCollision', zenCollisionFixture())
+  await showIoStoreLibrary(webContents, waitFor, collision.path, 'SmokeZenCollision', 'Форм коллизии · 4')
+  await openIndexedAsset(webContents, waitFor, 'Sample-Collision.glb')
+  await waitFor("!document.querySelector('#index-dialog').open && document.querySelector('#model-stats').textContent.includes('4 меша')")
 }
 
 async function showIoStoreLibrary(webContents, waitFor, path, name, details, chunks = 2) {

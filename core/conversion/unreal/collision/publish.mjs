@@ -1,6 +1,26 @@
-import { writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join, posix } from 'node:path'
 import { modelArtifact } from '../../artifacts.mjs'
+import { collisionPreview } from './gltf.mjs'
+
+export async function publishSimpleCollision(asset, { collision, issue }, { scratch, store, summary, signal, method, converterVersion }) {
+  if (collision) {
+    const { buffer, omitted, degenerateTriangles } = collisionPreview(collision.shapes)
+    const stem = posix.basename(asset.sourcePath).slice(0, -7).replace(/[#%]/g, '_')
+    await mkdir(scratch, { recursive: true })
+    const saved = await publishCollision({ asset, scratch, stem, store, signal, method, converterVersion,
+      collision: { ...collision, buffer, previewOmitted: omitted, previewDegenerateTriangles: degenerateTriangles } })
+    if (saved.description?.path) {
+      summary.assets++
+      summary.shapes += collision.shapes.length
+    }
+    if (saved.preview?.path) summary.glb++
+    if (saved.issue) summary.failed = (summary.failed ?? 0) + 1
+    issue = saved.issue ?? ((omitted.length || collision.omitted.length) ? method + '-partial' : null)
+  }
+  if (issue) summary.incomplete++
+  return issue
+}
 
 export async function publishCollision({ asset, collision, scratch, stem, store, method, converterVersion, signal }) {
   const { buffer, previewOmitted, ...shapes } = collision

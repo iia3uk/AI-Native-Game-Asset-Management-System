@@ -14,7 +14,7 @@ export async function publishIoStoreEntries(entries, root, store, version, signa
   for (const row of entries) {
     signal?.throwIfAborted()
     const { file: input, texture, textureIssue, audio, audioIssue, mesh, meshIssue,
-      meshMaterials, material, materialIssue, ...entry } = row
+      meshMaterials, material, materialIssue, collision, collisionIssue, ...entry } = row
     if (!input) {
       results.push(entry)
       continue

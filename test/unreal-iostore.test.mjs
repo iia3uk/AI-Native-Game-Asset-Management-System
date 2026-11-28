@@ -12,6 +12,7 @@ import { locateUnrealDecoder, runUnrealDecoder } from '../core/engines/unreal/de
 import { processIoStore } from '../core/packages/unreal/iostore/import.mjs'
 import { readFbxGeometry } from './fixtures/blender-model.mjs'
 import { makeIoStore, writeIoStoreFixture } from './fixtures/unreal-iostore.mjs'
+import { zenCollisionFixture } from './fixtures/unreal-zen-collision.mjs'
 import { zenMaterialFixture } from './fixtures/unreal-zen-material.mjs'
 import { assertZenPng } from './fixtures/unreal-zen-texture.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
@@ -185,7 +186,7 @@ test('IoStore worker results only allow numbered texture outputs on extracted Ze
     chunkId: '9d2fbb016ac3df0c00000001', kind: 'package',
     texture: { width: 2, height: 2, size: 94, mip: 0, pixelFormat: 'PF_B8G8R8A8', srgb: true, normalZReconstructed: false } }
   const result = { protocol: 1, status: 'completed', containerVersion: 8, chunks: 1, partitions: 2,
-    textureDecoder: 2, audioDecoder: 1, meshDecoder: 1, materialDecoder: 1, entries: [entry] }
+    textureDecoder: 2, audioDecoder: 1, meshDecoder: 1, materialDecoder: 1, collisionDecoder: 1, entries: [entry] }
   assert.equal(ioStoreResult(result, options).entries[0].texture.file, '00000.png')
   assert.equal(ioStoreResult({ ...result, textureDecoder: undefined }, options), null)
   assert.equal(ioStoreResult({ ...result, entries: [{ ...entry, path: 'Sample.umap' }] }, options), null)
@@ -201,13 +202,101 @@ test('IoStore mesh output uses numbered files and cannot claim a material or ano
     chunkId: '9d2fbb016ac3df0c00000001', kind: 'package', mesh }
   const options = { inspectOnly: false, version: 8, chunks: 1, partitions: 2 }
   const check = (value, settings = options) => ioStoreResult({ protocol: 1, status: 'completed', containerVersion: 8,
-    chunks: 1, partitions: 2, textureDecoder: 2, audioDecoder: 1, meshDecoder: 1, materialDecoder: 1, entries: [value] }, settings)
+    chunks: 1, partitions: 2, textureDecoder: 2, audioDecoder: 1, meshDecoder: 1, materialDecoder: 1,
+    collisionDecoder: 1, entries: [value] }, settings)
   assert.equal(check(entry).entries[0].mesh.lods[0].file, '00000-0.mesh')
   assert.equal(check({ ...entry, audioIssue: 'unreal-iostore-audio-layout' }), null)
   assert.equal(check({ ...entry, mesh: { ...mesh, missing: [0] } }), null)
   const foreign = { ...lod, sections: [{ ...section, material: '/Game/Foreign' }] }
   assert.equal(check({ ...entry, mesh: { ...mesh, lods: [foreign] } }), null)
   assert.equal(check({ ...entry, output: null, status: 'available' }, { ...options, inspectOnly: true }), null)
+  const collision = { body: 'BodySetup', buildScale: [1, 1, 1], omitted: [],
+    shapes: [{ type: 'sphere', center: [0, 0, 0], radius: 1, restOffset: 0 }] }
+  assert.deepEqual(check({ ...entry, collision }).entries[0].collision, collision)
+  assert.equal(check({ ...entry, mesh: undefined, collision }), null)
+  assert.equal(check({ ...entry, collision, collisionIssue: 'unreal-iostore-collision-layout' }), null)
+  assert.equal(check({ ...entry, collision: { ...collision, buildScale: [1, 1, Infinity] } }), null)
+})
+
+test('UE5.3 and 5.4 IoStore imports index and export verified collision independently of render LODs', withDecoder, async t => {
+  const root = await testDirectory(t)
+  const destination = join(root, 'export')
+  await mkdir(destination)
+  const server = await startServer(root)
+  try {
+    for (const mode of ['ue53', 'ue54', 'bad-shape', 'wrong-owner', 'wrong-class', 'overlap', 'no-render']) {
+      const fixture = await writeIoStoreFixture(root, mode, zenCollisionFixture(mode))
+      const inspected = await server.post('/api/index/packages/inspect', { path: fixture.path })
+      assert.equal(inspected.status, 200)
+      const { package: { hash } } = await inspected.json()
+      const queue = async () => {
+        const response = await server.post('/api/index/packages/import', { path: fixture.path, hash })
+        const body = await response.json()
+        assert.equal(response.status, 202, JSON.stringify(body))
+        return waitForJob(server, body.job.id)
+      }
+      const job = await queue()
+      assert.equal(job.status, 'completed', job.error)
+      const { directory, library, scanJobId, report } = job.result
+      assert.equal((await waitForJob(server, scanJobId)).status, 'completed')
+      const route = '/api/index/jobs/' + job.id
+      const { assets } = await (await server.request(route + '/manifest')).json()
+      const asset = assets.find(row => row.kind === 'package')
+      const { collision } = report.meshes
+      if (mode.startsWith('wrong') || mode === 'overlap') {
+        assert.deepEqual(collision, { assets: 0, shapes: 0, glb: 0, incomplete: 1 }, mode)
+        assert.equal(asset.collisionIssue, 'unreal-iostore-collision-layout', mode)
+        assert.equal(report.meshes.gltf, 2)
+        assert.ok(asset.exports.every(row => !row.role.startsWith('collision-')))
+        continue
+      }
+      const partial = mode === 'bad-shape'
+      assert.deepEqual(collision, { assets: 1, shapes: partial ? 3 : 4, glb: 1, incomplete: Number(partial) }, mode)
+      assert.equal(report.meshes.gltf, mode === 'no-render' ? 0 : 2)
+      const description = asset.exports.find(row => row.role === 'collision-shapes')
+      const preview = asset.exports.find(row => row.role === 'collision-preview')
+      const metadata = JSON.parse(await readFile(join(directory, description.path), 'utf8'))
+      assert.equal(preview.settingsPath, description.path)
+      assert.equal(metadata.body, 'BodySetup')
+      assert.equal(metadata.traceMode, 'CTF_UseSimpleAndComplex')
+      assert.equal(metadata.doubleSided, true)
+      assert.equal(metadata.lengthUnit, 'cm')
+      assert.deepEqual(metadata.shapes.map(row => row.type), partial ? ['box', 'sphere', 'capsule'] : ['box', 'sphere', 'capsule', 'convex'])
+      assert.deepEqual(metadata.shapes[0].center, [75.125, -25, 0])
+      assert.deepEqual(metadata.shapes[0].dimensions, [100, 40, 30])
+      assert.equal(metadata.shapes[0].contributesToMass, false)
+      assert.equal(metadata.shapes[0].collisionEnabled, 'ECollisionEnabled::QueryAndPhysics')
+      assert.equal(metadata.shapes[1].radius, 25.5)
+      assert.equal(metadata.shapes[2].length, 90)
+      if (partial) {
+        assert.deepEqual(metadata.omitted, [{ field: 'ConvexElems', index: 0 }])
+        assert.equal(asset.collisionIssue, 'unreal-iostore-collision-partial')
+      } else {
+        const hull = metadata.shapes.at(-1)
+        assert.equal(hull.indexSource, mode === 'ue53' ? undefined : 'convex-hull')
+        assert.equal(hull.indices.length, 12)
+        assert.deepEqual(hull.transform, { rotation: [0, 0, 0, 1], translation: [200, 300, 0], scale: [1, 2, 1] })
+      }
+      const bytes = await readFile(join(directory, preview.path))
+      const scene = JSON.parse(bytes.toString('utf8', 20, 20 + bytes.readUInt32LE(12)))
+      assert.deepEqual(scene.nodes.map(node => node.extras.collisionShape), metadata.shapes.map(shape => shape.type))
+      const { assets: indexed } = await (await server.request('/api/index/search?kind=model&library=' + library.id)).json()
+      assert.ok(indexed.some(row => row.path === preview.path))
+      if (mode !== 'ue54') continue
+      assert.equal((await queue()).result.reused, true)
+      const ordinal = assets.indexOf(asset)
+      const plan = await (await server.post(route + '/export-plan', { destination, asset: ordinal })).json()
+      const published = await server.post(route + '/export', { destination, asset: ordinal, key: plan.key })
+      assert.equal(published.status, 201)
+      const delivery = (await published.json()).directory
+      assert.deepEqual(await readFile(join(delivery, preview.path)), bytes)
+      assert.deepEqual(JSON.parse(await readFile(join(delivery, description.path), 'utf8')), metadata)
+      assert.deepEqual(await readFile(join(delivery, asset.artifact.path)), fixture.payloads.asset)
+      await writeFile(join(directory, preview.path), Buffer.alloc(bytes.length))
+      assert.match((await queue()).error, /Кеш импорта Unreal IoStore повреждён/)
+      assert.deepEqual(await readFile(fixture.path), fixture.toc)
+    }
+  } finally { await server.close() }
 })
 
 test('versioned UE 5.3 and 5.4 static mesh LODs enter the IoStore library with exact bulk pairing and verified exports',

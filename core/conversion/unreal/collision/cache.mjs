@@ -1,12 +1,12 @@
 import { cookedCollisionRevision } from '../../../engines/unreal/collision/cooked.mjs'
 import { cookedCollisionMethod } from './cooked.mjs'
 
-export function collisionTotalsMatch(entries, summary) {
+export function collisionTotalsMatch(entries, summary, { method = cookedCollisionMethod, revision = cookedCollisionRevision } = {}) {
   let assets = 0, shapes = 0, glb = 0, incomplete = 0
   for (const entry of entries) {
     if (entry.collisionIssue) incomplete++
     const products = entry.exports?.filter(file => ['collision-shapes', 'collision-preview'].includes(file.role)) ?? []
-    if (products.some(file => file.method !== cookedCollisionMethod || file.converterVersion !== cookedCollisionRevision ||
+    if (products.some(file => file.method !== method || file.converterVersion !== revision ||
         file.status !== 'converted' || file.from !== (entry.artifact?.path ?? entry.output))) return false
     const descriptions = products.filter(file => file.role === 'collision-shapes')
     const previews = products.filter(file => file.role === 'collision-preview')
