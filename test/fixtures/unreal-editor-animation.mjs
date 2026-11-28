@@ -3,7 +3,7 @@ import { editorFixture } from './unreal-editor-package.mjs'
 export const demoSkeletonGuid = '1023456789abcdeffedcba9876543210'
 
 export function editorAnimationFixture({ clip = 'Attack', skeleton = '/Game/Characters/Character_Skeleton', corrupt,
-  skeletonGuid = demoSkeletonGuid } = {}) {
+  skeletonGuid = demoSkeletonGuid, duration = 2 } = {}) {
   return editorFixture(({ i32, name, tag, array, object, none }) => {
     function floats(values) {
       const bytes = Buffer.alloc(values.length * 4)
@@ -15,7 +15,7 @@ export function editorAnimationFixture({ clip = 'Attack', skeleton = '/Game/Char
     }
     const data = Buffer.concat([
       tag('NumFrames', 'IntProperty', i32(3)),
-      tag('SequenceLength', 'FloatProperty', floats([2])),
+      tag('SequenceLength', 'FloatProperty', floats([duration])),
       array('TrackToSkeletonMapTable', 'TrackToSkeletonMap', 2, Buffer.concat(
         [1, corrupt === 'mapping' ? 1 : 0].flatMap(index => [tag('BoneTreeIndex', 'IntProperty', i32(index)), none]))),
       tag('AnimationTrackNames', 'ArrayProperty', Buffer.concat([i32(2), name('Spine'), name('Root')]), name('NameProperty')),

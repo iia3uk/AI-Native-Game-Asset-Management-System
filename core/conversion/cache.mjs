@@ -8,6 +8,7 @@ const hashPattern = /^[0-9a-f]{64}$/
 export function exportRecipe(formats, blender, engine) {
   const recipe = [packageExportVersion, formats, blender?.identity ?? null]
   if (engine) recipe.push(engine)
+  if (blender?.fbxRevision && formats.includes('fbx')) recipe.push(['blender-fbx', blender.fbxRevision])
   return createHash('sha256').update(JSON.stringify(recipe))
     .digest('hex').slice(0, 24)
 }

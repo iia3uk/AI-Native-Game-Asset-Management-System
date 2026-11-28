@@ -209,7 +209,7 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     await access(join(resources, 'unity-bundle', path))
   }
   await verifyUnrealWorker(join(resources, 'cue4parse'))
-  for (const script of ['batch.py', 'stage_inputs.py']) {
+  for (const script of ['batch.py', 'fbx_animation.py', 'stage_inputs.py']) {
     await access(join(resources, 'app.asar.unpacked', 'core', 'engines', 'blender', 'scripts', script))
   }
 }

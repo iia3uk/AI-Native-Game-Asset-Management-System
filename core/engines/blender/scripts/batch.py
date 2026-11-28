@@ -7,6 +7,7 @@ import bpy
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from fbx_animation import preserve_fbx_samples
 from stage_inputs import IMAGES, InputIssue, Inputs
 
 
@@ -62,12 +63,13 @@ def import_model(inputs):
     raise InputIssue("model-format-unsupported")
 
 
-def export_model(workspace, format_name):
+def export_model(workspace, format_name, issues):
     target = workspace / ("model." + format_name)
     if format_name == "fbx":
-        return bpy.ops.export_scene.fbx(filepath=str(target), add_leaf_bones=False, bake_anim=True,
-                                        bake_anim_use_nla_strips=False, path_mode="COPY", embed_textures=True,
-                                        use_custom_props=False, use_tspace=True)
+        with preserve_fbx_samples(issues, bool(bpy.data.actions)):
+            return bpy.ops.export_scene.fbx(filepath=str(target), add_leaf_bones=False, bake_anim=True,
+                                            bake_anim_use_nla_strips=False, path_mode="COPY", embed_textures=True,
+                                            use_custom_props=False, use_tspace=True)
     if format_name == "glb":
         return bpy.ops.export_scene.gltf(filepath=str(target), export_format="GLB", export_yup=True,
                                          export_animations=True, export_tangents=True, export_all_influences=True,
@@ -94,7 +96,7 @@ def run(inputs, workspace, formats, report):
     }
     for format_name in formats:
         try:
-            if "FINISHED" in export_model(workspace, format_name):
+            if "FINISHED" in export_model(workspace, format_name, inputs.issues):
                 report["outputs"][format_name] = "written"
             else:
                 report["outputs"][format_name] = "model-export-failed"

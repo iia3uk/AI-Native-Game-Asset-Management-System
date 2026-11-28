@@ -187,6 +187,8 @@ In **Без движка**, compatible UE4 editor skeletal meshes from the 514 l
 
 Include the `AnimSequence`, its `Skeleton` and the mesh in the same import to recover raw UE4 514 bone animation. Open the model's GLB, animated glTF or converted FBX, choose a clip and click **Пуск**. FBX conversion requires Blender. Each matched clip also has a standalone skeleton GLB in `Animations/` that can be previewed and exported on its own. The viewer uses up to eight bone weights per vertex for deformation and framing in GLB, glTF and FBX previews. For FBX vertices with more than eight weights it uses the eight largest. Compressed tracks, additive clips, custom retargeting, notify events and curve graphs remain in the source packages.
 
+Blender FBX conversion samples authored subframes and the final pose at the clip's exact endpoint. Reimport the original Unreal files with FBX selected to regenerate earlier exports with this timing.
+
 ```sh
 npm run cli -- package-import "/absolute/path/Project.uproject" --json
 npm run cli -- package-import "/absolute/path/Content" --export fbx,glb --json

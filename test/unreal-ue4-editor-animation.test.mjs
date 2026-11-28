@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js'
 import { encodeBoneTracks } from '../core/conversion/unreal/animation/gltf.mjs'
 import { readEditorAnimation } from '../core/engines/unreal/animation/ue4-514.mjs'
 import { extractEditorSkeleton } from '../core/engines/unreal/skeleton/ue4.mjs'
@@ -105,3 +106,37 @@ test('loose UE4 import publishes an independent clip and a skinned GLB with the 
   await writeFile(manifestPath, JSON.stringify(manifest))
   await assert.rejects(importPackage)
 })
+
+test('the Blender FBX export preserves authored subframes in a UE4 clip shorter than one bake frame',
+  { skip: process.env.ASSET_VIEWER_TEST_NATIVE_BLENDER !== '1' }, async t => {
+    const root = await testDirectory(t)
+    const source = join(root, 'Content')
+    const character = join(source, 'Characters')
+    const data = join(root, 'data')
+    const duration = .02
+    await mkdir(character, { recursive: true })
+    await Promise.all([
+      writeFile(join(character, 'SK_Test.uasset'), editorSkeletalMeshFixture()),
+      writeFile(join(character, 'Character_Skeleton.uasset'), skeleton()),
+      writeFile(join(character, 'Attack.uasset'), editorAnimationFixture({ duration })),
+    ])
+    const { stdout } = await run(process.execPath, [cli, 'package-import', source, '--export', 'fbx,glb', '--json'],
+      { windowsHide: true, env: { ...process.env, ASSET_VIEWER_DATA_DIR: data, ASSET_VIEWER_UE_VIEWER: '' } })
+    const { directory, report } = JSON.parse(stdout).job.result
+    assert.deepEqual(report.unrealSourceMeshes.derivatives, { fbx: 1, glb: 1 })
+    const manifest = JSON.parse(await readFile(join(directory, 'manifest.json')))
+    const mesh = manifest.assets.find(asset => asset.sourcePath.endsWith('/SK_Test.uasset'))
+    const fbx = mesh.exports.find(entry => entry.path && entry.format === 'fbx')
+    assert.ok(!fbx.issues.includes('fbx-animation-sampling-unsupported'))
+    const bytes = await readFile(join(directory, fbx.path))
+    const { animations: [clip] } = new FBXLoader().parse(Uint8Array.from(bytes).buffer, '')
+    assert.ok(clip?.name.endsWith('Attack'))
+    assert.ok(Math.abs(clip.duration - duration) < 1e-6)
+    const rootMotion = clip.tracks.find(track => track.name === 'Root.position')
+    assert.ok(rootMotion)
+    assert.equal(rootMotion.times.length, 3)
+    for (const [index, time] of rootMotion.times.entries()) assert.ok(Math.abs(time - duration * index / 2) < 1e-6)
+    const [x, y, z, mx, my, mz, ex, ey, ez] = rootMotion.values
+    assert.ok(Math.hypot(mx - x, my - y, mz - z) > .01)
+    assert.ok(Math.hypot(ex - x, ey - y, ez - z) < 1e-5)
+  })
