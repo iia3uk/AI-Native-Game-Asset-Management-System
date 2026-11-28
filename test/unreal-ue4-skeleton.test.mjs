@@ -8,36 +8,14 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { extractEditorSkeleton } from '../core/engines/unreal/skeleton/ue4.mjs'
 import { planPackageCleanup } from '../core/packages/cleanup/plan.mjs'
-import { cookedPackageFixture } from './fixtures/unreal-cooked-package.mjs'
-import { editorFixture } from './fixtures/unreal-editor-package.mjs'
+import { makeModernPak } from './fixtures/unreal-pak.mjs'
+import { unrealSkeletonFixture as fixture } from './fixtures/unreal-skeleton.mjs'
 import { testDirectory } from './server-fixture.mjs'
 
-function fixture({ mesh = false, duplicate = false, invalidIndex = false, wrongClass = false, cooked = false } = {}) {
-  const makePackage = cooked ? cookedPackageFixture : editorFixture
-  return makePackage(({ i32, name, none, object }) => {
-    const bones = [name('Root'), name(duplicate ? 'root' : 'Spine')]
-    const bone = (name, parent) => Buffer.concat([name, i32(parent), ...(cooked ? [] : [i32(0)])])
-    const pose = (z, scale) => {
-      const transform = Buffer.alloc(40)
-      const values = [0, 0, 0, 1, 0, 0, z, scale, scale, scale]
-      values.forEach((value, index) => transform.writeFloatLE(value, index * 4))
-      return transform
-    }
-    const rig = Buffer.concat([i32(2), bone(bones[0], -1), bone(bones[1], 0), i32(2),
-      pose(0, mesh ? 0.5 : 1), pose(25, 1), i32(2),
-      bones[1], i32(invalidIndex ? 0 : 1), bones[0], i32(0)])
-    const imports = [
-      ['Package', wrongClass ? '/Game/Other' : '/Script/Engine'],
-      ['Class', mesh ? 'SkeletalMesh' : 'Skeleton', -1],
-      ['Package', '/Game/Characters/Character_Skeleton'],
-      ['Skeleton', 'Character_Skeleton', -3],
-    ]
-    const meshHeader = Buffer.alloc(34)
-    if (cooked) meshHeader[0] = 1
-    const data = Buffer.concat([...(mesh ? [object('Skeleton', -4)] : []), none, i32(0), ...(mesh ? [meshHeader] : []), rig])
-    return { imports, objects: [[-2, mesh ? 'SK_Character' : 'Character_Skeleton', 0, data]] }
-  })
-}
+const cli = fileURLToPath(new URL('../scripts/asset-viewer.mjs', import.meta.url))
+const run = promisify(execFile)
+const queryWith = data => async (...args) => JSON.parse((await run(process.execPath, [cli, ...args, '--json'],
+  { env: { ...process.env, ASSET_VIEWER_DATA_DIR: data }, windowsHide: true })).stdout)
 
 test('stock UE4 skeletons keep their exact hierarchy and distinct mesh reference pose', () => {
   const { rig: skeleton } = extractEditorSkeleton(fixture(), 522)
@@ -75,14 +53,11 @@ test('loose UE4 import publishes editor and split cooked reference poses, preser
     writeFile(join(character, 'SK_Cooked.uexp'), cooked.uexp),
     writeFile(join(character, 'SK_MissingSidecar.uasset'), cooked.uasset),
   ])
-  const cli = fileURLToPath(new URL('../scripts/asset-viewer.mjs', import.meta.url))
-  const run = promisify(execFile)
-  const query = async (...args) => JSON.parse((await run(process.execPath, [cli, ...args, '--json'],
-    { env: { ...process.env, ASSET_VIEWER_DATA_DIR: data }, windowsHide: true })).stdout)
+  const query = queryWith(data)
   const { job, scan } = await query('package-import', source)
   assert.equal(scan.status, 'completed')
   const { directory, report } = job.result
-  assert.deepEqual(report.unrealSkeletons, { converterVersion: 1, skeletons: 1, meshReferencePoses: 2, linked: 2, incomplete: 1 })
+  assert.deepEqual(report.unrealSkeletons, { converterVersion: 2, skeletons: 1, meshReferencePoses: 2, linked: 2, incomplete: 1 })
   const manifest = JSON.parse(await readFile(join(directory, 'manifest.json')))
   const byName = new Map(manifest.assets.map(asset => [asset.sourcePath, asset]))
   const skeleton = byName.get('Characters/Character_Skeleton.uasset')
@@ -113,3 +88,68 @@ test('loose UE4 import publishes editor and split cooked reference poses, preser
   const repeat = await query('package-import', source)
   assert.deepEqual([repeat.job.result.reused, repeat.job.result.directory], [true, directory])
 })
+
+test('compressed Unreal Pak verifies skeleton links, exports native companions, and rejects missing cache artifacts',
+  { skip: process.env.ASSET_VIEWER_TEST_CUE4PARSE !== '1', timeout: 55_000 }, async t => {
+    const root = await testDirectory(t)
+    const source = join(root, 'Characters.pak')
+    const data = join(root, 'data')
+    const standalone = fixture({ cooked: true, split: false })
+    const skeletalMesh = fixture({ cooked: true, mesh: true })
+    const files = [
+      ['Character_Skeleton.uasset', standalone.uasset],
+      ['SK_Character.uasset', skeletalMesh.uasset],
+      ['SK_Character.uexp', skeletalMesh.uexp],
+      ['SK_WithoutExport.uasset', skeletalMesh.uasset],
+      ['SK_OtherClass.uasset', fixture({ cooked: true, mesh: true, split: false, wrongClass: true }).uasset],
+      ['Wrong_Skeleton.uasset', fixture({ cooked: true, split: false, objectName: 'Renamed' }).uasset],
+      ['SK_WrongSkeleton.uasset', fixture({ cooked: true, mesh: true, split: false, skeletonName: 'Wrong_Skeleton' }).uasset],
+    ]
+    const pak = makeModernPak(files.map(([name, content]) => ({ path: 'Characters/' + name, content, compressed: true })))
+    await writeFile(source, pak)
+    const query = queryWith(data)
+    const { job, scan } = await query('package-import', source)
+    assert.equal(scan.status, 'completed')
+    const { directory, report } = job.result
+    assert.deepEqual(report.unrealSkeletons, { converterVersion: 2, skeletons: 2, meshReferencePoses: 2, linked: 1, incomplete: 1 })
+    const manifestPath = join(directory, 'manifest.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    const row = name => manifest.entries.find(entry => entry.path.endsWith('/' + name))
+    const mesh = row('SK_Character.uasset')
+    const skeleton = row('Character_Skeleton.uasset')
+    assert.equal(mesh.status, 'extracted')
+    assert.equal(row('SK_OtherClass.uasset').skeleton, undefined)
+    assert.ok(row('SK_WithoutExport.uasset').issues.includes('unreal-ue4-skeleton-export-missing'))
+    const meshPath = join(directory, mesh.skeleton.path)
+    const meshDescription = await readFile(meshPath)
+    const { source: provenance, bones } = JSON.parse(meshDescription)
+    assert.deepEqual(provenance, { id: mesh.id, path: mesh.path, sha256: createHash('sha256').update(skeletalMesh.uasset).digest('hex'),
+      storage: 'cooked', companion: { path: row('SK_Character.uexp').path, sha256: createHash('sha256').update(skeletalMesh.uexp).digest('hex') } })
+    assert.deepEqual(bones[0].scale, [0.5, 0.5, 0.5])
+    const links = JSON.parse(await readFile(join(directory, 'dependencies.json'), 'utf8')).entries
+    assert.deepEqual(links, [
+      { source: mesh.id, target: skeleton.id, path: '/Game/Characters/Character_Skeleton',
+        type: 'unreal-skeletal-mesh-skeleton', status: 'resolved' },
+      { source: row('SK_WrongSkeleton.uasset').id, target: row('Wrong_Skeleton.uasset').id, path: '/Game/Characters/Wrong_Skeleton',
+        type: 'unreal-skeletal-mesh-skeleton', status: 'unavailable' },
+    ])
+    const selected = String(manifest.entries.indexOf(mesh))
+    const plan = await query('package-export', job.id, root, '--asset', selected)
+    assert.deepEqual([plan.assets, plan.unresolved], [3, 0])
+    const result = await query('package-export', job.id, root, '--asset', selected, '--plan-key', plan.key)
+    for (const relative of [mesh.artifact.path, mesh.skeleton.path, skeleton.artifact.path, skeleton.skeleton.path,
+      row('SK_Character.uexp').artifact.path]) {
+      assert.deepEqual(await readFile(join(result.directory, relative)), await readFile(join(directory, relative)))
+    }
+    assert.deepEqual(await readFile(source), pak)
+    const repeat = await query('package-import', source)
+    assert.deepEqual([repeat.job.result.reused, repeat.job.result.directory], [true, directory])
+    const cacheError = error => error.code === 1 && /Кеш импорта Unreal Pak повреждён/.test(JSON.parse(error.stdout).job.error)
+    await writeFile(meshPath, Buffer.concat([meshDescription, Buffer.from(' ')]))
+    await assert.rejects(query('package-import', source), cacheError)
+    await writeFile(meshPath, meshDescription)
+    delete mesh.skeleton
+    mesh.exports = []
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    await assert.rejects(query('package-import', source), cacheError)
+  })

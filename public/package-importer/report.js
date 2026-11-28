@@ -166,6 +166,12 @@ const packageIssues = {
   'unreal-cooked-collision-partial': 'Некоторые формы коллизии не удалось восстановить',
   'unreal-cooked-collision-preview': 'GLB коллизии не прошёл проверку',
   'unreal-cooked-collision-budget': 'Достигнут лимит обработки коллизий',
+  'unreal-ue4-skeleton-layout': 'Формат скелета повреждён или пока не поддерживается',
+  'unreal-ue4-skeleton-export-missing': 'Отсутствует файл .uexp со скелетом или позой меша',
+  'unreal-ue4-skeleton-read': 'Не удалось прочитать данные скелета',
+  'unreal-skeleton-count-limit': 'Достигнут лимит количества скелетов',
+  'unreal-skeleton-size-limit': 'Достигнут лимит объёма данных скелетов',
+  'unreal-skeleton-metadata-only': 'Сохранены кости и трансформации в исходной позе',
   'unreal-source-material-time-budget': 'Достигнут лимит времени чтения материалов UE4',
   'unreal-sound-cue-time-budget': 'Достигнут лимит времени чтения SoundCue',
   'unreal-sound-cue-layout': 'Структура графа SoundCue повреждена или не поддерживается',
@@ -222,6 +228,7 @@ const artifactRoles = {
   'actorx-settings': 'Настройки PSA', 'animation-buffer': 'Ключи анимации',
   'collision-shapes': 'Данные коллизии', 'collision-preview': 'Предпросмотр коллизии',
   'sound-cue': 'Граф SoundCue',
+  'skeleton-reference': 'Исходная поза меша',
 }
 
 export const describeIssue = issue => packageIssues[issue] ?? issue
@@ -246,6 +253,14 @@ export function cookedMeshSummary(meshes, version = 'UE4.27') {
     meshes.skipped && 'Пропущено · ' + meshes.skipped,
     meshes.failed && 'Ошибок · ' + meshes.failed,
     meshes.issue && describeIssue(meshes.issue)].filter(Boolean).join(' · ')
+}
+
+export function skeletonSummary(rigs) {
+  return ['Скелеты UE4', rigs.skeletons && 'Скелетов · ' + rigs.skeletons,
+    rigs.meshReferencePoses && 'Поз мешей · ' + rigs.meshReferencePoses,
+    rigs.linked && 'Подтверждённых связей · ' + rigs.linked,
+    rigs.incomplete && 'Недоступных · ' + rigs.incomplete,
+    rigs.issue && describeIssue(rigs.issue)].filter(Boolean).join(' · ')
 }
 
 export function assetLabel(asset) {
@@ -292,6 +307,7 @@ export function appendManifest({ details, record, json, element, button, assetSt
             results.append(element('li', [
               item.format.toUpperCase(), label, artifactStatus[item.status] ?? item.status, item.path,
               item.width && item.height && `${item.width} × ${item.height}`,
+              item.bones && `Костей ${item.bones}`,
               Number.isInteger(item.mip) && `Мип ${item.mip}`,
               item.audio?.bits && `PCM ${item.audio.bits} бит, ${item.audio.sampleRate} Гц, ${item.audio.channels} кан.`,
               ...[item.issue, ...(item.issues ?? [])].filter(Boolean).map(describeIssue),

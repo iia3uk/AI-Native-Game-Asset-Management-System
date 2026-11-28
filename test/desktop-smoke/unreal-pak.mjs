@@ -4,10 +4,13 @@ import { cookedMaterial } from '../fixtures/unreal-cooked-material.mjs'
 import { cookedStaticMesh } from '../fixtures/unreal-cooked-static-mesh.mjs'
 import { cookedTexture } from '../fixtures/unreal-cooked-texture.mjs'
 import { makePak, wavTone } from '../fixtures/unreal-pak.mjs'
+import { unrealSkeletonFixture } from '../fixtures/unreal-skeleton.mjs'
 
 export async function verifyUnrealPak(webContents, waitFor, fixtures) {
   const model = await readFile(join(fixtures, 'Architecture', 'woodland-cabin.glb'))
   const path = join(dirname(fixtures), 'SmokeUnreal.pak')
+  const rig = unrealSkeletonFixture({ cooked: true, split: false })
+  const mesh = unrealSkeletonFixture({ cooked: true, mesh: true })
   await writeFile(path, makePak([
     { path: 'Models/Pak-Cabin.glb', content: model },
     { path: 'Audio/Pak-Encrypted.wav', content: wavTone(), encrypted: true },
@@ -15,6 +18,9 @@ export async function verifyUnrealPak(webContents, waitFor, fixtures) {
       textures: [{ parameter: 'BaseColor', value: '/Game/Pak-Tint' }] }),
     ...cookedTexture({ name: 'Pak-Tint', format: 'PF_G8', width: 2, height: 2, pixels: Buffer.from([5, 40, 80, 255]) }),
     ...cookedStaticMesh({ name: 'Pak-CookedModel', external: true, body: { pointOnly: true } }),
+    { path: 'Characters/Character_Skeleton.uasset', content: rig.uasset },
+    { path: 'Characters/SK_Character.uasset', content: mesh.uasset },
+    { path: 'Characters/SK_Character.uexp', content: mesh.uexp },
   ]))
   await webContents.executeJavaScript(`
     if (!document.querySelector('#index-dialog').open) document.querySelector('#index-mode').click()
@@ -40,6 +46,8 @@ export async function verifyUnrealPak(webContents, waitFor, fixtures) {
     (${row})?.textContent.includes('Pak-Paint.material.json')`)
   await waitFor(`(${row})?.textContent.includes('Статические модели cooked UE4.27 · Моделей · 1 · LOD · 2') &&
     (${row})?.textContent.includes('2 GLB') && (${row})?.textContent.includes('Форм коллизии · 4')`)
+  await waitFor(`(${row})?.textContent.includes('Скелеты UE4 · Скелетов · 1 · Поз мешей · 1 · Подтверждённых связей · 1') &&
+    (${row})?.textContent.includes('Исходная поза меша') && (${row})?.textContent.includes('Костей 2')`)
   await webContents.executeJavaScript(`Array.from((${row}).querySelectorAll('button'))
     .find(button => button.textContent === 'Показать в индексе').click()`)
   await waitFor("document.querySelector('#index-results').textContent.includes('Pak-Cabin.glb') && " +

@@ -1,7 +1,7 @@
 import { mountEngineStatus } from './engine-status.js'
 import { mountPackageFolder } from './folder.js'
 import { formatLabel, isUnityBinary, isUnityFolder, isUnrealArchive, isUnrealLoose } from './formats.js'
-import { appendManifest, assetLabel, cookedMeshSummary, describeIssue, soundWaveSummary } from './report.js'
+import { appendManifest, assetLabel, cookedMeshSummary, describeIssue, skeletonSummary, soundWaveSummary } from './report.js'
 import { mountImportOptions } from './import-options.js'
 import { mountPackageExport } from './export.js'
 import { requestPackageCleanup } from './cleanup.js'
@@ -128,6 +128,8 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
         element('p', record.result.directory))
       const materials = record.result.report.materials
       if (materials?.written) details.append(element('p', 'Описаний материалов · ' + materials.written))
+      const skeletons = record.result.report.unrealSkeletons
+      if (skeletons) details.append(element('p', skeletonSummary(skeletons)))
       if (isUnityBinary(record.result.report.packageFormat)) {
         const { packageFormat, format, unityVersion, converted, total } = record.result.report
         details.append(element('p', formatLabel(packageFormat) + ' ' + format + ' · Unity ' + unityVersion +

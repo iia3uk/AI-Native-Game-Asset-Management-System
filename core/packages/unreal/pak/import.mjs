@@ -21,7 +21,7 @@ async function saveOutputs(workspace, source, result, hash, { recipe, decoder, b
   await mkdir(output)
   await Promise.all(exportFolders.map(folder => mkdir(join(output, folder))))
   const store = new ExportArtifacts(output, signal)
-  const { entries, materials, dependencies, meshes } = await publishPakEntries(result.entries, join(workspace, 'output'), store, {
+  const { entries, materials, dependencies, meshes, skeletons } = await publishPakEntries(result.entries, join(workspace, 'output'), store, {
     backendVersion: cue4parseVersion, decoder, workspace, blender, formats, signal,
   })
   const extracted = entries.filter(entry => entry.status === 'extracted').length
@@ -34,14 +34,14 @@ async function saveOutputs(workspace, source, result, hash, { recipe, decoder, b
     if (file.role === 'audio') audio[file.status]++
   }
   const hasMaterials = Object.values(materials).some(Boolean)
-  const dependencyStatus = dependencies.length || hasMaterials || meshes ? 'partial' : 'unavailable'
+  const dependencyStatus = dependencies.length || hasMaterials || meshes || skeletons ? 'partial' : 'unavailable'
   const dependencyText = JSON.stringify({ version: 1, status: dependencyStatus, entries: dependencies }, null, 2) + '\n'
   const summary = { status: extracted ? 'completed' : 'no-compatible-inputs', method: pakMethod,
     converterVersion: cue4parseVersion, containerVersion: result.version, extracted, skipped, total: entries.length,
     counts: { extracted, skipped: skipped - failed, ...(failed && { failed }) },
     ...(result.textureDecoder && { textureDecoder: result.textureDecoder, textures }),
     ...(result.audioDecoder && { audioDecoder: result.audioDecoder, ...(Object.values(audio).some(Boolean) && { audio }) }),
-    ...(hasMaterials && { materials }), ...(meshes && { meshes }),
+    ...(hasMaterials && { materials }), ...(meshes && { meshes }), ...(skeletons && { unrealSkeletons: skeletons }),
     limits: ['unreal-pak-cooked-decoding-limited-to-stock-ue4', 'unreal-pak-archive-dependencies-incomplete',
       'collision-limited-to-supported-simple-ue4-shapes'] }
   const reportText = JSON.stringify(summary, null, 2) + '\n'
@@ -54,7 +54,7 @@ async function saveOutputs(workspace, source, result, hash, { recipe, decoder, b
     writeFile(join(output, 'conversion-report.json'), reportText, { signal, flag: 'wx' }),
     writeFile(join(output, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { signal, flag: 'wx' }),
   ])
-  const cacheable = !failed && !materials.issue && !meshes?.failed && !meshes?.collision?.failed &&
+  const cacheable = !failed && !materials.issue && !meshes?.failed && !meshes?.collision?.failed && !skeletons?.issue &&
     (!meshes?.issue || meshes.issue === 'unreal-loose-meshes-budget') &&
     !entries.some(entry => entry.exports?.some(file => file.status === 'failed' ||
       ['unreal-cooked-texture-limit', 'unreal-cooked-texture-io', 'unreal-cooked-material-read', 'unreal-cooked-mesh-limit',

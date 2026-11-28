@@ -1,21 +1,24 @@
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join, relative, sep } from 'node:path'
+import { join, posix, relative, sep } from 'node:path'
 import { unrealGameAssetResolver } from '../../../engines/unreal/editor-package/game-path.mjs'
 import { extractCookedSkeleton, ue4SkeletonRevision } from '../../../engines/unreal/skeleton/ue4.mjs'
 import { readVerifiedFile } from '../../../files/read-verified.mjs'
 import { ExportArtifacts } from '../../artifacts.mjs'
 
 const maxRigs = 512
-const method = 'unreal-ue4-reference-skeleton'
+export const skeletonMethod = 'unreal-ue4-reference-skeleton'
+export const skeletonDependency = 'unreal-skeletal-mesh-skeleton'
 const limitations = ['unreal-skeleton-metadata-only']
+const maxBytes = 64 * 1024 ** 2
+const objectKey = name => name.normalize('NFC').toLowerCase()
 
-export function createSkeletonPublisher({ records, output, workspace, source, signal }) {
+export function createSkeletonPublisher({ records, output, workspace, source, signal,
+  resolve = unrealGameAssetResolver(records.assets, source.root), store = new ExportArtifacts(output, signal, maxBytes) }) {
   const scratch = join(workspace, 'unreal-skeletons')
-  const store = new ExportArtifacts(output, signal, 64 * 1024 ** 2)
-  const resolve = unrealGameAssetResolver(records.assets, source.root)
   const byOutput = new Map(records.assets.filter(asset => asset.output).map(asset => [asset.output, asset]))
   const published = new Map()
   const summary = { converterVersion: ue4SkeletonRevision, skeletons: 0, meshReferencePoses: 0, linked: 0, incomplete: 0 }
+  let written = 0
 
   async function publish(asset, result, companion) {
     if (!result) return
@@ -33,13 +36,13 @@ export function createSkeletonPublisher({ records, output, workspace, source, si
     const role = standalone ? 'skeleton' : 'skeleton-reference'
     const relative = 'Metadata/Skeletons/' + asset.id + '/reference.json'
     const description = {
-      version: 1, method, converterVersion: ue4SkeletonRevision,
+      version: 1, method: skeletonMethod, converterVersion: ue4SkeletonRevision,
       source: { id: asset.id, path: asset.sourcePath, sha256: asset.hash, storage: asset.storage,
         ...(companion && { companion: { path: companion.sourcePath, sha256: companion.hash } }) },
       units: 'centimeters', coordinates: 'unreal', ...rig, limitations,
     }
     const bytes = Buffer.from(JSON.stringify(description, null, 2) + '\n')
-    const issue = await store.preflight(bytes.length)
+    const issue = written + bytes.length > maxBytes ? 'unreal-skeleton-size-limit' : await store.preflight(bytes.length)
     if (issue) {
       asset.issues.push(issue)
       summary.issue = issue
@@ -49,7 +52,7 @@ export function createSkeletonPublisher({ records, output, workspace, source, si
     await mkdir(scratch, { recursive: true })
     await writeFile(path, bytes, { flag: 'wx', signal })
     const artifact = await store.save(relative, { path, info: { size: bytes.length } }, {
-      from: asset.output, status: 'converted', format: 'json', role, method,
+      from: asset.output, status: 'converted', format: 'json', role, method: skeletonMethod,
       converterVersion: ue4SkeletonRevision, bones: rig.bones.length, issues: limitations,
     })
     asset.exports.push(artifact)
@@ -57,6 +60,7 @@ export function createSkeletonPublisher({ records, output, workspace, source, si
       summary.issue = artifact.issue
       return
     }
+    written += bytes.length
     asset.skeleton = { path: artifact.path, role, bones: rig.bones.length }
     published.set(asset.id, { asset, rig, role })
     if (standalone) {
@@ -86,12 +90,13 @@ export function createSkeletonPublisher({ records, output, workspace, source, si
       const path = rig.skeletonPackage
       if (!path) continue
       const target = resolve(path, asset)
-      const resolved = published.get(target?.id)?.role === 'skeleton'
+      const object = published.get(target?.id)
+      const resolved = object?.role === 'skeleton' && objectKey(object.rig.object) === objectKey(posix.basename(path))
       records.dependencies.push({ source: asset.id, target: target?.id ?? null, path,
-        status: resolved ? 'resolved' : target ? 'unavailable' : 'missing', type: 'unreal-skeletal-mesh-skeleton' })
+        status: resolved ? 'resolved' : target ? 'unavailable' : 'missing', type: skeletonDependency })
       if (resolved) summary.linked++
     }
-    return summary
+    return summary.skeletons || summary.meshReferencePoses || summary.incomplete || summary.issue ? summary : undefined
   }
   return { publish, publishCooked, finish }
 }

@@ -6,6 +6,7 @@ import { exportRecipe, verifyExports } from '../../../conversion/cache.mjs'
 import { collisionTotalsMatch } from '../../../conversion/unreal/collision/cache.mjs'
 import { cookedMaterialRevision } from '../../../conversion/unreal/cooked-material/publish.mjs'
 import { publishLooseCooked } from '../../../conversion/unreal/loose-cooked/publish.mjs'
+import { skeletonTotalsMatch } from '../../../conversion/unreal/skeleton/cache.mjs'
 import { createSkeletonPublisher } from '../../../conversion/unreal/skeleton/publish.mjs'
 import { publishSourceSoundCues } from '../../../conversion/unreal/source-audio/publish.mjs'
 import { prepareSourceMaterials, publishSourceMaterials } from '../../../conversion/unreal/source-material/publish.mjs'
@@ -63,6 +64,7 @@ async function cachedResult(root, name, hash, source, recipe, signal) {
         !Number.isSafeInteger(report.written) ||
         !Array.isArray(data.assets) || !collisionTotalsMatch(data.assets.filter(asset => asset.storage === 'cooked'),
           report.unrealCooked?.meshes?.collision) ||
+        !skeletonTotalsMatch(data.assets, report.unrealSkeletons, JSON.parse(links).dependencies) ||
         !await verifyExports(directory, await availablePackageAssets(directory, data.assets, signal), signal)) {
       throw new Error('Invalid cached Unreal outputs')
     }
@@ -174,8 +176,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
       status: records.written ? 'completed' : 'no-compatible-inputs', counts, written: records.written, total: records.assets.length,
       engineVersion: source.association ?? null, ...conversion, converted: counts.converted ?? 0, media,
       ...(unrealViewer && { unrealViewer }),
-      ...((unrealSkeletons.skeletons || unrealSkeletons.meshReferencePoses || unrealSkeletons.incomplete || unrealSkeletons.issue) &&
-        { unrealSkeletons }),
+      ...(unrealSkeletons && { unrealSkeletons }),
       ...(unrealSourceMeshes && { unrealSourceMeshes }),
       ...(sourceMaterials && { unrealSourceMaterials: sourceMaterials.summary }),
       ...(unrealCooked && { unrealCooked }),
@@ -186,7 +187,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
       'conversion-report': JSON.stringify(report, null, 2) + '\n' }).map(([key, value]) =>
       writeFile(join(output, key + '.json'), value, { flag: 'wx', signal })))
     const partial = unrealViewer?.status === 'partial' || unrealSourceMeshes?.issue || sourceMaterials?.summary.issue ||
-      soundCues.issue || unrealCooked?.partial
+      soundCues.issue || unrealCooked?.partial || unrealSkeletons?.issue
     const destination = join(root, partial ? name + '-' + randomUUID() : name)
     signal?.throwIfAborted()
     onProgress?.(95)

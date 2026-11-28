@@ -5,7 +5,7 @@ import { editorPackage } from '../editor-package/tables.mjs'
 import { requireLayout } from '../package-tables.mjs'
 import { readReferenceSkeleton } from './reference.mjs'
 
-export const ue4SkeletonRevision = 1
+export const ue4SkeletonRevision = 2
 export const ue4EditorSkeletonVersions = new Set([514, 518, 522])
 const classes = new Set(['Skeleton', 'SkeletalMesh'])
 const skeletonClass = new Set(['Skeleton'])

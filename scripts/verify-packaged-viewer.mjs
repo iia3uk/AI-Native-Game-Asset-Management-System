@@ -125,6 +125,7 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'core/engines/unreal/skeleton/reference.mjs',
     'core/engines/unreal/skeleton/ue4.mjs',
     'core/conversion/unreal/skeleton/publish.mjs',
+    'core/conversion/unreal/skeleton/cache.mjs',
     'core/engines/unreal/editor-package/tables.mjs',
     'core/engines/unreal/editor-package/properties.mjs',
     'core/engines/unreal/editor-package/references.mjs',

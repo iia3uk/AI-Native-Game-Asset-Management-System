@@ -79,6 +79,6 @@ export async function publishPakEntries(entries, root, store, { backendVersion, 
   const resolve = pakMaterialResolver(published)
   const { materials, dependencies } = await publishCookedMaterials(published, cooked, root, store, resolve, signal)
   const eligible = published.filter(entry => cookedMeshCandidates.has(entry.path))
-  const meshes = await publishPakMeshes(published, eligible, { decoder, workspace, store, blender, formats, resolve, dependencies, signal })
-  return { entries: published, materials, dependencies, meshes }
+  const geometry = await publishPakMeshes(published, eligible, { decoder, workspace, store, blender, formats, resolve, dependencies, signal })
+  return { entries: published, materials, dependencies, ...geometry }
 }
