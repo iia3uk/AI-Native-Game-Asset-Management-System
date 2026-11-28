@@ -12,6 +12,7 @@ import { inspectPackage } from '../core/packages/dispatch.mjs'
 import { scanPackageFolder } from '../core/packages/folder.mjs'
 import { scopedPackageSource } from '../core/packages/source.mjs'
 import { ProcessingWorker } from '../core/processing/processing-worker.mjs'
+import { writeUnityFolderFixture } from './fixtures/unity-folder.mjs'
 import { fixtureModel, unityEntries, writeUnityFixture } from './fixtures/unitypackage.mjs'
 import { makePak } from './fixtures/unreal-pak.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
@@ -122,6 +123,31 @@ test('folder search reports its result limit', async t => {
   const report = await scanPackageFolder(root)
   assert.equal(report.packages.length, 500)
   assert.equal(report.truncated, true)
+})
+
+test('structured search keeps Unity project mounts together and excludes linked or managed package trees', async t => {
+  const directory = await testDirectory(t)
+  const root = join(directory, 'scoped')
+  const managed = join(root, 'generated')
+  const outside = join(directory, 'outside')
+  await Promise.all([mkdir(managed, { recursive: true }), mkdir(outside)])
+  const { project, upm } = await writeUnityFolderFixture(root)
+  await Promise.all([
+    writeUnityFixture(join(upm, 'Embedded.unitypackage')),
+    writeUnityFixture(join(managed, 'managed.unitypackage')),
+    writeUnityFixture(join(outside, 'external.unitypackage')),
+    symlink(outside, join(root, 'shortcut'), linkType),
+  ])
+  const report = await scanPackageFolder(root, { structured: true, ignoredPaths: [managed] })
+  assert.equal(report.truncated, false)
+  assert.deepEqual(report.packages, [
+    { path: 'outside-upm', format: 'unity-upm' },
+    { path: 'Unity Folder Fixture', format: 'unity-project' },
+  ])
+  const direct = await scanPackageFolder(project, { structured: true })
+  assert.deepEqual(direct.packages, [{ path: '.', format: 'unity-project' }])
+  await assert.rejects(scopedPackageSource(report.root, 'shortcut'), /не доступен/)
+  assert.equal((await inspectPackage(await scopedPackageSource(report.root, 'Unity Folder Fixture'))).format, 'unity-project')
 })
 
 test('CLI lists without opening the database and imports more packages than the active queue capacity', async t => {

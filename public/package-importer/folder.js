@@ -29,7 +29,7 @@ export function mountPackageFolder({ $, scan, inspect, chooseFolder, batchSize }
       checkbox.type = 'checkbox'
       checkbox.value = path
       checkbox.checked = true
-      label.append(checkbox, ' ' + path + ' · ' + formatLabel(format))
+      label.append(checkbox, ' ' + (path === '.' ? 'Выбранная папка' : path) + ' · ' + formatLabel(format))
       row.append(label)
       list.append(row)
     }
@@ -50,7 +50,7 @@ export function mountPackageFolder({ $, scan, inspect, chooseFolder, batchSize }
     status.textContent = 'Поиск пакетов во вложенных папках…'
     try {
       report = await scan(path)
-      status.textContent = 'Найдено файлов: ' + report.packages.length + '.' +
+      status.textContent = 'Найдено пакетов и проектов: ' + report.packages.length + '.' +
         (report.truncated ? ' Достигнут лимит поиска. Для продолжения выберите вложенную папку.' : '') +
         (report.skipped ? ' Недоступных файлов и папок: ' + report.skipped + '.' : '')
     } catch (error) {

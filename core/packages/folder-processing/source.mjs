@@ -4,7 +4,6 @@ import { packageExportFormats } from '../../conversion/formats.mjs'
 import { unityImportOptions } from '../../engines/unity/options.mjs'
 import { checkedPath, folderPath, inside } from '../../files/asset-files.mjs'
 import { IndexConflictError, IndexInputError } from '../../index/index-errors.mjs'
-import { detectPackage } from '../detect.mjs'
 import { folderPackageSource, scanPackageFolder } from '../folder.mjs'
 import { exportDestination } from '../export/plan.mjs'
 
@@ -35,10 +34,7 @@ const directSource = path => ({ root: path, path, name: basename(path), director
 
 export async function discoverFolderRun(source, ignoredPaths, signal) {
   await verifySource(source)
-  if (await detectPackage(directSource(source.path), { signal, allowUnknownDirectory: true })) {
-    return [{ path: source.path, direct: true }]
-  }
-  const report = await scanPackageFolder(source.path, { ignoredPaths, signal })
+  const report = await scanPackageFolder(source.path, { ignoredPaths, signal, structured: true })
   if (report.truncated) throw new IndexInputError('Папка превышает лимит поиска. Выберите вложенную папку.')
   if (!report.packages.length) throw new IndexInputError('В папке нет поддерживаемых пакетов Unity или Unreal.')
   return report.packages.map(({ path }) => ({ path }))

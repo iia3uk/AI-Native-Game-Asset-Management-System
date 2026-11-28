@@ -37,12 +37,15 @@ export async function scopedPackageSource(root, path) {
   if (typeof root !== 'string' || !isAbsolute(root) || root.length > 4096 ||
       (process.platform === 'win32' && !/^[a-z]:[\\/]/i.test(root)) ||
       typeof path !== 'string' || path.length > 4096 || isAbsolute(path) || win32.isAbsolute(path) ||
-      path.split('/').some(segment => segment === '.' || segment === '..' || !validPackageSegment(segment))) {
+      (path !== '.' && path.split('/').some(segment => segment === '.' || segment === '..' || !validPackageSegment(segment)))) {
     throw new IndexInputError('Укажите путь к пакету внутри выбранной папки.')
   }
-  const file = await fileInfo(root, path)
+  const absolute = await checkedPath(root, path)
+  const info = absolute && await lstat(absolute).catch(() => null)
+  if (info?.isDirectory()) return directorySource(absolute)
+  const file = info?.isFile() && await fileInfo(root, absolute)
   if (!file) throw new IndexInputError('Пакет больше не доступен в выбранной папке.')
-  return { root, path: file.path, name: basename(file.path) }
+  return { root: dirname(file.path), path: file.path, name: basename(file.path) }
 }
 
 export async function queuedPackageSource(path) {

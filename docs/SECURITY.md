@@ -14,6 +14,8 @@ Automatic import reads package candidates from explicitly enabled library roots.
 
 One-time folder discovery bounds traversal to 20,000 entries and 500 candidates. It skips child filesystem links and managed cache, backup and import directories. Inspection and import recheck relative file paths against the selected canonical root. The worker verifies the stored canonical path and inspected SHA-256 before processing, including after a queue restart.
 
+Structured discovery checks the Unreal package signature before grouping loose inputs. Discovery identifies candidates and the format-specific importers validate their contents. Recognized Unity projects use the existing mount allowlist for package contents.
+
 A package pause prevents publication in the same SQLite transaction that checks the worker's lease. The worker uses its existing abort flow to stop the converter and remove its incomplete stage. Resume reuses the original verified-source requirement. Destination export and the cleanup prompt wait for completed import and indexing.
 
 The optional Unity Editor bridge builds a fresh project with bundled C# and pinned packages from the Unity registry. It stages allowlisted assets under `Assets/BridgeInput`, accepts known declarative Unity class IDs and generates new metadata with source GUIDs and available main file IDs. The staging boundary excludes package scripts, custom serialized components, native plugins, settings and embedded UPM projects. Unity runs with the current account's OS permissions. The bridge limits the total staged input to 2 GiB and 4,000 files, checks disk space and limits Unity to three minutes per import.

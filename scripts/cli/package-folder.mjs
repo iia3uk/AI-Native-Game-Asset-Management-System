@@ -1,12 +1,16 @@
 import { AssetIndex, IndexInputError } from '../../core/index/asset-index.mjs'
 import { inspectPackage, packageOptions } from '../../core/packages/dispatch.mjs'
+import { folderPackageOptions } from '../../core/packages/discovery/recipe.mjs'
 import { folderPackageSource, scanPackageFolder } from '../../core/packages/folder.mjs'
 
 export async function runPackageFolder(input, paths, values, waitForImport) {
   const ignoredPaths = [paths.cache, paths.backups, paths.imports]
-  const options = { mode: values.mode, editorVersion: values['unity-version'], formats: values.export?.split(',') }
-  if (values.import) packageOptions('unitypackage', options)
-  else if (Object.values(options).some(value => value !== undefined)) {
+  const options = { mode: values.mode, unityVersion: values['unity-version'], unrealVersion: values['unreal-version'],
+    formats: values.export?.split(',') }
+  if (values.import) {
+    packageOptions('unitypackage', { ...options, editorVersion: options.unityVersion })
+    if (options.unrealVersion !== undefined) packageOptions('unreal-content', { ...options, editorVersion: options.unrealVersion })
+  } else if (Object.values(options).some(value => value !== undefined)) {
     throw new IndexInputError('Use --import to set export or engine options.')
   }
 
@@ -16,7 +20,7 @@ export async function runPackageFolder(input, paths, values, waitForImport) {
   for (const event of events) process.once(event, abort)
   try {
     const report = await scanPackageFolder(input, {
-      ignoredPaths, signal: AbortSignal.any([stop.signal, AbortSignal.timeout(120_000)]),
+      ignoredPaths, signal: AbortSignal.any([stop.signal, AbortSignal.timeout(120_000)]), structured: true,
     })
     if (!values.import) return report
     if (report.truncated) throw new IndexInputError('Folder search reached its limit. Select a smaller subfolder for import.')
@@ -30,8 +34,7 @@ export async function runPackageFolder(input, paths, values, waitForImport) {
           const source = await folderPackageSource(report.root, path, ignoredPaths)
           const by = AbortSignal.timeout(120_000)
           const plan = await inspectPackage(source, { signal: AbortSignal.any([stop.signal, by]) })
-          const recipe = packageOptions(plan.format, plan.format === 'unitypackage' ? options :
-            { formats: plan.format === 'unreal-pak' ? undefined : options.formats })
+          const recipe = folderPackageOptions(plan.format, options)
           const queued = index.jobs.enqueueImport(source.path, plan.hash, recipe.formats, recipe)
           results.push({ path, ...await waitForImport(index, queued.id, paths.imports, stop.signal) })
         } catch (error) {

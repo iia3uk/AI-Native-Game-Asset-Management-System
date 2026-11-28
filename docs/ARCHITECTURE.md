@@ -87,6 +87,8 @@ The Electron main process launches the loopback server in a UtilityProcess and i
 
 `core/packages/folder-processing/` manages the desktop folder run. Schema 14 stores its source, destination, conversion settings, package list and progress. The coordinator uses the existing job queue, waits for indexing and optionally publishes processed results to the common destination. It can resume a paused run or recover a published export in place by checking its saved directory identity and file hashes. `public/package-importer/folder-processing.js` displays the saved run and requests native cleanup when the server reports it is ready.
 
+`core/packages/discovery/` groups structured folder imports for desktop, CLI and the package search. Unity projects keep their embedded UPM packages within one import. Unreal project and Content boundaries split adjacent loose resources into independent scopes. Archive detection continues alongside Unreal files. The same batch conversion options select the appropriate recipe for each format.
+
 `core/packages/export/processed.mjs` preserves usable source media, derived artifacts and provenance in the destination. The publisher uses the same copy and verification steps as a full export. The native cleanup handler checks the selected destination again before offering to recycle source files.
 
 `npm run desktop` opens an interactive window. `npm run test:desktop` uses the same bootstrap with a hidden window and automatically creates an isolated data directory when no override is set. Set `ASSET_VIEWER_SMOKE_SCREENSHOT` to save a capture of the demo during the test.

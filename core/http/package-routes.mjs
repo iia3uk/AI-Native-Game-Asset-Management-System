@@ -19,7 +19,8 @@ export function packageRoutes({ json, body, shutdown, wake, ignoredPaths }) {
       const timeout = AbortSignal.timeout(120_000)
       try {
         const signal = AbortSignal.any([shutdown, client.signal, timeout])
-        const result = action === 'folder' ? await scanPackageFolder(input?.path, { ignoredPaths, signal }) :
+        const result = action === 'folder'
+          ? await scanPackageFolder(input?.path, { ignoredPaths, signal, structured: input?.structured === true }) :
           { package: await inspectPackage(await source(), { signal }) }
         return json(response, 200, result)
       } catch (error) {

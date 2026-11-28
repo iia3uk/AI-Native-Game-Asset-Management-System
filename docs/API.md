@@ -29,7 +29,7 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | POST | `/api/index/thumbnail-cache/clear` | Empty object. Removes generated thumbnails and returns cache usage |
 | GET | `/api/index/quality-profiles` | Returns the six saved or default profiles and the supported field definitions |
 | POST | `/api/index/quality-profiles/:id` | `{"revision":0,"limits":{"maxTriangles":12000}}` replaces the enabled limits. `{"revision":0,"reset":true}` restores defaults. Stale revisions return 409 |
-| POST | `/api/index/packages/folder` | `{"path":"<absolute local folder>"}` returns its canonical `root`, detected `packages` with relative `path` and `format`, plus `visited`, `skipped` and `truncated` |
+| POST | `/api/index/packages/folder` | `{"path":"<absolute local folder>"}` returns its canonical `root`, detected `packages` with relative `path` and `format`, plus `visited`, `skipped` and `truncated`. Set `structured: true` to also detect Unity projects, UPM packages, Unreal projects and loose Unreal sources |
 | GET | `/api/index/folder-run` | Desktop service only. Returns `{run}` with the current or latest run, or `null` before the first run |
 | POST | `/api/index/folder-run` | Desktop service only. Accepts an absolute source `path`, optional absolute `destination`, `mode`, `formats`, `unityVersion` and `unrealVersion`. Returns 202 with the saved run, or 409 while another run needs processing or cleanup review |
 | POST | `/api/index/packages/inspect` | An absolute `path` to a file, Unity project or UPM folder, or a folder search result's `root` and relative `path`. Returns the detected format, SHA-256, entry count and up to 500 preview entries |
@@ -39,6 +39,8 @@ The server binds to IPv4 loopback. Browser writes require the current origin and
 | POST | `/api/index/jobs/:id/export` | Send the same destination and selection with the plan's `key`. Returns 201 and the new `directory` |
 | GET | `/api/index/engines` | Lists detected Unity, Unreal and Blender executables and available version metadata without starting an editor |
 | POST | `/api/demo` | Creates and opens a separate procedural demo session on demand |
+
+Structured search uses `.` for a package at the selected folder itself. A returned `root` and `path` can be used together for inspection and import. The structured list can include both Unreal sources and Unity archives from the same folder.
 
 For a desktop folder run, the summary includes the run ID, phase, current step, progress, destination, export count and any processing failures. The service restores the run on startup. Pause, resume and cancel use the existing job routes. Source cleanup runs through Electron IPC after processing.
 

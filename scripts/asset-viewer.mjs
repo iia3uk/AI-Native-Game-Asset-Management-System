@@ -34,7 +34,7 @@ const commands = {
     ...Object.fromEntries(Object.keys(jobActions).map(action => [action, flag])) } },
   'package-inspect': { args: ['absolute-path'], options: {} },
   'package-folder': { args: ['absolute-folder'], options: { import: flag, export: string,
-    mode: string, 'unity-version': string } },
+    mode: string, 'unity-version': string, 'unreal-version': string } },
   'package-import': { args: ['absolute-path'], options: { 'dry-run': flag, queue: flag, export: string,
     mode: string, 'unity-version': string, 'unreal-version': string } },
   'package-export': { args: ['job-id', 'destination'], options: { asset: string, 'plan-key': string } },

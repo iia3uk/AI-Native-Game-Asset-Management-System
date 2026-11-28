@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { AssetIndex } from '../core/index/asset-index.mjs'
+import { sourceWave, ue4SourceFixture } from './fixtures/unreal-source-media.mjs'
 import { fixtureModel, ids, unityEntries, writeUnityFixture } from './fixtures/unitypackage.mjs'
 import { startServer, testDirectory } from './server-fixture.mjs'
 
@@ -32,6 +36,81 @@ async function desktop(directory) {
     },
   }
 }
+
+test('one folder run imports Unity archives, an Unreal project and loose Unreal sources to the same destination',
+  { timeout: 24000 }, async t => {
+    const { root, input, output } = await folders(t)
+    const content = join(input, 'Native project', 'Content')
+    const pack = join(input, 'Unpacked')
+    const soundFolder = join(pack, 'Audio')
+    await Promise.all([mkdir(content, { recursive: true }), mkdir(soundFolder, { recursive: true })])
+    const descriptor = join(input, 'Native project', 'Sample.uproject')
+    const native = join(content, 'ProjectSound.uasset')
+    const loose = join(soundFolder, 'PackSound.uasset')
+    const single = join(input, 'RootSound.uasset')
+    const wave = sourceWave()
+    const sources = [native, loose, single].map((path, index) => {
+      const bytes = Buffer.from(wave)
+      bytes.writeInt16LE(5000 + index, 46)
+      return { path, bytes, original: ue4SourceFixture('SoundWave', bytes) }
+    })
+    await Promise.all([
+      writeFile(descriptor, JSON.stringify({ FileVersion: 3, EngineAssociation: '4.27' })),
+      archive(pack, 'UnityCopy'),
+      writeFile(join(pack, 'unrelated.uasset'), 'not an Unreal package'),
+      ...sources.map(({ path, original }) => writeFile(path, original)),
+    ])
+    const catalog = fileURLToPath(new URL('../scripts/asset-viewer.mjs', import.meta.url))
+    const { stdout } = await promisify(execFile)(process.execPath, [catalog, 'package-folder', input, '--json'], {
+      env: { ...process.env, ASSET_VIEWER_DATA_DIR: join(root, 'cli-data') }, windowsHide: true,
+    })
+    const expected = {
+      'Native project/Sample.uproject': 'unreal-project',
+      'RootSound.uasset': 'unreal-asset',
+      Unpacked: 'unreal-content',
+      'Unpacked/UnityCopy.unitypackage': 'unitypackage',
+    }
+    const formats = report => Object.fromEntries(report.packages.map(({ path, format }) => [path, format]))
+    assert.deepEqual(formats(JSON.parse(stdout)), expected)
+
+    const server = await desktop(root)
+    try {
+      const preview = await server.post('/api/index/packages/folder', { path: input, structured: true })
+      assert.equal(preview.status, 200)
+      assert.deepEqual(formats(await preview.json()), expected)
+      const singleFolder = await server.post('/api/index/packages/folder', { path: pack, structured: true })
+      assert.deepEqual(formats(await singleFolder.json()), { '.': 'unreal-content', 'UnityCopy.unitypackage': 'unitypackage' })
+      const analyzed = await server.post('/api/index/packages/inspect', { root: pack, path: '.' })
+      assert.equal(analyzed.status, 200, await analyzed.text())
+      const response = await server.post(route, { path: input, destination: output })
+      assert.equal(response.status, 202)
+      const done = await server.until(run => run?.phase !== 'running')
+      assert.equal(done.phase, 'cleanup', JSON.stringify(done))
+      assert.equal(done.total, 4)
+      assert.equal(done.exported, 4)
+      assert.equal(done.failureCount, 0)
+      const dirs = await readdir(output)
+      assert.equal(dirs.length, 4)
+      const manifests = await Promise.all(dirs.map(async name => {
+        const dir = join(output, name, 'Package')
+        const data = JSON.parse(await readFile(join(dir, 'manifest.json'), 'utf8'))
+        return { dir, data }
+      }))
+      for (const { path, bytes, original } of sources) {
+        const name = basename(path)
+        const matches = manifests.flatMap(({ dir, data }) => data.assets
+          .filter(asset => asset.sourcePath.endsWith(name) && asset.exports?.some(entry => entry.format === 'wav'))
+          .map(asset => join(dir, asset.exports.find(entry => entry.format === 'wav').path)))
+        assert.equal(matches.length, 1, name)
+        assert.deepEqual(await readFile(matches[0]), bytes)
+        assert.deepEqual(await readFile(path), original)
+      }
+      const model = manifests.flatMap(({ dir, data }) => data.assets
+        .filter(asset => asset.sourcePath === 'Assets/UnityCopy.obj').map(asset => join(dir, asset.output)))
+      assert.equal(model.length, 1)
+      assert.equal(await readFile(model[0], 'utf8'), fixtureModel)
+    } finally { await server.close() }
+  })
 
 async function folders(t) {
   const root = await testDirectory(t)

@@ -5,6 +5,8 @@ const cookedFlags = 0x80000200
 const excludedEditorFlags = 0x00624010 // Script, disallow export, map data, map and compiled-in.
 const savedHashVersion = 1016
 
+export const hasUnrealPackageMagic = bytes => bytes.length >= 4 && bytes.readUInt32LE() === packageMagic
+
 function customVersionsEnd(bytes, offset, count, layout) {
   if (layout <= -6) return offset + count * 20
   for (let index = 0; index < count; index++) {
@@ -19,7 +21,7 @@ function customVersionsEnd(bytes, offset, count, layout) {
 }
 
 export function unrealPackageSummary(bytes, size, { details = false } = {}) {
-  if (bytes.length < 4 || bytes.readUInt32LE() !== packageMagic) return { storage: 'unknown', issue: 'unreal-package-signature' }
+  if (!hasUnrealPackageMagic(bytes)) return { storage: 'unknown', issue: 'unreal-package-signature' }
   if (bytes.length < 28) return { storage: 'unknown', issue: 'unreal-package-truncated' }
   const layout = bytes.readInt32LE(4)
   if (layout > -3 || layout < -9) return { storage: 'unknown', issue: 'unreal-package-layout' }

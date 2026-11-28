@@ -3,6 +3,7 @@ import { join, relative, resolve } from 'node:path'
 import { checkedPath, folderPath, inside, portablePath } from '../files/asset-files.mjs'
 import { IndexInputError } from '../index/index-errors.mjs'
 import { probePackageFormat } from './detect.mjs'
+import { PackageFolders } from './discovery/structured.mjs'
 import { scopedPackageSource, validPackageSegment } from './source.mjs'
 
 const entryLimit = 20_000
@@ -24,7 +25,7 @@ export async function folderPackageSource(root, path, ignoredPaths = []) {
   return source
 }
 
-export async function scanPackageFolder(input, { ignoredPaths = [], signal } = {}) {
+export async function scanPackageFolder(input, { ignoredPaths = [], signal, structured = false } = {}) {
   const root = await folderPath(input).catch(error => {
     throw new IndexInputError(unavailable(error) ? 'Папка с пакетами недоступна.' : error.message)
   })
@@ -34,13 +35,15 @@ export async function scanPackageFolder(input, { ignoredPaths = [], signal } = {
   if (isExcluded(root)) throw new IndexInputError('Выберите папку за пределами служебных папок Asset Viewer.')
 
   const packages = []
-  const pending = [root]
+  const groups = structured && new PackageFolders()
+  const pending = [{ path: root }]
+  const candidate = ({ path, format }) => ({ path: portablePath(relative(root, path)) || '.', format })
   let visited = 0
   let skipped = 0
   let truncated = false
   scan: while (pending.length) {
     signal?.throwIfAborted()
-    const folder = pending.pop()
+    const { path: folder, parent } = pending.pop()
     const directory = await checkedPath(root, folder) && await opendir(folder).catch(error => {
       if (unavailable(error)) return null
       throw error
@@ -48,6 +51,14 @@ export async function scanPackageFolder(input, { ignoredPaths = [], signal } = {
     if (!directory) {
       if (folder === root) throw new IndexInputError('Папка с пакетами недоступна.')
       skipped++
+      continue
+    }
+    const group = groups && await groups.visit(folder, parent).catch(async error => {
+      await directory.close()
+      throw error
+    })
+    if (group?.unity) {
+      await directory.close()
       continue
     }
     for await (const entry of directory) {
@@ -58,20 +69,32 @@ export async function scanPackageFolder(input, { ignoredPaths = [], signal } = {
       }
       visited++
       const absolute = join(folder, entry.name)
-      if (absolute.length > 4096 || !validPackageSegment(entry.name) || isExcluded(absolute)) continue
-      if (entry.isDirectory()) pending.push(absolute)
+      if (isExcluded(absolute)) {
+        if (group && entry.isDirectory()) group.excluded = true
+        continue
+      }
+      if (absolute.length > 4096 || !validPackageSegment(entry.name)) continue
+      if (entry.isDirectory()) pending.push({ path: absolute, parent: group })
       if (!entry.isFile()) continue
-      const format = await probePackageFormat({ root, path: absolute }, { signal }).catch(error => {
+      const format = await probePackageFormat({ root, path: absolute }, { signal, looseUnreal: structured }).catch(error => {
         if (!(error instanceof IndexInputError) && !unavailable(error)) throw error
         skipped++
         return null
       })
-      if (!format) continue
+      groups && groups.recordFile(group, absolute, format)
+      if (!format || format === 'unreal-asset') continue
       if (packages.length >= packageLimit) {
         truncated = true
         break scan
       }
-      packages.push({ path: portablePath(relative(root, absolute)), format })
+      packages.push(candidate({ path: absolute, format }))
+    }
+  }
+  if (groups && !truncated) {
+    for (const scope of groups.scopes()) packages.push(candidate(scope))
+    if (packages.length > packageLimit) {
+      packages.length = packageLimit
+      truncated = true
     }
   }
   packages.sort((a, b) => a.path.localeCompare(b.path, 'en'))

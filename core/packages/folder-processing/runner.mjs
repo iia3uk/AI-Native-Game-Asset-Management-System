@@ -1,18 +1,9 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { IndexConflictError, IndexInputError } from '../../index/index-errors.mjs'
-import { isUnrealLoose } from '../unreal/loose/source.mjs'
-import { inspectPackage, packageOptions } from '../dispatch.mjs'
+import { inspectPackage } from '../dispatch.mjs'
+import { folderPackageOptions } from '../discovery/recipe.mjs'
 import { exportPackageResult } from '../export/publish.mjs'
 import { discoverFolderRun, folderRunSource } from './source.mjs'
-
-function recipe(format, { mode, unityVersion, unrealVersion, formats }) {
-  if (format === 'unreal-pak') return packageOptions(format, {})
-  if (format === 'unityfs' || format === 'unity-serialized' || format === 'unreal-asset') {
-    return packageOptions(format, { formats })
-  }
-  return packageOptions(format, { mode, formats, editorVersion: mode === 'engineless' ? '' :
-    isUnrealLoose(format) ? unrealVersion : unityVersion })
-}
 
 function message(error) {
   if (error instanceof IndexInputError || error instanceof IndexConflictError) return error.message
@@ -61,7 +52,7 @@ export class FolderRunWorker {
       const source = await folderRunSource(run.source, item, this.ignoredPaths)
       const report = await inspectPackage(source, { signal: this.#timeout() })
       this.signal.throwIfAborted()
-      const options = recipe(report.format, run.options)
+      const options = folderPackageOptions(report.format, run.options)
       jobs.enqueueImport(source.path, report.hash, options.formats, options, job => {
         item.jobId = job.id
         folderRuns.save(run)

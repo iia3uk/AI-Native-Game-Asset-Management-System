@@ -153,6 +153,20 @@ export async function verifyPackageCleanup(webContents, waitFor) {
     assert.match(prompts[3].checkboxLabel, /Unity/)
     assert.deepEqual(moved, [first, second, unitySource])
     await assert.rejects(readFile(unitySource), { code: 'ENOENT' })
+
+    const mixed = join(root, 'Unity and Unreal')
+    await mkdir(mixed)
+    const mixedUnity = await writeUnityFixture(join(mixed, 'Mixed.unitypackage'))
+    const mixedUnreal = join(mixed, 'Mixed.uasset')
+    await writeFile(mixedUnreal, input)
+    confirm = false
+    exportRoot = undefined
+    await submit(mixed, '')
+    await waitFor("document.querySelector('#package-cleanup-status').textContent.startsWith('В корзине · 1')")
+    assert.equal(prompts.length, 5)
+    assert.match(prompts[4].checkboxLabel, /Unreal/)
+    assert.deepEqual(moved, [first, second, unitySource, mixedUnity])
+    assert.deepEqual(await readFile(mixedUnreal), input)
   } finally {
     dialog.showMessageBox = ask
     dialog.showOpenDialog = pick

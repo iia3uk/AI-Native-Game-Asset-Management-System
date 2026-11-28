@@ -351,7 +351,7 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
       select(event.dataTransfer.files)
     })
   }
-  mountPackageFolder({ $, scan: path => json(packagesRoute + '/folder', post({ path })), inspect,
+  mountPackageFolder({ $, scan: path => json(packagesRoute + '/folder', post({ path, structured: true })), inspect,
     chooseFolder: bridge?.chooseFolder, batchSize })
   return { refresh }
 }
