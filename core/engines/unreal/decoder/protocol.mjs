@@ -15,6 +15,23 @@ function validPath(path) {
 }
 
 export function pakResult(raw, { inspectOnly, version }) {
+  return archiveResult(raw, { inspectOnly, version })
+}
+
+const ioStoreKinds = {
+  package: new Set(['uasset', 'umap']),
+  bulk: new Set(['ubulk', 'uptnl']),
+  file: new Set(['png', 'wav', 'fbx', 'glb']),
+  registry: new Set(['bin']),
+}
+
+export function ioStoreResult(raw, { inspectOnly, version, chunks, partitions }) {
+  if (raw?.status === 'completed' && (raw.chunks !== chunks || raw.partitions !== partitions ||
+      raw.entries?.length > chunks || raw.textureDecoder !== undefined)) return null
+  return archiveResult(raw, { inspectOnly, version, ioStore: true })
+}
+
+function archiveResult(raw, { inspectOnly, version, ioStore = false }) {
   if (raw?.protocol !== 1) return null
   if (raw.status === 'failed' && issueCode(raw.issue)) return { status: 'failed', issue: raw.issue }
   if (raw.status !== 'completed' || raw.containerVersion !== version ||
@@ -23,6 +40,7 @@ export function pakResult(raw, { inspectOnly, version }) {
 
   const entries = []
   const names = new Map()
+  const chunkIds = ioStore ? new Set() : null
   let outputs = 0
   let bytes = 0
   let textureBytes = 0
@@ -40,10 +58,19 @@ export function pakResult(raw, { inspectOnly, version }) {
     }
     const format = posix.extname(row.path).slice(1).toLowerCase()
     const entry = { path: row.path, size: row.size, format, status: row.status }
+    if (ioStore) {
+      if (typeof row.chunkId !== 'string' || !/^[0-9a-f]{24}$/.test(row.chunkId) ||
+          chunkIds.has(row.chunkId) || (row.kind !== null && !Object.hasOwn(ioStoreKinds, row.kind)) ||
+          row.texture != null || row.textureIssue != null) return null
+      chunkIds.add(row.chunkId)
+      entry.chunkId = row.chunkId
+      if (row.kind !== null) entry.kind = row.kind
+    }
     if (row.status === 'skipped' && issueCode(row.issue) && row.output === null) {
       entry.issue = row.issue
     } else {
-      if (!decoderFormats.has(format) || row.size === 0 || row.size > 128 * 1024 ** 2 || row.issue !== null) return null
+      if (ioStore ? !ioStoreKinds[row.kind]?.has(format) : !decoderFormats.has(format)) return null
+      if (row.size === 0 || row.size > 128 * 1024 ** 2 || row.issue !== null) return null
       if (inspectOnly) {
         if (row.status !== 'available' || row.output !== null) return null
       } else {

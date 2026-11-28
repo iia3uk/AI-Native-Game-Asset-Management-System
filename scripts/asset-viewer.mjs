@@ -14,6 +14,8 @@ import { engineInventory } from '../core/engines/inventory.mjs'
 import { inspectUnreal } from '../core/packages/unreal/inspect.mjs'
 import { exportUnrealWithEditor } from '../core/packages/unreal/export.mjs'
 import { extractUnrealPak } from '../core/packages/unreal/pak/import.mjs'
+import { processIoStore } from '../core/packages/unreal/iostore/import.mjs'
+import { isIoStorePath } from '../core/packages/unreal/iostore/source.mjs'
 import { runPackageFolder } from './cli/package-folder.mjs'
 import { runPackageExport } from './cli/package-export.mjs'
 
@@ -230,8 +232,11 @@ async function main([command, ...args]) {
     importUnityBundle(input, { ...options, inspectOnly: values.inspect, withFbx: values.fbx })), values.json)
   if (command === 'unreal-export') return print(await runPackageOperation(paths, 'Unreal', options =>
     exportUnrealWithEditor(input, { ...options, unrealVersion: values['unreal-version'] })), values.json)
-  if (command === 'unreal-extract') return print(await runPackageOperation(paths, 'Unreal', options =>
-    extractUnrealPak(input, { ...options, inspectOnly: values.inspect })), values.json)
+  if (command === 'unreal-extract') return print(await runPackageOperation(paths, 'Unreal', async options => {
+    const source = await importSource(input)
+    const settings = { ...options, inspectOnly: values.inspect }
+    return !source.directory && isIoStorePath(source.path) ? processIoStore(source, settings) : extractUnrealPak(input, settings)
+  }), values.json)
   if (command === 'package-folder') {
     const report = await runPackageFolder(input, paths, values, waitForImport)
     if (report.truncated || report.skipped || report.results?.some(result => result.error)) process.exitCode = 1

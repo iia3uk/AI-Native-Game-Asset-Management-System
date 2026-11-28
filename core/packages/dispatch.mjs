@@ -8,6 +8,8 @@ import { stageUnityPackage } from './unity/import.mjs'
 import { inspectUnityPackage } from './unity/inspect.mjs'
 import { inspectUnityFolder } from './unity/folder/inspect.mjs'
 import { processUnrealPak } from './unreal/pak/import.mjs'
+import { isUnrealArchive } from './unreal/containers.mjs'
+import { processIoStore } from './unreal/iostore/import.mjs'
 import { inspectUnrealLoose } from './unreal/loose/inspect.mjs'
 import { stageUnrealLoose } from './unreal/loose/import.mjs'
 import { isUnrealLoose, unrealLooseSource } from './unreal/loose/source.mjs'
@@ -36,14 +38,33 @@ function pakError(issue) {
   return new IndexInputError(messages[issue] ?? ('Ошибка извлечения Unreal Pak (' + issue + ').'))
 }
 
+function ioStoreError(issue) {
+  const messages = {
+    'unreal-iostore-toc-missing': 'Рядом с .ucas отсутствует соответствующий .utoc.',
+    'unreal-iostore-companion-missing': 'Рядом с .utoc должны находиться все части .ucas.',
+    'unreal-iostore-encrypted': 'Контейнер IoStore зашифрован.',
+    'unreal-iostore-signed': 'Контейнер IoStore подписан. Проверка подписи пока не поддерживается.',
+    'unreal-iostore-changed': 'Файл .utoc или одна из частей .ucas изменилась после анализа. Проанализируйте контейнер снова.',
+    'unreal-iostore-space-limit': 'Недостаточно места для обработки Unreal IoStore.',
+    'unreal-iostore-no-directory': 'В контейнере IoStore отсутствует индекс путей.',
+    'unreal-iostore-version': 'Версия или тип контейнера IoStore пока не поддерживается.',
+    'unreal-iostore-chunk-hash': 'Контрольная сумма извлечённого блока IoStore не совпала.',
+    'unreal-worker-unavailable': 'Не найден декодер Unreal. Укажите абсолютный путь в ASSET_VIEWER_CUE4PARSE.',
+  }
+  return new IndexInputError(messages[issue] ?? ('Ошибка извлечения Unreal IoStore (' + issue + ').'))
+}
+
+const unrealDecoder = format => format === 'unreal-pak' ? processUnrealPak : processIoStore
+const unrealArchiveError = (format, issue) => format === 'unreal-pak' ? pakError(issue) : ioStoreError(issue)
+
 export async function inspectPackage(source, { signal } = {}) {
   const format = await detectPackage(source, { signal })
   if (isUnrealLoose(format)) return inspectUnrealLoose(await checkedUnrealSource(source, format, signal), { signal })
   if (source.directory) return inspectUnityFolder(source, { signal })
   if (format === 'unitypackage') return inspectUnityPackage(source, { signal })
-  if (format === 'unreal-pak') {
-    const { entries: assets, ...report } = await processUnrealPak(source, { inspectOnly: true, signal })
-    if (report.status !== 'completed') throw pakError(report.issue)
+  if (isUnrealArchive(format)) {
+    const { entries: assets, ...report } = await unrealDecoder(format)(source, { inspectOnly: true, signal })
+    if (report.status !== 'completed') throw unrealArchiveError(format, report.issue)
     return { ...report, format, assets }
   }
   const serialized = format === 'unity-serialized'
@@ -76,9 +97,9 @@ export function packageOptions(format, input) {
     return { mode, editorVersion, formats: formats || 'fbx,glb' }
   }
   const options = unityImportOptions(input?.mode, input?.editorVersion)
-  if (format === 'unreal-pak') {
+  if (isUnrealArchive(format)) {
     if (options.mode === 'engine-assisted' || options.editorVersion || formats) {
-      throw new IndexInputError('Для Unreal Pak выберите независимое извлечение исходных файлов.')
+      throw new IndexInputError('Для контейнера Unreal выберите независимое извлечение.')
     }
     return { mode: 'engineless', formats: '' }
   }
@@ -107,13 +128,13 @@ export async function stagePackage(directory, source, job, { signal, onProgress,
     })
   }
   packageOptions(format, { mode: job.engineMode, editorVersion: job.editorVersion, formats: job.exportFormats })
-  if (format === 'unreal-pak') {
-    const result = await processUnrealPak(source, {
+  if (isUnrealArchive(format)) {
+    const result = await unrealDecoder(format)(source, {
       directory, expectedHash: job.sourceKey, signal, onProgress,
       publish: ({ output, sourceName, reused, entries, ...report }, move) => publish({ directory: output, source: output,
         report: { ...report, packageFormat: format }, reused }, move, report.extracted > 0),
     })
-    if (result?.issue) throw pakError(result.issue)
+    if (result?.issue) throw unrealArchiveError(format, result.issue)
     return result
   }
   const serialized = format === 'unity-serialized'

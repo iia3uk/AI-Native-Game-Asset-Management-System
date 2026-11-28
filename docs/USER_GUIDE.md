@@ -196,7 +196,19 @@ npm run cli -- package-import "/absolute/path/example.pak" --json
 npm run cli -- package-import "/absolute/path/example.pak" --queue --json
 ```
 
-The independent worker handles stored and Zlib-compressed entries from supported stock Pak layouts. Supported embedded FBX, GLB, PNG and WAV files retain their bytes. Valid Unreal packages and matching companions are saved to `Source/` with their archive-relative paths. Versioned cooked UE4.27 `Texture2D` exports with BGRA8, RGBA8, G8, DXT1 or DXT5 pixels can also produce a PNG from the first readable mip within the supported size. The report identifies the mip and original format. Repeated imports reuse verified artifacts. The dedicated `unreal-extract` command and Pak folder watching use the same decoder. Unversioned and virtual texture decoding, other cooked object types and IoStore extraction remain pending.
+The independent worker handles stored and Zlib-compressed entries from supported stock Pak layouts. Supported embedded FBX, GLB, PNG and WAV files retain their bytes. Valid Unreal packages and matching companions are saved to `Source/` with their archive-relative paths. Versioned cooked UE4.27 `Texture2D` exports with BGRA8, RGBA8, G8, DXT1 or DXT5 pixels can also produce a PNG from the first readable mip within the supported size. The report identifies the mip and original format. Repeated imports reuse verified artifacts. The dedicated `unreal-extract` command and Pak folder watching use the same decoder. Unversioned and virtual texture decoding and other cooked object types remain pending.
+
+### Unreal IoStore
+
+Select a `.utoc` or one of its `.ucas` files in **Импорт пакетов Unity и Unreal**. Keep all numbered partitions beside the TOC. Folder search lists one entry for each TOC, and **Импорт UE / Unity…** can process those entries with the folder workflow. The inspection lists the files used to build the import fingerprint. The worker handles directory-indexed, unencrypted and unsigned TOC versions 2 to 8 with stored or Zlib blocks. Unsupported codecs appear in the report.
+
+Supported embedded WAV, PNG, FBX and GLB files keep their bytes and enter the normal library. Named cooked packages, bulk data and embedded AssetRegistry files are retained in `Source/` as raw IoStore chunks. The manifest records their chunk IDs, paths and hashes. Converting Zen objects to models or textures and resolving their cross-container dependencies remain pending. The source set stays in place.
+
+```sh
+npm run cli -- package-inspect "/absolute/path/example.utoc" --json
+npm run cli -- package-import "/absolute/path/example.utoc" --json
+npm run cli -- unreal-extract "/absolute/path/example.utoc" --inspect --json
+```
 
 Set `ASSET_VIEWER_UNITY` or `ASSET_VIEWER_BLENDER` to an absolute executable path. Set `ASSET_VIEWER_UNITY_ROOTS` or `ASSET_VIEWER_UNREAL_ROOTS` to absolute installation directories using the operating system's PATH separator. Start or restart the app with those settings.
 

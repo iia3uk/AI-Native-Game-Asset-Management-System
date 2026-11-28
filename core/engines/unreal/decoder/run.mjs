@@ -12,22 +12,27 @@ export function locateUnrealDecoder() {
 }
 
 export async function stagePak(source, workspace, inspectOnly, signal) {
-  const size = source.file.info.size
+  return stageUnrealInputs({ root: source.root, size: source.file.info.size,
+    files: [{ file: source.file, stageName: 'input.pak' }] }, 'pak', workspace, inspectOnly, signal)
+}
+
+export async function stageUnrealInputs({ root, size, files }, format, workspace, inspectOnly, signal) {
   const space = await statfs(workspace, { bigint: true })
   const available = space.bavail * space.bsize - BigInt(size + 160 * MiB)
-  if (available < 0n || (!inspectOnly && available === 0n)) return 'unreal-pak-space-limit'
+  if (available < 0n || (!inspectOnly && available === 0n)) return 'unreal-' + format + '-space-limit'
   const capacity = 1024n ** 3n
   const maxOutputBytes = inspectOnly ? 0 : Number(available < capacity ? available : capacity)
-  const stage = join(workspace, 'input.pak')
-  const before = await fileInfo(source.root, source.file.path)
-  if (!before || !sameFile(before.info, source.file.info)) return 'unreal-pak-changed'
-  signal?.throwIfAborted()
-  await copyFile(before.path, stage, constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE)
-  signal?.throwIfAborted()
-  const after = await fileInfo(source.root, source.file.path)
-  if (!after || !sameFile(before.info, after.info)) return 'unreal-pak-changed'
+  for (const { file, stageName } of files) {
+    signal?.throwIfAborted()
+    const before = await fileInfo(root, file.path)
+    if (!before || !sameFile(before.info, file.info)) return 'unreal-' + format + '-changed'
+    await copyFile(before.path, join(workspace, stageName), constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE)
+    signal?.throwIfAborted()
+    const after = await fileInfo(root, file.path)
+    if (!after || !sameFile(before.info, after.info)) return 'unreal-' + format + '-changed'
+  }
   await mkdir(join(workspace, 'output'))
-  await writeFile(join(workspace, 'request.json'), JSON.stringify({ protocol: 1, format: 'pak', inspectOnly, maxOutputBytes }),
+  await writeFile(join(workspace, 'request.json'), JSON.stringify({ protocol: 1, format, inspectOnly, maxOutputBytes }),
     { flag: 'wx', signal })
   return null
 }

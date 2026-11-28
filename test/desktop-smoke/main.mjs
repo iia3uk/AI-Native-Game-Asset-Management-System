@@ -16,6 +16,7 @@ import { verifyUnityBundle } from './unity-bundle.mjs'
 import { verifyUnityFolder } from './unity-folder.mjs'
 import { verifyUnitySprites } from './unity-sprites.mjs'
 import { verifyUnrealLoose } from './unreal-loose.mjs'
+import { verifyUnrealIoStore } from './unreal-iostore.mjs'
 import { verifyUnrealPak } from './unreal-pak.mjs'
 import { verifyUnityPreview } from './unity-preview.mjs'
 import { unityEntries, unityFixtureEntries, writeUnityFixture } from '../fixtures/unitypackage.mjs'
@@ -177,6 +178,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   const standalone = process.env.ASSET_VIEWER_SMOKE_STANDALONE
   const player = process.env.ASSET_VIEWER_SMOKE_PLAYER
   const pak = process.env.ASSET_VIEWER_SMOKE_PAK === '1'
+  const ioStore = process.env.ASSET_VIEWER_SMOKE_IOSTORE === '1'
   const watchPlayer = process.env.ASSET_VIEWER_SMOKE_WATCH_PLAYER
   await verifyPackageWatch(webContents, waitFor, fixtures, { bundle, player: watchPlayer, pak })
   if (bundle) await verifyUnityBundle(webContents, waitFor, bundle)
@@ -186,6 +188,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   if (standalone) await verifyUnityBundle(webContents, waitFor, standalone, { standalone: true })
   if (player) await verifyUnityAudio(webContents, waitFor, player, { companion: true })
   if (pak) await verifyUnrealPak(webContents, waitFor, fixtures)
+  if (ioStore) await verifyUnrealIoStore(webContents, waitFor, fixtures)
   await verifyStartupWithoutInterface()
   assert.deepEqual(externalRequests, [])
   assert.equal(window.isVisible(), false)
@@ -198,6 +201,7 @@ void launchSmoke().then(async ({ window, origin }) => {
   if (player) console.log('Unity Player companion inspection, queued texture and audio import and WAV playback passed.')
   if (watchPlayer) console.log('Unity Player watched-folder opt-in, import and indexing passed.')
   if (pak) console.log('Unreal Pak folder watching, inspection, queued import, artifact report and indexed GLB preview passed.')
+  if (ioStore) console.log('Unreal IoStore partition inspection, queued extraction and indexed WAV playback passed.')
   app.quit()
 }).catch(error => {
   console.error(error)

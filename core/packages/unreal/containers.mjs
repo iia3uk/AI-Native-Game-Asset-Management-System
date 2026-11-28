@@ -1,6 +1,8 @@
 const tocMagic = Buffer.from('-==--==--==--==-')
 const pakMagic = Buffer.from([0xe1, 0x12, 0x6f, 0x5a])
 
+export const isUnrealArchive = format => format === 'unreal-pak' || format === 'unreal-iostore'
+
 export function ioStoreHeader(bytes, size) {
   if (bytes.length < 144 || !bytes.subarray(0, 16).equals(tocMagic)) return null
   const version = bytes[16]

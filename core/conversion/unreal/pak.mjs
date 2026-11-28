@@ -1,29 +1,16 @@
 import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
-import { analyzeAsset } from '../../analysis/asset-analysis.mjs'
 import { fileInfo } from '../../files/asset-files.mjs'
 import { inspectUnrealFile } from '../../packages/unreal/inspect.mjs'
-import { isWaveArtifact, modelArtifact } from '../artifacts.mjs'
-
-const categories = { png: 'Textures', wav: 'Audio', fbx: 'Models', glb: 'Previews' }
+import { containerFileFolders, pngMetrics, validateContainerFile } from './container-files.mjs'
 const companions = new Set(['uexp', 'ubulk', 'uptnl'])
-
-async function pngMetrics(root, file, name, signal) {
-  const { metrics } = await analyzeAsset(root, { absolute: file.path, path: name, info: file.info, ext: 'png' }, signal)
-  return metrics
-}
 
 async function validatedArtifact(root, entry, signal) {
   const file = await fileInfo(root, entry.file)
   if (!file || file.info.size !== entry.size) return null
-  if (entry.format === 'fbx' || entry.format === 'glb') {
-    return modelArtifact(root, entry.file, entry.format, signal)
+  if (Object.hasOwn(containerFileFolders, entry.format)) {
+    return await validateContainerFile(root, entry, file, signal) ? file : null
   }
-  if (entry.format === 'png') {
-    const metrics = await pngMetrics(root, file, entry.path, signal)
-    return metrics.width > 0 && metrics.height > 0 ? file : null
-  }
-  if (entry.format === 'wav') return await isWaveArtifact(file) ? file : null
   if (companions.has(entry.format)) return file
   const info = await inspectUnrealFile(root, { file, name: entry.path, type: entry.format }, signal)
   return ['editor', 'cooked', 'unversioned'].includes(info.storage) ? file : null
@@ -75,7 +62,7 @@ export async function publishPakEntries(entries, root, store, backendVersion, si
       published.push({ ...entry, status: 'skipped', issue: hasOwner ? 'unreal-pak-invalid-payload' : 'unreal-pak-orphan-companion' })
       continue
     }
-    const category = categories[entry.format]
+    const category = containerFileFolders[entry.format]
     const id = createHash('sha256').update(path).digest('hex').slice(0, 32)
     const destination = category ? [category, id, posix.basename(path)].join('/') : 'Source/' + path
     const artifact = await store.save(destination, file, {

@@ -81,7 +81,7 @@ async function collectFiles(directory, rows, byteLimit, signal) {
 }
 
 function selectDocuments(managed, selection, dependencies, conversion, files) {
-  const entries = managed.pak ? 'entries' : 'assets'
+  const entries = managed.archive ? 'entries' : 'assets'
   return {
     manifest: json({ ...managed.manifest.data, [entries]: selection.assets, selection: { asset: selection.selected.id } }),
     dependencies: json({ version: dependencies.data.version, status: dependencies.data.status, entries: selection.records }),
@@ -113,7 +113,7 @@ export async function preparePackageExport(importDirectory, protectedRoots, job,
   ])
   if (!dependencies?.data || !conversion?.data) throw changed()
   const available = processedOnly ? managed.assets : await availablePackageAssets(managed.directory, managed.assets, signal)
-  const entryKey = managed.pak ? 'entries' : 'assets'
+  const entryKey = managed.archive ? 'entries' : 'assets'
   const selected = available[ordinal]
   if (selected && !assetFiles(selected).length) throw new IndexInputError('Для ресурса нет файлов для экспорта.')
   const selection = selected && await selectPackageAssets({ ...managed, assets: available }, dependencies.data, selected, signal)

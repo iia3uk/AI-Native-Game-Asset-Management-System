@@ -34,7 +34,7 @@ jobs:
           CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
         run: npm run build:windows
-      - run: node --test test/packaged-smoke/unreal-pak.mjs
+      - run: node --test test/packaged-smoke/unreal-pak.mjs test/packaged-smoke/unreal-iostore.mjs
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: asset-viewer-windows-x64

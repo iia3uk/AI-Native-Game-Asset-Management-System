@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AssetViewer.UnrealDecode.IoStore;
 using AssetViewer.UnrealDecode.Pak;
 
 namespace AssetViewer.UnrealDecode;
@@ -13,20 +14,22 @@ internal static class Program
     {
         if (args is ["--probe"])
         {
-            Write(new { protocol = 1, backend = Backend, backendVersion = BackendVersion, modes = new[] { "pak" } });
+            Write(new { protocol = 1, backend = Backend, backendVersion = BackendVersion, modes = new[] { "pak", "iostore" } });
             return 0;
         }
         if (args is not ["--decode"]) return 2;
 
+        string? format = null;
         try
         {
             using var stream = File.OpenRead("request.json");
             if (stream.Length > 4096) throw new InputException("unreal-worker-request");
             var request = JsonSerializer.Deserialize<Request>(stream, Json);
-            if (request is not { Protocol: 1, Format: "pak", MaxOutputBytes: >= 0 and <= 1L << 30 })
+            if (request is not { Protocol: 1, Format: "pak" or "iostore", MaxOutputBytes: >= 0 and <= 1L << 30 })
                 throw new InputException("unreal-worker-request");
-            var report = PakDecoder.Read(request);
-            Write(report);
+            format = request.Format;
+            if (format == "iostore") Write(IoStoreDecoder.Read(request));
+            else Write(PakDecoder.Read(request));
             return 0;
         }
         catch (InputException error)
@@ -36,7 +39,8 @@ internal static class Program
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         {
-            Write(new { protocol = 1, status = "failed", issue = "unreal-pak-decode-failed" });
+            Write(new { protocol = 1, status = "failed",
+                issue = format == "iostore" ? "unreal-iostore-decode-failed" : "unreal-pak-decode-failed" });
             return 1;
         }
     }

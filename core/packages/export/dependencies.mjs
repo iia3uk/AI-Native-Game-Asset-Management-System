@@ -7,15 +7,16 @@ const unrealCompanions = /\.(?:(?:m\.)?(?:uexp|ubulk|uptnl)|uasset|umap)$/i
 const unrealKey = path => path?.normalize('NFC').toLowerCase().replace(unrealCompanions, '')
 const objectKey = ref => JSON.stringify([ref?.member, ref?.pathId])
 
-function relationships(assets, document, pak) {
+function relationships(assets, document, archive) {
   const links = new Map()
   const add = (source, target, info) => {
     if (!source) return
     if (!links.has(source)) links.set(source, [])
     links.get(source).push({ target, info })
   }
-  if (pak) {
-    const groups = Map.groupBy(assets.filter(row => row.artifact && unrealCompanions.test(row.path)), row => unrealKey(row.path))
+  if (archive) {
+    const groups = Map.groupBy(assets.filter(row => row.artifact && unrealCompanions.test(row.path)),
+      row => JSON.stringify([unrealKey(row.path), row.chunkId?.slice(0, 16)]))
     const include = (source, target) => add(source, target,
       { type: 'unreal-package-companion', source: source.path, path: target.path, status: 'resolved' })
     for (const [first, ...companions] of groups.values()) {
@@ -59,8 +60,8 @@ async function linkedFiles(directory, row, byOutput, signal) {
   return links
 }
 
-export async function selectPackageAssets({ assets, directory, pak }, dependencies, selected, signal) {
-  const links = relationships(assets, dependencies, pak)
+export async function selectPackageAssets({ assets, directory, archive }, dependencies, selected, signal) {
+  const links = relationships(assets, dependencies, archive)
   const byOutput = new Map(assets.filter(row => typeof row.output === 'string').map(row => [pathKey(row.output), row]))
   const seen = new Set([selected])
   const records = []

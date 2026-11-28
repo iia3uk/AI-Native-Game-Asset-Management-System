@@ -3,6 +3,7 @@ import { checkedPath, readBoundedText } from '../files/asset-files.mjs'
 import { IndexInputError } from '../index/index-errors.mjs'
 import { availablePackageAssets } from './cleanup/retired.mjs'
 import { sharedDirectoryAvailable } from './storage/shared.mjs'
+import { isUnrealArchive } from './unreal/containers.mjs'
 
 export async function readPackageDocument(directory, name) {
   const text = await readBoundedText(directory, name + '.json', 64 * 1024 ** 2)
@@ -22,10 +23,10 @@ export async function readPackageResult(importDirectory, job) {
   const directory = root && await checkedPath(root, job.result.directory)
   if (!directory || directory === root) return null
   const manifest = await readPackageDocument(directory, 'manifest')
-  const pak = job.result.report?.packageFormat === 'unreal-pak'
-  const assets = pak ? manifest?.data?.entries : manifest?.data?.assets
+  const archive = isUnrealArchive(job.result.report?.packageFormat)
+  const assets = archive ? manifest?.data?.entries : manifest?.data?.assets
   if (manifest?.data?.source?.sha256 !== job.sourceKey || !Array.isArray(assets)) return null
-  return { root, directory, manifest, assets, pak }
+  return { root, directory, manifest, assets, archive }
 }
 
 export async function packageManifestPage(importDirectory, job, offset, limit) {

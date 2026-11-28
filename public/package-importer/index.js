@@ -1,6 +1,6 @@
 import { mountEngineStatus } from './engine-status.js'
 import { mountPackageFolder } from './folder.js'
-import { formatLabel, isUnityBinary, isUnityFolder, isUnrealLoose } from './formats.js'
+import { formatLabel, isUnityBinary, isUnityFolder, isUnrealArchive, isUnrealLoose } from './formats.js'
 import { appendManifest, assetLabel, describeIssue } from './report.js'
 import { mountImportOptions } from './import-options.js'
 import { mountPackageExport } from './export.js'
@@ -174,6 +174,14 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
         details.append(element('p', 'Unreal Pak ' + containerVersion + ' · Извлечено ' + extracted + ' из ' + total))
         if (textures?.converted) details.append(element('p', 'Текстур из cooked-ресурсов · ' + textures.converted + ' PNG'))
       }
+      if (record.result.report.packageFormat === 'unreal-iostore') {
+        const { containerVersion, extracted, extractedTypes, total } = record.result.report
+        details.append(element('p', 'Unreal IoStore ' + containerVersion + ' · Извлечено ' + extracted + ' из ' + total))
+        if (extractedTypes) details.append(element('p', [
+          'Готовых файлов · ' + extractedTypes.file,
+          'Блоков в формате IoStore · ' + (extractedTypes.package + extractedTypes.bulk + extractedTypes.registry),
+        ].join(' · ')))
+      }
       if (record.result.report.export) {
         details.append(element('p', 'Моделей сконвертировано · ' + record.result.report.converted))
       }
@@ -183,7 +191,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
       const exporter = (!scan || !active(scan)) && mountPackageExport({ record, json, post,
         chooseFolder: bridge?.chooseFolder, element, button })
       if (exporter) details.append(exporter.panel)
-      if (bridge?.cleanupSource && scan?.status === 'completed') {
+      if (bridge?.cleanupSource && scan?.status === 'completed' && record.result.report.packageFormat !== 'unreal-iostore') {
         const cleanup = button('Исходники в корзину…', async () => {
           if (busy) return
           busy = cleanup.disabled = true
@@ -211,7 +219,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
 
   async function queuePlan(target, plan, options = importOptions(plan.format)) {
     if (isUnityBinary(plan.format)) options = { mode: 'engineless', formats: options.formats }
-    if (plan.format === 'unreal-pak') options = { mode: 'engineless' }
+    if (isUnrealArchive(plan.format)) options = { mode: 'engineless' }
     if (plan.format === 'unreal-asset' || (isUnrealLoose(plan.format) && options.mode === 'engineless')) {
       options = { mode: 'engineless', formats: options.formats }
     }
@@ -246,7 +254,7 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
     const preview = element('ul')
     const shown = plan.assets.slice(0, 50)
     for (const asset of shown) {
-      const status = plan.format === 'unreal-pak' && asset.status === 'available' ? 'Доступно для извлечения' :
+      const status = isUnrealArchive(plan.format) && asset.status === 'available' ? 'Доступно для извлечения' :
         isUnrealLoose(plan.format) && asset.status === 'extracted' ? 'Готово к копированию' :
         assetStatus[asset.status] ?? asset.status
       preview.append(element('li', [assetLabel(asset), status, asset.issue && describeIssue(asset.issue)].filter(Boolean).join(' · ')))
@@ -261,6 +269,10 @@ export function mountPackageImporter({ dialog, json, post, openIndex, openLibrar
     }
     if (plan.format === 'unreal-pak') {
       details.insertBefore(element('p', 'Unreal Pak ' + plan.containerVersion + ' · Извлечение исходных файлов'), preview)
+    }
+    if (plan.format === 'unreal-iostore') {
+      details.insertBefore(element('p', 'Unreal IoStore ' + plan.containerVersion + ' · Всего блоков · ' + plan.chunks), preview)
+      details.insertBefore(element('p', plan.files.map(file => file.name).join(', ')), preview)
     }
     if (isUnityFolder(plan.format)) {
       const packages = plan.packages.slice(0, 8).map(pack => pack.name + ' ' + pack.version)
