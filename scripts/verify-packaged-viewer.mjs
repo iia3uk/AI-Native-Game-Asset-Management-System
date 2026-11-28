@@ -65,6 +65,8 @@ export default async function verifyPackagedViewer({ appOutDir, electronPlatform
     'core/packages/unreal/loose/import.mjs',
     'core/packages/unreal/loose/convert.mjs',
     'core/conversion/unreal/preview.mjs',
+    'core/conversion/unreal/source-media/extract.mjs',
+    'core/conversion/unreal/source-media/payload.mjs',
     'core/engines/inventory.mjs',
     'core/engines/blender/preview.mjs',
     'core/engines/unity/bundle/run.mjs',

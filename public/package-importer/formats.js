@@ -6,7 +6,7 @@ const formats = {
   'unity-upm': 'Пакет UPM',
   'unreal-pak': 'Unreal Pak',
   'unreal-project': 'Проект Unreal',
-  'unreal-content': 'Папка Unreal Content',
+  'unreal-content': 'Папка ресурсов Unreal',
   'unreal-asset': 'Ресурс Unreal',
 }
 

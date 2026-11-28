@@ -5,6 +5,7 @@ import { checkedPath, fileInfo, folderPath, inside } from '../../files/asset-fil
 import { IndexConflictError, IndexInputError } from '../../index/index-errors.mjs'
 import { readPackageDocument, readPackageResult } from '../manifest-page.mjs'
 import { packageHashPattern, validPackageSegment } from '../source.mjs'
+import { isUnrealLoose } from '../unreal/loose/source.mjs'
 import { selectPackageAssets } from './dependencies.mjs'
 
 const exportLimit = 9 * 1024 ** 3
@@ -44,7 +45,7 @@ function assetFiles(asset) {
   ].filter(file => file?.path)
 }
 
-async function collectFiles(directory, rows, signal) {
+async function collectFiles(directory, rows, byteLimit, signal) {
   const files = new Map()
   let bytes = 0
   for (const row of rows) for (const { path, sha256, size } of assetFiles(row)) {
@@ -62,7 +63,7 @@ async function collectFiles(directory, rows, signal) {
     const found = await fileInfo(directory, path)
     if (!found || (size !== undefined && found.info.size !== size)) throw changed()
     bytes += found.info.size
-    if (bytes > exportLimit || files.size >= 150_000) throw new IndexInputError('Превышен лимит размера экспорта.')
+    if (bytes > byteLimit || files.size >= 150_000) throw new IndexInputError('Превышен лимит размера экспорта.')
     files.set(key, { path, absolute: found.path, info: found.info, sha256 })
   }
   return { files: [...files.values()], bytes }
@@ -99,11 +100,12 @@ export async function preparePackageExport(importDirectory, protectedRoots, job,
   const selected = managed.assets[ordinal]
   if (selected && !assetFiles(selected).length) throw new IndexInputError('Для ресурса нет файлов для экспорта.')
   const selection = selected && await selectPackageAssets(managed, dependencies.data, selected, signal)
-  const { files, bytes: assetBytes } = await collectFiles(managed.directory, selection?.assets ?? managed.assets, signal)
+  const byteLimit = isUnrealLoose(conversion.data.packageFormat) ? 20 * 1024 ** 3 + spaceReserve : exportLimit
+  const { files, bytes: assetBytes } = await collectFiles(managed.directory, selection?.assets ?? managed.assets, byteLimit, signal)
   const reports = selection ? selectDocuments(managed, selection, dependencies, conversion, files) :
     { manifest: managed.manifest.text, dependencies: dependencies.text, 'conversion-report': conversion.text }
   const bytes = assetBytes + Object.values(reports).reduce((total, report) => total + Buffer.byteLength(report), 0)
-  if (bytes > exportLimit) throw new IndexInputError('Превышен лимит размера экспорта.')
+  if (bytes > byteLimit) throw new IndexInputError('Превышен лимит размера экспорта.')
   await verifyExportDestination(destination)
   const { bavail, bsize } = await statfs(destination.path, { bigint: true })
   if (bavail * bsize < BigInt(bytes + spaceReserve)) throw new IndexConflictError('Недостаточно свободного места для экспорта.')

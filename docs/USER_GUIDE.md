@@ -16,7 +16,7 @@ Scans keep running if you close the index dialog. Open it and select the library
 
 ## Import a Unity package
 
-Open **Индекс → Импорт пакетов Unity и Unreal**. In the desktop app, select or drop up to 16 files. Use **Выбрать проект, UPM или Content…** for direct folder imports. In the browser, enter the full local path and click **Проанализировать**. Expand a package to see its contents, then choose **Обработать и добавить в индекс**. With multiple packages analyzed, **Обработать проанализированные пакеты** queues the remaining packages using settings supported by each format. The jobs list displays progress and offers cancellation or retry where available.
+Open **Индекс → Импорт пакетов Unity и Unreal**. In the desktop app, select or drop up to 16 files. Use **Выбрать папку ресурсов…** for direct folder imports. In the browser, enter the full local path and click **Проанализировать**. Expand a package to see its contents, then choose **Обработать и добавить в индекс**. With multiple packages analyzed, **Обработать проанализированные пакеты** queues the remaining packages using settings supported by each format. The jobs list displays progress and offers cancellation or retry where available.
 
 For one-time folder import, expand **Найти пакеты в папке** and choose the directory or enter its absolute path. Search checks nested files by header or trailer, including renamed files. A GZIP file is a Unity Package candidate until analysis checks its archive contents. Select files and click **Проанализировать выбранные**, then queue the analyzed packages. Each page contains up to 16 files. Queue a page before analyzing the next one. Use a smaller subfolder if the search reaches its limit of 500 candidates or 20,000 directory entries.
 
@@ -50,7 +50,7 @@ The default CLI command waits for extraction and indexing. Add `--queue` to hand
 
 ## Import a Unity project or local UPM package
 
-In **Импорт пакетов Unity и Unreal**, click **Выбрать проект, UPM или Content…** or paste the absolute folder path. Use the project root that contains `Assets` and `ProjectSettings`, or the package root that contains `package.json`. Analyze the folder and click **Обработать и добавить в индекс**. The report includes the project's Unity version, included UPM packages, original paths and resolved GUID links. The input folder stays read-only.
+In **Импорт пакетов Unity и Unreal**, click **Выбрать папку ресурсов…** or paste the absolute folder path. Use the project root that contains `Assets` and `ProjectSettings`, or the package root that contains `package.json`. Analyze the folder and click **Обработать и добавить в индекс**. The report includes the project's Unity version, included UPM packages, original paths and resolved GUID links. The input folder stays read-only.
 
 Project import includes embedded packages and local folder dependencies contained in the project. Registry packages, project caches, external dependencies and UPM tarballs are outside this workflow. Select a separate local UPM folder directly to import it. For optional Editor conversion, the importer uses the project's declared Unity version when you leave the version field blank. [Unity package manifests](https://docs.unity.com/en-us/engine/6000.0/manual/packages-list/cus-pkg-development/upm-manifest-pkg).
 
@@ -135,7 +135,9 @@ The Unity check reports an exact project version if installed, or a candidate fr
 
 ## Inspect and export Unreal content
 
-Select an Unreal project root, a `.uproject` file, the `Content` folder or a loose `.uasset` or `.umap`. If a project root has several descriptors, select the matching `.uproject`. The default mode, **Без редактора**, copies eligible packages and their matching sidecars to `Source/Content`, records checksums and adds supported file types to the index. Use the job report to export a whole import or one package with its sidecars. Cooked and unversioned assets are preserved as original bytes when recognized. [Unreal project directory structure](https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-directory-structure).
+Select an Unreal project root, a `.uproject` file, an asset folder or a loose `.uasset` or `.umap`. If a project root has several descriptors, select the matching `.uproject`. The default mode, **Без редактора**, copies eligible packages and their matching sidecars to `Source/Content`, records checksums and adds supported file types to the index. Recognized cooked and unversioned assets are preserved as original bytes. Use the job report to export a whole import or one package with its sidecars. [Unreal project directory structure](https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-directory-structure).
+
+Supported UE4 editor assets can yield the original PCM WAV or source PNG without an editor. Their output appears under `Audio/` and `Textures/`. Texture extraction skips package thumbnails. The report includes the count and file metadata for each recovered format.
 
 For a trusted project or Content folder, choose **С редактором** or **Авто** to request native conversion. Specify **Версия Unreal** when you want a particular installed version. With an available editor, FBX output can also produce GLB previews if Blender is installed. The job retains its direct copies if the editor is unavailable.
 

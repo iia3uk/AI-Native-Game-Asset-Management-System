@@ -62,15 +62,17 @@ export async function artifactHash(path, signal) {
 
 export class ExportArtifacts {
   #bytes = 0
+  #maximumBytes
 
-  constructor(root, signal) {
+  constructor(root, signal, maximumBytes = 4 * 1024 * MiB) {
     this.root = root
     this.signal = signal
+    this.#maximumBytes = maximumBytes
   }
 
   async preflight(bytes) {
     this.signal?.throwIfAborted()
-    if (this.#bytes + bytes > 4 * 1024 * MiB) return 'export-size-limit'
+    if (this.#bytes + bytes > this.#maximumBytes) return 'export-size-limit'
     const space = await statfs(this.root, { bigint: true })
     if (space.bavail * space.bsize < BigInt(bytes + 160 * MiB)) return 'export-space-limit'
     return null

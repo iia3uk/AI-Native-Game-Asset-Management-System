@@ -82,7 +82,7 @@ export function appendManifest({ details, record, json, element, button, assetSt
         const name = assetLabel(asset)
         const ordinal = offset + index
         const row = element('li', name + ' · ' + (assetStatus[asset.status] ?? asset.status))
-        const issues = [asset.issue, ...(asset.issues ?? [])].filter(issue => /^(unity|unreal)-/.test(issue))
+        const issues = [...new Set([asset.issue, ...(asset.issues ?? [])])].filter(issue => /^(unity|unreal)-/.test(issue))
         if (issues.length) row.append(element('p', issues.map(describeIssue).join(' · ')))
         if (asset.materialDescription) {
           const { path, shader } = asset.materialDescription
@@ -95,6 +95,8 @@ export function appendManifest({ details, record, json, element, button, assetSt
             const label = artifactRoles[item.role] && [artifactRoles[item.role], item.name].filter(Boolean).join(' ')
             results.append(element('li', [
               item.format.toUpperCase(), label, artifactStatus[item.status] ?? item.status, item.path,
+              item.width && item.height && `${item.width} × ${item.height}`,
+              item.audio?.bits && `PCM ${item.audio.bits} бит, ${item.audio.sampleRate} Гц, ${item.audio.channels} кан.`,
               ...[item.issue, ...(item.issues ?? [])].filter(Boolean).map(describeIssue),
             ].filter(Boolean).join(' · ')))
           }

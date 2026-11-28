@@ -2,6 +2,7 @@ import { lstat, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { exportRecipe, verifyExports } from '../../../conversion/cache.mjs'
+import { recoverUnrealMedia } from '../../../conversion/unreal/source-media/extract.mjs'
 import { locateBatchBlender } from '../../../engines/blender/batch.mjs'
 import { unrealBridgeVersion } from '../../../engines/unreal/bridge/project.mjs'
 import { locateUnrealBridge } from '../../../engines/unreal/bridge/selection.mjs'
@@ -14,7 +15,7 @@ import { convertLoosePackages } from './convert.mjs'
 import { readUnrealLoose, unrealSourceChanged } from './inspect.mjs'
 
 const method = 'unreal-loose-direct'
-const version = 1
+const version = 2
 
 async function cachedResult(root, name, hash, source, recipe, signal) {
   const directory = join(root, name)
@@ -75,7 +76,10 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     const records = await readUnrealLoose(source, { output, signal, onProgress })
     if (records.hash !== sourceKey) throw unrealSourceChanged()
     const conversion = selection && records.written ?
-      await convertLoosePackages({ records, selection, workspace, output, blender, formats: exportFormats, signal, onProgress }) : null
+      await convertLoosePackages({ records, selection, workspace, output, blender, formats: exportFormats, signal,
+        onProgress: progress => onProgress?.(60 + Math.floor((progress - 60) * 0.5)) }) : null
+    const media = await recoverUnrealMedia(records, { output, workspace, signal,
+      onProgress: progress => onProgress?.((selection ? 78 : 60) + Math.floor(progress * (selection ? 0.17 : 0.35))) })
     const counts = Object.create(null)
     for (const asset of records.assets) counts[asset.status] = (counts[asset.status] ?? 0) + 1
     const metadata = { format: source.format, sha256: sourceKey, size: records.size, association: source.association ?? null,
@@ -83,7 +87,7 @@ export async function stageUnrealLoose(directory, source, job, { signal, onProgr
     const manifest = { version, source: metadata, recipe, assets: records.assets }
     const report = { version, method, mode: engineMode, packageFormat: source.format,
       status: records.written ? 'completed' : 'no-compatible-inputs', counts, written: records.written, total: records.assets.length,
-      engineVersion: source.association ?? null, ...(conversion ?? { converted: 0 }),
+      engineVersion: source.association ?? null, ...conversion, converted: counts.converted ?? 0, media,
       limitations: ['cooked-unreal-objects-preserved-as-source', 'dependency-resolution-requires-asset-registry', 'material-graphs-not-converted'] }
     await Promise.all(Object.entries({ manifest, dependencies: { version, dependencies: records.dependencies },
       'conversion-report': report }).map(([key, value]) =>

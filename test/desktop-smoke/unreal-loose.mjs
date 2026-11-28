@@ -1,7 +1,11 @@
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { writeUnrealLooseFixture } from '../fixtures/unreal-loose.mjs'
+import { sourceWave, ue4SourceFixture } from '../fixtures/unreal-source-media.mjs'
 
 export async function verifyUnrealLoose(webContents, waitFor, root) {
-  const { project } = await writeUnrealLooseFixture(root)
+  const { project, content } = await writeUnrealLooseFixture(root)
+  await writeFile(join(content, 'Props/SmokeWave.uasset'), ue4SourceFixture('SoundWave', sourceWave()))
   await webContents.executeJavaScript(`{
     document.querySelector('#package-importer').open = true
     document.querySelector('#package-path').value = ${JSON.stringify(project)}
@@ -18,4 +22,11 @@ export async function verifyUnrealLoose(webContents, waitFor, root) {
   await waitFor(`Array.from(document.querySelectorAll('#package-jobs > li > p')).some(row =>
     row.textContent.includes('Unreal Loose Fixture') && row.textContent.includes('В индексе'))`)
   await waitFor("document.querySelector('#package-jobs').textContent.includes('Запрошенная версия Unreal недоступна')")
+  await waitFor("document.querySelector('#package-jobs').textContent.includes('1 WAV')")
+  await webContents.executeJavaScript(`{
+    const job = Array.from(document.querySelectorAll('#package-jobs > li')).find(row => row.textContent.includes('Unreal Loose Fixture'))
+    job.querySelector('details').open = true
+    Array.from(job.querySelectorAll('button')).find(button => button.textContent === 'Показать файлы').click()
+  }`)
+  await waitFor("document.querySelector('#package-jobs').textContent.includes('PCM 16 бит, 44100 Гц, 1 кан.')")
 }

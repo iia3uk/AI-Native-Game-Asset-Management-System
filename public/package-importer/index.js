@@ -126,8 +126,9 @@ export function mountPackageImporter({ dialog, json, post, openLibrary, hasWatch
         details.append(element('p', [formatLabel(packageFormat), engineVersion].filter(Boolean).join(' · ')))
       }
       if (isUnrealLoose(record.result.report.packageFormat)) {
-        const { packageFormat, engineVersion, unreal } = record.result.report
+        const { packageFormat, engineVersion, unreal, media } = record.result.report
         details.append(element('p', [formatLabel(packageFormat), engineVersion || unreal?.editorVersion,
+          media?.png && media.png + ' PNG', media?.wav && media.wav + ' WAV',
           unreal?.issue && describeIssue(unreal.issue)].filter(Boolean).join(' · ')))
       }
       if (record.result.report.packageFormat === 'unreal-pak') {

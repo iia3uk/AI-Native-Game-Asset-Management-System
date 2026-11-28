@@ -10,7 +10,7 @@ import { unrealFileType } from '../source.mjs'
 
 const MiB = 1024 ** 2
 const perFile = 512 * MiB
-const maxSize = 4 * 1024 * MiB
+const maxSize = 8 * 1024 * MiB
 const primaryTypes = new Set(['uasset', 'umap'])
 const primaryStorage = new Set(['editor', 'cooked', 'unversioned'])
 const sidecars = ['uexp', 'ubulk', 'uptnl', 'm.ubulk']
@@ -99,7 +99,7 @@ export async function readUnrealLoose(source, { output, signal, onProgress } = {
     const available = !issue
     const id = assetId(entry.path)
     const target = available ? 'Source/Content/' + entry.path : null
-    if (available && size + file.info.size > maxSize) throw new IndexInputError('Размер исходных ресурсов Unreal превышает 4 ГиБ.')
+    if (available && size + file.info.size > maxSize) throw new IndexInputError('Размер исходных ресурсов Unreal превышает 8 ГиБ.')
     const temporary = output && target ? join(output, target) : undefined
     if (temporary) {
       if (size + entry.size >= nextSpaceCheck) {
