@@ -1,5 +1,5 @@
 using AssetsTools.NET;
-using AssetViewer.UnityBundle.Formats;
+using AssetViewer.Formats;
 using AssetViewer.UnityBundle.Objects.Resources;
 
 namespace AssetViewer.UnityBundle.Objects.Textures;

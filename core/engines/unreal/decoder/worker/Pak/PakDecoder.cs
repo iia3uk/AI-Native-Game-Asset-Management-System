@@ -42,14 +42,17 @@ internal static class PakDecoder
             var payload = PakPayload.Read(reader, stream, file);
             if (payload.LongLength != file.UncompressedSize)
                 throw new InputException("unreal-pak-payload-size");
-            var destination = Path.Combine("output", products.ToString("D5") + ".bin");
+            var destination = OutputPath(products, "bin");
             using (var output = File.Open(destination, FileMode.CreateNew, FileAccess.Write)) output.Write(payload);
             entries.Add(new Entry(name, payload.LongLength, "extracted", null, products));
             unpacked += payload.LongLength;
             products++;
         }
-        return new Report(1, "completed", (int)info.Version, entries);
+        if (!request.InspectOnly) PakTextures.Decode(entries, request.MaxOutputBytes - unpacked);
+        return new Report(1, "completed", (int)info.Version, entries, 1);
     }
+
+    internal static string OutputPath(int index, string extension) => Path.Combine("output", index.ToString("D5") + "." + extension);
 
     private static string? Exclusion(FPakEntry file, FPakInfo info, long unpacked, int products, Request request)
     {

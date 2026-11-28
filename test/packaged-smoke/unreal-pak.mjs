@@ -5,6 +5,8 @@ import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
+import { inflateSync } from 'node:zlib'
+import { cookedTexture } from '../fixtures/unreal-cooked-texture.mjs'
 import { makePak, wavTone } from '../fixtures/unreal-pak.mjs'
 import { startServer, testDirectory } from '../server-fixture.mjs'
 
@@ -33,7 +35,9 @@ test('The packaged server automatically imports a stock Pak with its bundled wor
     }
     assert.deepEqual((await read('libraries')).libraries[0].packageWatchFormats, ['unreal-pak'])
     const audio = wavTone()
-    const pak = makePak([{ path: 'Audio/Packaged-Tone.wav', content: audio }])
+    const dxt = cookedTexture({ name: 'Packaged-Tint', format: 'PF_DXT1', width: 4, height: 4,
+      pixels: Buffer.from('00f8e00700000000', 'hex'), external: true })
+    const pak = makePak([{ path: 'Audio/Packaged-Tone.wav', content: audio }, ...dxt])
     const source = join(incoming, 'Incoming.pak')
     await writeFile(source, pak)
     const inspection = await cli('package-inspect', source)
@@ -49,9 +53,15 @@ test('The packaged server automatically imports a stock Pak with its bundled wor
       if (job?.status === 'completed' && (await read('jobs/' + job.result.scanJobId)).job.status === 'completed') {
         assert.equal(job.result.report.packageFormat, 'unreal-pak')
         const { library: result } = job.result
-        const { assets: [output] } = await read('search?library=' + result.id)
-        assert.equal(output.name, 'Packaged-Tone.wav')
-        assert.deepEqual(await readFile(join(result.root, output.path)), audio)
+        const { assets } = await read('search?library=' + result.id)
+        const sound = assets.find(asset => asset.name === 'Packaged-Tone.wav')
+        assert.deepEqual(await readFile(join(result.root, sound.path)), audio)
+        assert.deepEqual(job.result.report.textures, { converted: 1, skipped: 0, failed: 0 })
+        const texture = assets.find(asset => asset.name === 'Packaged-Tint.png')
+        const png = await readFile(join(result.root, texture.path))
+        assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [4, 4])
+        const pixels = inflateSync(png.subarray(41, 41 + png.readUInt32BE(33)))
+        assert.deepEqual([...pixels.subarray(0, 5)], [0, 255, 0, 0, 255])
         assert.deepEqual(await readFile(source), pak)
         return
       }

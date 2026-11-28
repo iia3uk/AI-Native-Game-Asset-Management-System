@@ -8,6 +8,11 @@ import { isWaveArtifact, modelArtifact } from '../artifacts.mjs'
 const categories = { png: 'Textures', wav: 'Audio', fbx: 'Models', glb: 'Previews' }
 const companions = new Set(['uexp', 'ubulk', 'uptnl'])
 
+async function pngMetrics(root, file, name, signal) {
+  const { metrics } = await analyzeAsset(root, { absolute: file.path, path: name, info: file.info, ext: 'png' }, signal)
+  return metrics
+}
+
 async function validatedArtifact(root, entry, signal) {
   const file = await fileInfo(root, entry.file)
   if (!file || file.info.size !== entry.size) return null
@@ -15,13 +20,29 @@ async function validatedArtifact(root, entry, signal) {
     return modelArtifact(root, entry.file, entry.format, signal)
   }
   if (entry.format === 'png') {
-    const { metrics } = await analyzeAsset(root, { absolute: file.path, path: entry.path, info: file.info, ext: 'png' }, signal)
+    const metrics = await pngMetrics(root, file, entry.path, signal)
     return metrics.width > 0 && metrics.height > 0 ? file : null
   }
   if (entry.format === 'wav') return await isWaveArtifact(file) ? file : null
   if (companions.has(entry.format)) return file
   const info = await inspectUnrealFile(root, { file, name: entry.path, type: entry.format }, signal)
   return ['editor', 'cooked', 'unversioned'].includes(info.storage) ? file : null
+}
+
+async function publishTexture(root, store, { texture, textureIssue }, artifact, id, path, converterVersion, signal) {
+  const details = { role: 'texture', format: 'png', method: 'cue4parse-cooked-texture', converterVersion,
+    from: artifact.path }
+  if (textureIssue) return { ...details, status: 'skipped', issue: textureIssue }
+  const { file: input, size, ...image } = texture
+  const file = await fileInfo(root, input)
+  const destination = 'Textures/' + id + '/' + posix.basename(path).slice(0, -7) + '.png'
+  if (file?.info.size === size) {
+    const metrics = await pngMetrics(root, file, destination, signal)
+    if (metrics.width === image.width && metrics.height === image.height) {
+      return store.save(destination, file, { ...details, ...image, status: 'converted' })
+    }
+  }
+  return { ...details, status: 'failed', issue: 'unreal-cooked-texture-output' }
 }
 
 export async function publishPakEntries(entries, root, store, backendVersion, signal) {
@@ -41,7 +62,7 @@ export async function publishPakEntries(entries, root, store, backendVersion, si
   const published = []
   for (const row of entries) {
     signal?.throwIfAborted()
-    const { file: staged, ...entry } = row
+    const { file: staged, texture, textureIssue, ...entry } = row
     if (!staged) {
       published.push(entry)
       continue
@@ -60,7 +81,9 @@ export async function publishPakEntries(entries, root, store, backendVersion, si
     const artifact = await store.save(destination, file, {
       status: 'extracted', format: entry.format, method: 'cue4parse-pak', converterVersion: backendVersion,
     })
-    published.push({ ...entry, id, status: artifact.status, artifact })
+    const exports = artifact.path && (texture || textureIssue) ?
+      [await publishTexture(root, store, row, artifact, id, path, backendVersion, signal)] : undefined
+    published.push({ ...entry, id, status: artifact.status, artifact, ...(exports && { exports }) })
   }
   return published
 }

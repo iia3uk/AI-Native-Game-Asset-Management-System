@@ -45,8 +45,10 @@ internal static class Program
 }
 
 internal sealed record Request(int Protocol, string Format, bool InspectOnly, long MaxOutputBytes);
-internal sealed record Entry(string Path, long Size, string Status, string? Issue, int? Output);
-internal sealed record Report(int Protocol, string Status, int ContainerVersion, IReadOnlyList<Entry> Entries);
+internal sealed record TextureExport(int Width, int Height, int Mip, string PixelFormat, bool Srgb, long Size = 0);
+internal sealed record Entry(string Path, long Size, string Status, string? Issue, int? Output,
+    TextureExport? Texture = null, string? TextureIssue = null);
+internal sealed record Report(int Protocol, string Status, int ContainerVersion, IReadOnlyList<Entry> Entries, int TextureDecoder);
 internal sealed class InputException(string code) : Exception(code)
 {
     public string Code { get; } = code;

@@ -1,8 +1,8 @@
 using System.Buffers.Binary;
 
-namespace AssetViewer.UnityBundle.Formats;
+namespace AssetViewer.Formats;
 
-// Unity DXT1 and DXT5 store little-endian BC1 and BC3 blocks, respectively.
+// DXT1 and DXT5 store little-endian BC1 and BC3 blocks, respectively.
 internal static class BlockCompression
 {
     private const int Side = 4;

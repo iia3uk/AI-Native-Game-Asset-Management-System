@@ -3,6 +3,8 @@ import { posix } from 'node:path'
 const invalidChars = /[<>:"\\|?*\x00-\x1f\x7f-\x9f]/u
 const deviceName = /^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])$/i
 const issueCode = value => typeof value === 'string' && /^unreal-[a-z0-9-]{1,70}$/.test(value)
+const textureFormats = new Set(['PF_B8G8R8A8', 'PF_R8G8B8A8', 'PF_G8', 'PF_DXT1', 'PF_DXT5'])
+export const pakTextureRevision = 1
 export const decoderFormats = new Set(['uasset', 'umap', 'uexp', 'ubulk', 'uptnl', 'png', 'wav', 'fbx', 'glb'])
 
 function validPath(path) {
@@ -16,12 +18,14 @@ export function pakResult(raw, { inspectOnly, version }) {
   if (raw?.protocol !== 1) return null
   if (raw.status === 'failed' && issueCode(raw.issue)) return { status: 'failed', issue: raw.issue }
   if (raw.status !== 'completed' || raw.containerVersion !== version ||
-      !Array.isArray(raw.entries) || raw.entries.length > 10_000) return null
+      !Array.isArray(raw.entries) || raw.entries.length > 10_000 ||
+      (raw.textureDecoder !== undefined && raw.textureDecoder !== pakTextureRevision)) return null
 
   const entries = []
   const names = new Map()
   let outputs = 0
   let bytes = 0
+  let textureBytes = 0
   for (const row of raw.entries) {
     if (!validPath(row?.path) || !Number.isSafeInteger(row.size) || row.size < 0) return null
     const parts = row.path.split('/')
@@ -49,7 +53,23 @@ export function pakResult(raw, { inspectOnly, version }) {
         entry.file = String(outputs++).padStart(5, '0') + '.bin'
       }
     }
+    if (row.texture != null || row.textureIssue != null) {
+      if (inspectOnly || raw.textureDecoder !== pakTextureRevision || format !== 'uasset' || !entry.file) return null
+      if (row.texture != null) {
+        const { width, height, size, mip, pixelFormat, srgb } = row.texture
+        if (row.textureIssue != null || ![width, height].every(side => Number.isInteger(side) && side >= 1 && side <= 4096) ||
+            !Number.isInteger(mip) || mip < 0 || mip > 30 || !textureFormats.has(pixelFormat) || typeof srgb !== 'boolean' ||
+            !Number.isSafeInteger(size) || size < 45 || size > width * height * 4 + height + 65536) return null
+        textureBytes += size
+        if (textureBytes > 256 * 1024 ** 2) return null
+        entry.texture = { width, height, size, mip, pixelFormat, srgb, file: entry.file.replace(/\.bin$/, '.png') }
+      } else {
+        if (!issueCode(row.textureIssue) || !row.textureIssue.startsWith('unreal-cooked-texture-')) return null
+        entry.textureIssue = row.textureIssue
+      }
+    }
     entries.push(entry)
   }
-  return { status: 'completed', version, entries }
+  if (bytes + textureBytes > 1024 ** 3) return null
+  return { status: 'completed', version, entries, textureDecoder: raw.textureDecoder }
 }

@@ -24,10 +24,14 @@ async function saveOutputs(workspace, source, result, hash, signal) {
   const extracted = entries.filter(entry => entry.status === 'extracted').length
   const skipped = entries.length - extracted
   const failed = entries.filter(entry => entry.status === 'failed').length
+  const textures = { converted: 0, skipped: 0, failed: 0 }
+  for (const entry of entries) for (const exportFile of entry.exports ?? []) textures[exportFile.status]++
   const summary = { status: extracted ? 'completed' : 'no-compatible-inputs', method: pakMethod,
     converterVersion: cue4parseVersion, containerVersion: result.version, extracted, skipped, total: entries.length,
     counts: { extracted, skipped: skipped - failed, ...(failed && { failed }) },
-    limits: ['unreal-pak-loose-binary-extraction-only', 'unreal-pak-dependency-analysis-pending'] }
+    ...(result.textureDecoder && { textureDecoder: result.textureDecoder, textures }),
+    limits: [result.textureDecoder ? 'unreal-pak-cooked-decoding-limited-to-stock-ue4-textures' :
+      'unreal-pak-loose-binary-extraction-only', 'unreal-pak-dependency-analysis-pending'] }
   const reports = {
     manifest: { version: 1, recipe: pakRecipe, source: { name: source.name, size: source.file.info.size, sha256: hash, license: null },
       method: summary.method, converterVersion: summary.converterVersion, entries },
@@ -36,7 +40,10 @@ async function saveOutputs(workspace, source, result, hash, signal) {
   }
   await Promise.all(Object.entries(reports).map(([name, data]) =>
     writeFile(join(output, name + '.json'), JSON.stringify(data, null, 2) + '\n', { signal, flag: 'wx' })))
-  return { output, cacheable: !failed, report: { ...summary, ...(!extracted && { entries: entries.slice(0, 500) }) } }
+  const cacheable = !failed && !textures.failed && !entries.some(entry => entry.exports?.some(file =>
+    ['unreal-cooked-texture-limit', 'unreal-cooked-texture-io'].includes(file.issue))) &&
+    (result.textureDecoder || !entries.some(entry => entry.status === 'extracted' && entry.format === 'uasset'))
+  return { output, cacheable, report: { ...summary, ...(!extracted && { entries: entries.slice(0, 500) }) } }
 }
 
 export async function processUnrealPak({ root: sourceRoot, path, name }, { directory, inspectOnly = false, expectedHash,

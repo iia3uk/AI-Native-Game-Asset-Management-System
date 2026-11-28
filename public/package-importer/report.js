@@ -47,6 +47,13 @@ const packageIssues = {
   'unreal-pak-orphan-companion': 'Отсутствует связанный пакет Unreal',
   'unreal-pak-unsupported-compression': 'Тип сжатия не поддерживается',
   'unreal-pak-unsupported-entry': 'Тип файла не поддерживается',
+  'unreal-cooked-texture-layout': 'Не удалось прочитать структуру cooked Texture2D',
+  'unreal-cooked-texture-ambiguous': 'В пакете несколько верхнеуровневых Texture2D',
+  'unreal-cooked-texture-format': 'Формат cooked-текстуры не поддерживается',
+  'unreal-cooked-texture-mip': 'Данные мип-уровня отсутствуют или повреждены',
+  'unreal-cooked-texture-limit': 'Достигнут лимит декодирования текстур',
+  'unreal-cooked-texture-io': 'Не удалось прочитать или записать файл текстуры',
+  'unreal-cooked-texture-output': 'Сохранённый PNG не прошёл проверку',
   'unreal-editor-unavailable': 'Подходящий Unreal Editor не найден',
   'unreal-viewer-unavailable': 'UE Viewer не настроен',
   'unreal-source-mesh-time-budget': 'Достигнут лимит времени извлечения исходных мешей UE4',
@@ -161,6 +168,7 @@ export function appendManifest({ details, record, json, element, button, assetSt
             results.append(element('li', [
               item.format.toUpperCase(), label, artifactStatus[item.status] ?? item.status, item.path,
               item.width && item.height && `${item.width} × ${item.height}`,
+              Number.isInteger(item.mip) && `Мип ${item.mip}`,
               item.audio?.bits && `PCM ${item.audio.bits} бит, ${item.audio.sampleRate} Гц, ${item.audio.channels} кан.`,
               ...[item.issue, ...(item.issues ?? [])].filter(Boolean).map(describeIssue),
             ].filter(Boolean).join(' · ')))

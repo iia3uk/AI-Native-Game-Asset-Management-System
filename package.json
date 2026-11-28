@@ -47,6 +47,7 @@
       "package.json",
       "server.mjs",
       "core/**",
+      "!core/engines/formats/dotnet/**",
       "!core/engines/unreal/decoder/worker/**",
       "!core/engines/unity/bundle/worker/**",
       "desktop/**",
